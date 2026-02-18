@@ -152,12 +152,32 @@ gh search prs --author=@me --state=open --limit 20 --json title,number,repositor
 gh search prs --review-requested=@me --state=open --limit 10 --json title,number,repository,url,author
 ```
 
+**Enrich with review state** — for each non-draft PR from Benjamin's list, fetch the review decision:
+
+```bash
+for pr in $(echo "$PRS_JSON" | jq -r '.[] | select(.isDraft == false) | "\(.repository.nameWithOwner):\(.number)"'); do
+  repo="${pr%%:*}"
+  num="${pr##*:}"
+  echo "=== $repo#$num ==="
+  gh pr view "$num" --repo "$repo" --json reviewDecision,reviews --jq '{reviewDecision, reviewCount: (.reviews | length)}'
+done
+```
+
+Possible `reviewDecision` values:
+- `CHANGES_REQUESTED` — a reviewer requested changes; Benjamin is blocking their wait
+- `APPROVED` — all reviewers approved; ready to merge
+- `REVIEW_REQUIRED` or empty (0 reviews) — no one has reviewed yet; Benjamin is waiting on others
+
 From the results:
 - Match PR titles/branches to Jira issue keys (e.g., a PR title containing "RGI-265" or branch named "feat/MITB-599")
 - Note which of Benjamin's PRs are drafts vs ready for review
 - Note PRs from teammates that need Benjamin's review
 - Flag stale PRs (open > 30 days) — these likely need rebase, cleanup, or closing
 - Note PR age using `createdAt` field
+- **Classify each non-draft PR by review state for tier routing:**
+  - `CHANGES_REQUESTED` → UNBLOCK OTHERS (reviewers waiting on Benjamin)
+  - `REVIEW_REQUIRED` with 0 reviews → IN PROGRESS with "⏸ Awaiting review"
+  - `APPROVED` → IN PROGRESS or DO NOW (ready to merge)
 
 ### 5. Validate Slack Items Against Jira
 
@@ -215,8 +235,8 @@ When a Jira issue has a matching open PR (matched by issue key in PR title or br
 | Tier | Emoji | Criteria |
 |------|-------|----------|
 | ⚡ DO NOW | 💬 🔴 | Unresponded Slack @mentions; items reopened/escalated by priority users (Claire, Matthieu); Blocker/Urgent priority; items explicitly requested same-day |
-| 🔄 UNBLOCK OTHERS | 🟡 | Own PRs with review feedback to address; teammate PRs requesting Benjamin's review; watched issues where someone asked for input |
-| 🔨 IN PROGRESS | 🟠 | Items in active statuses (In Progress, In QA, In Review) waiting on external action (not currently blocked on Benjamin) |
+| 🔄 UNBLOCK OTHERS | 🟡 | Own PRs with `CHANGES_REQUESTED` review decision (reviewers waiting on Benjamin); teammate PRs requesting Benjamin's review; watched issues where someone asked for input |
+| 🔨 IN PROGRESS | 🟠 | Items in active statuses (In Progress, In QA, In Review) waiting on external action (not currently blocked on Benjamin); own PRs awaiting review (`REVIEW_REQUIRED` with 0 reviews) |
 | 📋 UP NEXT | 🔴 ⬜ | Ready for Development, On Deck items. Use 🔴 for High priority, ⬜ for normal |
 
 **Within each tier**, sort by: Jira priority (Blocker > Critical > High > Medium > Low), then by most recent activity.
@@ -246,8 +266,8 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
      └─ Brief description of PR purpose
 
 🔨 IN PROGRESS
-  5. 🟠 [KEY](url) — Summary
-     └─ ⏸ Waiting on [who] for [what]
+  5. 🟠 [KEY](url) — Summary                     ⌥ [PR #N](gh-url)
+     └─ ⏸ Awaiting review · N days old
 
 📋 UP NEXT
   6. 🔴 [KEY](url) — Summary                    High
@@ -282,9 +302,13 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 
 **PR annotation rules:**
 - If a Jira item has a matching PR, append `⌥ [PR #N](gh-url)` inline on the same line
-- PRs requesting Benjamin's review go in the 🔄 UNBLOCK OTHERS tier
-- Benjamin's open PRs that don't match any Jira issue go in the 🧹 Stale PRs footer line
 - Mark draft PRs explicitly with "(draft)"
+- **Route Benjamin's PRs by review state:**
+  - `CHANGES_REQUESTED` → 🔄 UNBLOCK OTHERS (reviewers waiting on Benjamin to address feedback)
+  - `REVIEW_REQUIRED` / 0 reviews → 🔨 IN PROGRESS, annotated with "⏸ Awaiting review"
+  - `APPROVED` but not merged → 🔨 IN PROGRESS or ⚡ DO NOW (ready to merge)
+- Teammate PRs requesting Benjamin's review go in the 🔄 UNBLOCK OTHERS tier
+- Benjamin's open PRs that don't match any Jira issue go in the 🧹 Stale PRs footer line
 
 **Overnight diff rules:**
 - Compact single-line format between `╌` dividers
