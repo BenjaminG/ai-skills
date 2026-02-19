@@ -1,7 +1,7 @@
 ---
 name: ralph-loop
 description: Create autonomous iterative loops (Ralph Wiggum pattern) for multi-step tasks. Use when setting up automated workflows that iterate over a backlog of tasks with clear acceptance criteria. Triggers on requests like "create a ralph loop", "set up an iterative agent", "automate this migration", or "create an autonomous loop".
-argument-hint: [output-directory]
+argument-hint: "[output-directory]"
 disable-model-invocation: true
 ---
 

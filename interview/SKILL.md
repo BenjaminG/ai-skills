@@ -1,7 +1,7 @@
 ---
 name: interview
 description: Interview user to clarify any topic - exploring codebase, investigating issues, planning features, understanding requirements, or drilling into plans. Socratic questioning to uncover details.
-argument-hint: [topic or file]
+argument-hint: "[topic or file]"
 model: claude-opus-4-6
 disable-model-invocation: true
 ---

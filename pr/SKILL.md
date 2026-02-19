@@ -1,7 +1,7 @@
 ---
 name: pr
 description: Publish a pull request with automated type detection, Jira linking, PR templates, Slack review message, and quality gate.
-argument-hint: [type] [JIRA-ID]
+argument-hint: "[type] [JIRA-ID]"
 ---
 
 # Publish PR

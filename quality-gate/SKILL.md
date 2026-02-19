@@ -1,7 +1,7 @@
 ---
 name: quality-gate
-description: Run parallel quality reviews (React, SOLID, Security, Simplification) on branch changes and auto-fix issues
-argument-hint: [base-branch]
+description: Run parallel quality reviews (React, SOLID, Security, Simplification, Slop) on branch changes and auto-fix issues
+argument-hint: "[base-branch]"
 ---
 
 # Quality Gate
@@ -31,9 +31,9 @@ Also detect the project stack:
 cat package.json 2>/dev/null | jq -r '.dependencies // {} | keys[]' | grep -E '^(react|next)$'
 ```
 
-## Step 2: Parallel Review (4 Agents)
+## Step 2: Parallel Review (5 Agents)
 
-Spawn review agents **in parallel** using a single message with multiple Task tool calls.
+Create an agent team to review the diff in parallel across 5 dimensions: React/Next.js best practices, SOLID principles, security, simplification, and code slop.
 
 **Skip Agent 1** if the project does not use React/Next.js.
 
@@ -44,43 +44,29 @@ Each agent prompt MUST include:
 4. The output format below
 
 ### Agent 1: React/Next.js Best Practices
-- **subagent_type**: `general-purpose`
 - **name**: `react-reviewer`
-- Instruct the agent to:
-  - Read `~/.agents/skills/vercel-react-best-practices/SKILL.md` and any rule files in its `rules/` subdirectory that are relevant to the diff
-  - Review ONLY the changed code in the diff against the rules
-  - Categorize each finding as FIX or NITPICK
+- Instruct the agent to execute the following:
+  `/vercel-react-best-practices Review ONLY the changed code in the diff against the rules Categorize each finding as FIX or NITPICK`
 
 ### Agent 2: SOLID Principles
-- **subagent_type**: `general-purpose`
 - **name**: `solid-reviewer`
-- Instruct the agent to:
-  - Read `~/.agents/skills/applying-solid-principles/SKILL.md` and its sub-documents
-  - Review ONLY the changed code against SOLID principles and clean code practices
-  - Categorize each finding as FIX or NITPICK
+- Instruct the agent to execute the following:
+  `/applying-solid-principles Review ONLY the changed code in the diff against SOLID principles and clean code practices Categorize each finding as FIX or NITPICK`
 
 ### Agent 3: Security Review
-- **subagent_type**: `general-purpose`
 - **name**: `security-reviewer`
-- Instruct the agent to:
-  - Read `~/.agents/skills/security-review/SKILL.md`
-  - Review ONLY the changed code against the security checklist
-  - Categorize each finding as FIX or NITPICK
+- Instruct the agent to execute the following:
+  `/security-review Review ONLY the changed code in the diff against the security checklist Categorize each finding as FIX or NITPICK`
 
 ### Agent 4: Code Simplification
-- **subagent_type**: `general-purpose`
 - **name**: `simplify-reviewer`
-- Instruct the agent to:
-  - Read `~/.agents/skills/simplify/SKILL.md`
-  - Review the changed files for simplification opportunities (clarity, consistency, maintainability)
-  - Categorize each finding as FIX or NITPICK
+- Instruct the agent to execute the following:
+  `/simplify Review ONLY the changed code in the diff for simplification opportunities (clarity, consistency, maintainability) Categorize each finding as FIX or NITPICK`
 
 ### Agent 5: Code Slop Cleaner
-- **subagent_type**: `general-purpose`
 - **name**: `slop-cleaner`
-- Instruct the agent to:
-  - Read `~/.agents/skills/code-slop/SKILL.md`
-  - Remove all AI generated slop reported
+- Instruct the agent to execute the following:
+  `/code-slop`
 
 ### Classification Rules (include in each agent prompt)
 
