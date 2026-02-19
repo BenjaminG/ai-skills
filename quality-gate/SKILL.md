@@ -47,7 +47,7 @@ Each agent prompt MUST include:
 - **subagent_type**: `general-purpose`
 - **name**: `react-reviewer`
 - Instruct the agent to:
-  - Read `/Users/bgelis/.agents/skills/vercel-react-best-practices/SKILL.md` and any rule files in its `rules/` subdirectory that are relevant to the diff
+  - Read `~/.agents/skills/vercel-react-best-practices/SKILL.md` and any rule files in its `rules/` subdirectory that are relevant to the diff
   - Review ONLY the changed code in the diff against the rules
   - Categorize each finding as FIX or NITPICK
 
@@ -55,7 +55,7 @@ Each agent prompt MUST include:
 - **subagent_type**: `general-purpose`
 - **name**: `solid-reviewer`
 - Instruct the agent to:
-  - Read `/Users/bgelis/.agents/skills/applying-solid-principles/SKILL.md` and its sub-documents
+  - Read `~/.agents/skills/applying-solid-principles/SKILL.md` and its sub-documents
   - Review ONLY the changed code against SOLID principles and clean code practices
   - Categorize each finding as FIX or NITPICK
 
@@ -63,7 +63,7 @@ Each agent prompt MUST include:
 - **subagent_type**: `general-purpose`
 - **name**: `security-reviewer`
 - Instruct the agent to:
-  - Read `/Users/bgelis/.agents/skills/security-review/SKILL.md`
+  - Read `~/.agents/skills/security-review/SKILL.md`
   - Review ONLY the changed code against the security checklist
   - Categorize each finding as FIX or NITPICK
 
@@ -71,9 +71,16 @@ Each agent prompt MUST include:
 - **subagent_type**: `general-purpose`
 - **name**: `simplify-reviewer`
 - Instruct the agent to:
-  - Read `/Users/bgelis/.agents/skills/simplify/SKILL.md`
+  - Read `~/.agents/skills/simplify/SKILL.md`
   - Review the changed files for simplification opportunities (clarity, consistency, maintainability)
   - Categorize each finding as FIX or NITPICK
+
+### Agent 5: Code Slop Cleaner
+- **subagent_type**: `general-purpose`
+- **name**: `slop-cleaner`
+- Instruct the agent to:
+  - Read `~/.agents/skills/code-slop/SKILL.md`
+  - Remove all AI generated slop reported
 
 ### Classification Rules (include in each agent prompt)
 
@@ -110,7 +117,7 @@ If no issues at all, return: `No issues found.`
 
 After all agents complete:
 
-1. Collect all **FIX** items across all 4 agents
+1. Collect all **FIX** items across all 5 agents
 2. Deduplicate overlapping findings on the same file:line
 3. Display a summary:
 
@@ -122,7 +129,7 @@ After all agents complete:
 - [SOLID] file:line — description (x items)
 - [Security] file:line — description (x items)
 - [Simplify] file:line — description (x items)
-
+- [Slop Cleaner] file:line — description (x items)
 **Nitpicks for review:** N items
 ```
 
@@ -150,6 +157,9 @@ If there are nitpicks, display them grouped by category and use AskUserQuestion:
 - `file:line` — description — suggestion
 
 **Simplification:**
+- `file:line` — description — suggestion
+
+**Slop Cleaner:**
 - `file:line` — description — suggestion
 ```
 
