@@ -31,44 +31,60 @@ Also detect the project stack:
 cat package.json 2>/dev/null | jq -r '.dependencies // {} | keys[]' | grep -E '^(react|next)$'
 ```
 
-## Step 2: Parallel Review (5 Agents)
+## Step 2: Parallel Review (Agent Team)
 
-Create an agent team to review the diff in parallel across 5 dimensions: React/Next.js best practices, SOLID principles, security, simplification, and code slop.
+### 2a. Create Team
 
-**Skip Agent 1** if the project does not use React/Next.js.
+```
+TeamCreate  team_name: "quality-gate"  description: "Parallel quality review of branch changes"
+```
 
-Each agent prompt MUST include:
-1. The full diff from Step 1
+### 2b. Create Review Tasks
+
+Create one `TaskCreate` per review dimension. **Skip Task 1 if the project does not use React/Next.js.**
+
+Each task `description` MUST include:
+1. The full diff from Step 1 (if diff exceeds ~50KB, list changed files and instruct teammate to read files directly)
 2. The list of changed files
-3. Instructions to read the relevant skill docs for review criteria
-4. The output format below
+3. The skill command to invoke and review instructions (see table below)
+4. The classification rules (see below)
+5. The required output format (see below)
+6. Instruction: **Do NOT modify any files. Report findings only.**
+7. Instruction: Send findings to the lead via `SendMessage` with `type: "message"` and `recipient: "lead"`
+8. Instruction: Mark task completed via `TaskUpdate` with `status: "completed"` after sending findings
 
-### Agent 1: React/Next.js Best Practices
-- **name**: `react-reviewer`
-- Instruct the agent to execute the following:
-  `/vercel-react-best-practices Review ONLY the changed code in the diff against the rules Categorize each finding as FIX or NITPICK`
+| Task | subject | activeForm | Skill command & instructions |
+|------|---------|------------|------------------------------|
+| 1 | Review React/Next.js best practices | Reviewing React best practices | `/vercel-react-best-practices Review ONLY the changed code in the diff against the rules. Categorize each finding as FIX or NITPICK` |
+| 2 | Review SOLID principles | Reviewing SOLID principles | `/applying-solid-principles Review ONLY the changed code in the diff against SOLID principles and clean code practices. Categorize each finding as FIX or NITPICK` |
+| 3 | Review security | Reviewing security | `/security-review Review ONLY the changed code in the diff against the security checklist. Categorize each finding as FIX or NITPICK` |
+| 4 | Review simplification opportunities | Reviewing simplification | `/simplify Review ONLY the changed code in the diff for simplification opportunities (clarity, consistency, maintainability). Categorize each finding as FIX or NITPICK. Do NOT modify any files — report only.` |
+| 5 | Review code slop | Reviewing code slop | `/code-slop` but **override**: Do NOT modify any files. Instead, identify all slop issues and report them in FIX/NITPICK format below. |
 
-### Agent 2: SOLID Principles
-- **name**: `solid-reviewer`
-- Instruct the agent to execute the following:
-  `/applying-solid-principles Review ONLY the changed code in the diff against SOLID principles and clean code practices Categorize each finding as FIX or NITPICK`
+### 2c. Spawn Teammates (all in parallel)
 
-### Agent 3: Security Review
-- **name**: `security-reviewer`
-- Instruct the agent to execute the following:
-  `/security-review Review ONLY the changed code in the diff against the security checklist Categorize each finding as FIX or NITPICK`
+Spawn all teammates **in a single response** using the `Task` tool with `team_name: "quality-gate"` and each teammate's `name`:
 
-### Agent 4: Code Simplification
-- **name**: `simplify-reviewer`
-- Instruct the agent to execute the following:
-  `/simplify Review ONLY the changed code in the diff for simplification opportunities (clarity, consistency, maintainability) Categorize each finding as FIX or NITPICK`
+| name | Assigned task |
+|------|---------------|
+| `react-reviewer` | Task 1 (skip if not React) |
+| `solid-reviewer` | Task 2 |
+| `security-reviewer` | Task 3 |
+| `simplify-reviewer` | Task 4 |
+| `slop-cleaner` | Task 5 |
 
-### Agent 5: Code Slop Cleaner
-- **name**: `slop-cleaner`
-- Instruct the agent to execute the following:
-  `/code-slop`
+Each teammate's prompt must instruct them to:
+1. Check `TaskList` and claim their assigned task via `TaskUpdate` with `status: "in_progress"` and `owner: "<their-name>"`
+2. Invoke the designated skill via the `Skill` tool with the review instructions
+3. Format findings per the output format below
+4. Send findings to the lead via `SendMessage` with `type: "message"`, `recipient: "lead"`, and `summary: "<reviewer-name> findings"`
+5. Mark task completed via `TaskUpdate` with `status: "completed"`
 
-### Classification Rules (include in each agent prompt)
+### 2d. Assign Tasks
+
+After spawning, assign each task to its teammate via `TaskUpdate` with `owner: "<teammate-name>"`.
+
+### Classification Rules (include in each task description)
 
 **FIX** (will be auto-applied):
 - Bugs or logic errors
@@ -83,7 +99,7 @@ Each agent prompt MUST include:
 - Low-impact optimizations
 - "Nice to have" improvements
 
-### Required Output Format (include in each agent prompt)
+### Required Output Format (include in each task description)
 
 ```
 ## FIX
@@ -99,11 +115,19 @@ Each agent prompt MUST include:
 
 If no issues at all, return: `No issues found.`
 
-## Step 3: Consolidate Findings
+## Step 3: Consolidate Findings and Tear Down Team
 
-After all agents complete:
+### 3a. Collect Results
 
-1. Collect all **FIX** items across all 5 agents
+Monitor `TaskList` until all review tasks reach `completed` status. Findings arrive automatically via `SendMessage` from each teammate.
+
+### 3b. Shut Down Team
+
+Send `SendMessage` with `type: "shutdown_request"` to each teammate. After all teammates confirm shutdown, call `TeamDelete`.
+
+### 3c. Consolidate
+
+1. Collect all **FIX** items across all reviewers
 2. Deduplicate overlapping findings on the same file:line
 3. Display a summary:
 
@@ -174,8 +198,11 @@ git push
 
 ## Execution Notes
 
-- **Total agents**: 3-4 (skip React agent if not a React project)
-- **All review agents are read-only** — they report findings, the main process applies fixes
-- **Deduplication matters** — multiple agents may flag the same issue differently; apply only once
+- **Requires**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable in settings
+- **Total teammates**: 4-5 (skip react-reviewer if not a React project)
+- **Team lifecycle**: `TeamCreate` at Step 2a, `TeamDelete` at Step 3b
+- **All review teammates are read-only** — they report findings via SendMessage, the lead applies fixes
+- **Teammate idle is normal** — teammates go idle after each turn; do not treat idle notifications as errors
+- **Deduplication matters** — multiple reviewers may flag the same issue differently; apply only once
 - **Preserve behavior** — fixes must not change functionality, only improve quality
 - **Be surgical** — only modify code that was part of the original diff, do not refactor unrelated code
