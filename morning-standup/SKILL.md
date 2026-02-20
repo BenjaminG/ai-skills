@@ -341,14 +341,88 @@ Write the complete output to `~/.claude/standups/YYYY-MM-DD.md` (using today's d
 
 If a file for today already exists (e.g., re-running standup), overwrite it with the latest data.
 
-### 10. Empty State
+### 10. Generate Task File
+
+After persisting the standup report, generate a structured task file for cross-session tracking.
+
+**Create `~/.claude/daily-tasks/YYYY-MM-DD.json`** by extracting each numbered item from the standup output:
+
+```bash
+mkdir -p ~/.claude/daily-tasks
+```
+
+**Extraction rules — parse the standup output just generated:**
+
+1. For each numbered item (1..N), extract:
+   - Item number → `id`
+   - Tier header above it → `tier` (map: `⚡ DO NOW` → `"do_now"`, `🔄 UNBLOCK OTHERS` → `"unblock_others"`, `🔨 IN PROGRESS` → `"in_progress"`, `📋 UP NEXT` → `"up_next"`)
+   - Jira key from `[KEY](url)` pattern → `jira_key`, `jira_url`
+   - Summary text after the em dash → `summary`
+   - Context line (the `└─` line) → `context`
+   - PR annotation `⌥ [PR #N](url)` → `pr_url`
+   - Source: items with `jira_key` → `"jira"`, Slack-only items → `"slack"`, PR-only items → `"github"`
+
+2. Items without a Jira key (e.g., Slack @mentions, PR review requests) should still be included with `jira_key: null`.
+
+**JSON schema:**
+
+```json
+{
+  "date": "YYYY-MM-DD",
+  "standup_file": "~/.claude/standups/YYYY-MM-DD.md",
+  "updated_at": "ISO-TIMESTAMP",
+  "tasks": [
+    {
+      "id": 1,
+      "tier": "do_now",
+      "status": "pending",
+      "jira_key": "RGI-265",
+      "jira_url": "https://hgdata.atlassian.net/browse/RGI-265",
+      "summary": "Migrate Evr Insights pages",
+      "context": "In QA; Claire feedback on missing chart names",
+      "pr_url": null,
+      "source": "jira",
+      "started_at": null,
+      "completed_at": null,
+      "carried_from": null
+    }
+  ]
+}
+```
+
+**Merge logic — if `~/.claude/daily-tasks/YYYY-MM-DD.json` already exists (re-run):**
+
+1. Read the existing task file
+2. Build a lookup map: `jira_key → {status, started_at, completed_at}` for all existing tasks
+3. For each new task being generated: if its `jira_key` matches an existing task, carry over `status`, `started_at`, `completed_at` from the existing entry
+4. This prevents losing in-progress/done state when re-running standup mid-day
+
+**Carry-over from previous day:**
+
+Check if yesterday's task file exists:
+```bash
+cat ~/.claude/daily-tasks/$(date -v-1d +%Y-%m-%d).json 2>/dev/null
+```
+
+For tasks that appeared in yesterday's file and reappear today (matched by `jira_key`):
+- Set `carried_from` to yesterday's date string
+
+Write the JSON file using the **Write tool** to `~/.claude/daily-tasks/YYYY-MM-DD.json`.
+
+**Amend standup file:** After writing the task file, append an HTML comment reference to the standup markdown file:
+
+```
+<!-- task-file: ~/.claude/daily-tasks/YYYY-MM-DD.json -->
+```
+
+### 11. Empty State
 
 If no tasks found across all sources:
 ```
 No pending tasks - check backlog or ask PM for priorities.
 ```
 
-Still persist the empty standup file so the diff tracks that it was a clean day.
+Still persist the empty standup file so the diff tracks that it was a clean day. Also persist an empty task file with `"tasks": []`.
 
 ## Notes
 
