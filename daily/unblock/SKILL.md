@@ -1,5 +1,5 @@
 ---
-name: unblock
+name: daily-unblock
 description: Unblock a task on standby and bring it back to active status. This skill should be used when Benjamin says "unblock", "resume", "unpause", "pick back up", or when a blocked task's dependency has been resolved.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true
@@ -36,7 +36,7 @@ persistence:
   #7. MITB-99 — Gong push config regression
      └─ Waiting on: data pipeline rerun · standby 1d ago
 
-Run /unblock 3 or /unblock RGI-265 to pick one.
+Run /daily-unblock 3 or /daily-unblock RGI-265 to pick one.
 ```
 
 **Stop here.**
@@ -51,7 +51,7 @@ Read today's task file:
 cat ~/.claude/daily-tasks/$(date +%Y-%m-%d).json 2>/dev/null
 ```
 
-If no file exists: "No task file for today. Run `/morning-standup` first." **Stop.**
+If no file exists: "No task file for today. Run `/daily-standup` first." **Stop.**
 
 Parse the JSON. Find the target task by numeric ID or `jira_key`.
 
@@ -88,19 +88,19 @@ Display:
 **If restored to `pending`:**
 
 ```
-👉 Run /next $N to pick it up and get full context.
+👉 Run /daily-next $N to pick it up and get full context.
 ```
 
 **If restored to `in_progress`:**
 
 ```
-👉 Task is back in progress. Run /next $N to get a briefing and continue.
+👉 Task is back in progress. Run /daily-next $N to get a briefing and continue.
 ```
 
 Show compact remaining standby tasks if any still exist:
 
 ```
-⏸ N task(s) still on standby — run /unblock N when ready.
+⏸ N task(s) still on standby — run /daily-unblock N when ready.
 ```
 
 ## Edge Cases

@@ -1,5 +1,5 @@
 ---
-name: next
+name: daily-next
 description: Pick up the next task from today's daily task list and gather full context for working on it. This skill should be used when Benjamin says "next", "next task", "what's next", "pick up task", "start task", or wants context for a specific task ID or Jira key.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true
@@ -38,8 +38,8 @@ cat ~/.claude/daily-tasks/$(date +%Y-%m-%d).json 2>/dev/null
 
 **If no file exists for today:**
 - Check if a standup exists: `ls ~/.claude/standups/$(date +%Y-%m-%d).md 2>/dev/null`
-- If standup exists but no task file: "Task file missing. Run `/morning-standup` to regenerate."
-- If no standup either: "No standup for today. Run `/morning-standup` first."
+- If standup exists but no task file: "Task file missing. Run `/daily-standup` to regenerate."
+- If no standup either: "No standup for today. Run `/daily-standup` first."
 - **Stop here.**
 
 Parse the JSON. Display a compact status summary:
@@ -59,14 +59,14 @@ Parse the JSON. Display a compact status summary:
 **If the selected task has `status: "standby"`:** Warn and stop — do not allow picking up a standby task directly:
 ```
 ⏸️ Task #N ($KEY) is on standby. Waiting on: {waiting_on}
-   Run /unblock $N first to activate it, then /next $N to pick it up.
+   Run /daily-unblock $N first to activate it, then /daily-next $N to pick it up.
 ```
 
 **If a task is already `in_progress`:**
 - Warn: "⚠️ Task #N (KEY) is already in progress."
 - Ask whether to continue with the in-progress task, or switch to the requested one.
 
-**If no pending tasks remain:** "All tasks done, in progress, or on standby. Run `/done` to complete current task, `/unblock` to activate a standby task, or `/morning-standup` to refresh."
+**If no pending tasks remain:** "All tasks done, in progress, or on standby. Run `/daily-done` to complete current task, `/daily-unblock` to activate a standby task, or `/daily-standup` to refresh."
 
 ### 3. Gather Deep Context
 
@@ -185,9 +185,9 @@ rm -rf /tmp/next-attachments
 
 ## Edge Cases
 
-- **Task file exists but is empty** (no tasks array): "Task list is empty. Re-run `/morning-standup`."
-- **Selected task already `done`**: "Task #N is already done. Pick another or run `/next` for the next pending task."
+- **Task file exists but is empty** (no tasks array): "Task list is empty. Re-run `/daily-standup`."
+- **Selected task already `done`**: "Task #N is already done. Pick another or run `/daily-next` for the next pending task."
 - **Selected task `skipped`**: Allow picking it up — set status back to `in_progress`.
-- **Selected task `standby`**: Warn and stop. Tell user to `/unblock N` first.
+- **Selected task `standby`**: Warn and stop. Tell user to `/daily-unblock N` first.
 - **Jira API errors**: Show whatever context is available from the task file itself (`summary`, `context` fields), note that live data is unavailable.
 - **Multiple tasks `in_progress`**: List all in-progress tasks, ask which to continue or whether to start a new one.

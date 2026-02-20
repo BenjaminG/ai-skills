@@ -1,5 +1,5 @@
 ---
-name: standby
+name: daily-standby
 description: Put a task on standby when it's blocked or waiting on someone. This skill should be used when Benjamin says "standby", "waiting on", "put on hold", "blocked", "can't proceed", or needs to park a task that requires external input.
 argument-hint: "[task-id or JIRA-KEY] \"reason\""
 disable-model-invocation: true
@@ -29,8 +29,8 @@ Split `$ARGUMENTS` into an identifier and a reason:
 
 ```
 ⛔ A reason is required. What are you waiting on?
-   Example: /standby 3 "waiting on Claire's design review"
-   Example: /standby RGI-265 "needs data pipeline rerun"
+   Example: /daily-standby 3 "waiting on Claire's design review"
+   Example: /daily-standby RGI-265 "needs data pipeline rerun"
 ```
 
 **Stop here.**
@@ -45,7 +45,7 @@ Read today's task file:
 cat ~/.claude/daily-tasks/$(date +%Y-%m-%d).json 2>/dev/null
 ```
 
-If no file exists: "No task file for today. Run `/morning-standup` first." **Stop.**
+If no file exists: "No task file for today. Run `/daily-standup` first." **Stop.**
 
 Parse the JSON. Find the target task by numeric ID or `jira_key`.
 
@@ -56,8 +56,8 @@ If not found: "Task #N not found. Today has tasks 1-M." **Stop.**
 | Current status | Action |
 |----------------|--------|
 | `done` | Reject: "Task #N is already done. Can't put a completed task on standby." Stop. |
-| `skipped` | Reject: "Task #N was skipped. Use `/next N` to pick it up first." Stop. |
-| `standby` (no new reason) | Show current reason: "Task #N is already on standby. Waiting on: {waiting_on}. Use `/unblock N` to activate it, or re-run `/standby N \"new reason\"` to update the reason." Stop. |
+| `skipped` | Reject: "Task #N was skipped. Use `/daily-next N` to pick it up first." Stop. |
+| `standby` (no new reason) | Show current reason: "Task #N is already on standby. Waiting on: {waiting_on}. Use `/daily-unblock N` to activate it, or re-run `/daily-standby N \"new reason\"` to update the reason." Stop. |
 | `standby` (with new reason) | Update `waiting_on` and `paused_at` in place. Proceed. |
 | `pending` or `in_progress` | Proceed. |
 
@@ -92,27 +92,27 @@ Remaining:
 If any standby tasks exist (including the one just parked), add a line:
 
 ```
-⏸ N task(s) on standby — run /unblock to activate when ready
+⏸ N task(s) on standby — run /daily-unblock to activate when ready
 ```
 
 Suggest next actionable task:
 
 ```
 👉 Next up: Task #N ($JIRA_KEY) — $SUMMARY
-   Run /next to pick it up.
+   Run /daily-next to pick it up.
 ```
 
 If no actionable tasks remain:
 
 ```
 📭 No actionable tasks remaining.
-   ⏸ N task(s) on standby — run /unblock when unblocked, or /morning-standup to refresh.
+   ⏸ N task(s) on standby — run /daily-unblock when unblocked, or /daily-standup to refresh.
 ```
 
 ## Edge Cases
 
-- **`/standby` with no identifier and no `in_progress` task:** Ask for explicit ID. Stop.
-- **`/standby` on already-standby task with new reason:** Update `waiting_on` and `paused_at`. Confirm update.
-- **`/standby` on already-standby task without new reason:** Show current reason, suggest `/unblock`. Stop.
+- **`/daily-standby` with no identifier and no `in_progress` task:** Ask for explicit ID. Stop.
+- **`/daily-standby` on already-standby task with new reason:** Update `waiting_on` and `paused_at`. Confirm update.
+- **`/daily-standby` on already-standby task without new reason:** Show current reason, suggest `/daily-unblock`. Stop.
 - **Task ID doesn't exist:** "Task #N not found. Today has tasks 1-M."
 - **File write fails:** Report error, do not silently lose the update.

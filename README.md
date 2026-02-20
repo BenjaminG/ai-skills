@@ -6,6 +6,13 @@ Personal collection of Claude Code skills from `~/.claude/skills/`.
 
 | Skill | Description |
 |-------|-------------|
+| **Daily workflow** (`daily/`) | |
+| `daily-standup` | Morning standup — compile Jira/Slack priorities into a task list |
+| `daily-next` | Pick up next task and gather full context (Jira, Slack, GitHub) |
+| `daily-done` | Mark current task as done and show progress |
+| `daily-standby` | Park a blocked task with a required reason |
+| `daily-unblock` | Activate a standby task when its blocker is resolved |
+| **Other skills** | |
 | `applying-solid-principles` | SOLID principles and clean code practices |
 | `atlassian-cli-jira` | Jira management via acli |
 | `backend-developer` | TypeScript backend specialist (NestJS, APIs, databases) |

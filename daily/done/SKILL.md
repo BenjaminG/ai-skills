@@ -1,5 +1,5 @@
 ---
-name: done
+name: daily-done
 description: Mark the current or specified task as done in today's daily task list and show progress. This skill should be used when Benjamin says "done", "task complete", "finished", "mark done", or wants to mark a task as completed.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true
@@ -38,7 +38,7 @@ Parse the JSON.
 
 **If `$ARGUMENTS` is empty:** find the task with `status: "in_progress"`.
 - If multiple tasks are `in_progress`, list them and ask which one to complete.
-- If no task is `in_progress`: "No task currently in progress. Specify a task ID: `/done 3`"
+- If no task is `in_progress`: "No task currently in progress. Specify a task ID: `/daily-done 3`"
 - **Stop here** if unable to identify a single task.
 
 **Validation:**
@@ -90,14 +90,14 @@ Remaining:
 If any standby tasks exist, add a note:
 
 ```
-⏸ N task(s) on standby — run /unblock to activate when ready
+⏸ N task(s) on standby — run /daily-unblock to activate when ready
 ```
 
 Suggest the next task:
 
 ```
 👉 Next up: Task #N ($JIRA_KEY) — $SUMMARY
-   Run /next to pick it up, or /next M for a different task.
+   Run /daily-next to pick it up, or /daily-next M for a different task.
 ```
 
 ### 6. All Done State
@@ -111,7 +111,7 @@ If no pending or in-progress tasks remain (standby tasks don't count):
 ⏱️  Total tracked time: Xh Ym (sum of all tasks with started_at and completed_at)
 
 Consider:
-  - Running /morning-standup to refresh and check for new items
+  - Running /daily-standup to refresh and check for new items
   - Checking Jira backlog for new work
 ```
 
