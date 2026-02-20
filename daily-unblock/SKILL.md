@@ -1,5 +1,5 @@
 ---
-name: unblock
+name: daily-unblock
 description: Unblock a task on standby and bring it back to active status. This skill should be used when Benjamin says "unblock", "resume", "unpause", "pick back up", or when a blocked task's dependency has been resolved.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true

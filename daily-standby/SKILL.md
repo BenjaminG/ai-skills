@@ -1,5 +1,5 @@
 ---
-name: standby
+name: daily-standby
 description: Put a task on standby when it's blocked or waiting on someone. This skill should be used when Benjamin says "standby", "waiting on", "put on hold", "blocked", "can't proceed", or needs to park a task that requires external input.
 argument-hint: "[task-id or JIRA-KEY] \"reason\""
 disable-model-invocation: true
