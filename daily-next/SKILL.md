@@ -1,5 +1,5 @@
 ---
-name: daily-next
+name: next
 description: Pick up the next task from today's daily task list and gather full context for working on it. This skill should be used when Benjamin says "next", "next task", "what's next", "pick up task", "start task", or wants context for a specific task ID or Jira key.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true

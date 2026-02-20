@@ -1,5 +1,5 @@
 ---
-name: daily-done
+name: done
 description: Mark the current or specified task as done in today's daily task list and show progress. This skill should be used when Benjamin says "done", "task complete", "finished", "mark done", or wants to mark a task as completed.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true
