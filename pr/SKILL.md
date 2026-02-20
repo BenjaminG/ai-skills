@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Publish a pull request with automated type detection, Jira linking, PR templates, Slack review message, and quality gate.
+description: Publish a pull request with automated type detection, Jira linking, PR templates, and Slack review message.
 argument-hint: "[type] [JIRA-ID]"
 ---
 
@@ -320,7 +320,7 @@ Generate a brief, friendly message that includes the PR link using the template 
 3. Execute Step 1.6 (Jira detection) — optional, use if found
 4. Execute Steps 2-5 (branch, commit, push, create PR)
 5. **MANDATORY:** Complete Step 6 (generate and output Slack message)
-6. Confirm PR is ready: All steps completed, Slack message generated
+6. Confirm PR is ready: all steps completed, Slack message generated
 
 **Optional Arguments:** `/pr [type] [JIRA-ID]`
 - `/pr` — Auto-detect PR type, no Jira
@@ -329,10 +329,3 @@ Generate a brief, friendly message that includes the PR link using the template 
 - `/pr fix MITB-565` — Create fix PR with Jira ID
 - `/pr MITB-565` — Auto-detect type with Jira ID
 
-## 7. Run Quality Gate (AUTOMATIC)
-
-After completing Steps 1-6 (PR created and Slack message generated), automatically run the quality gate:
-
-Use the **Skill tool** to invoke `quality-gate`.
-
-This will run parallel reviews (React best practices, SOLID principles, Security, Code Simplification) on the PR changes, auto-fix non-nitpick issues, and present nitpicks for your review. Any fixes will be committed and pushed to the PR branch.
