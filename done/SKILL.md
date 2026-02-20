@@ -45,12 +45,14 @@ Parse the JSON.
 - If the selected task has `status: "done"`: "Task #N is already done."
 - If the selected task ID doesn't exist: "Task #N not found. Today has tasks 1-M."
 - If the selected task has `status: "pending"` (never started): Mark as done anyway, but note: "Task #N was never started — marking as done directly."
+- If the selected task has `status: "standby"`: Warn but proceed: "⚠️ Task #N is on standby (waiting on: {waiting_on}). Marking as done anyway."
 
 ### 3. Mark as Done
 
 Read the current task file, update the target task:
 - Set `status` to `"done"`
 - Set `completed_at` to current ISO timestamp (use `date -u +%Y-%m-%dT%H:%M:%SZ`)
+- Set `waiting_on` to `null` and `paused_at` to `null` (clean up any standby fields)
 - Update `updated_at` on the root object
 
 Write the updated JSON back using the **Write tool**.
@@ -77,7 +79,7 @@ Show overall progress:
 
 ### 5. Show Next Task
 
-List remaining pending tasks (compact, one line each):
+List remaining actionable tasks (`pending` or `in_progress` only — exclude `standby`):
 
 ```
 Remaining:
@@ -85,16 +87,22 @@ Remaining:
   #N. [TIER] $JIRA_KEY — $SUMMARY
 ```
 
+If any standby tasks exist, add a note:
+
+```
+⏸ N task(s) on standby — run /unblock to activate when ready
+```
+
 Suggest the next task:
 
 ```
 👉 Next up: Task #N ($JIRA_KEY) — $SUMMARY
-   Run /todo to pick it up, or /todo M for a different task.
+   Run /next to pick it up, or /next M for a different task.
 ```
 
 ### 6. All Done State
 
-If no pending or in-progress tasks remain:
+If no pending or in-progress tasks remain (standby tasks don't count):
 
 ```
 🎉 All tasks for today are done!
@@ -111,5 +119,6 @@ Consider:
 
 - **Multiple `in_progress` tasks, no argument**: List all in-progress tasks with IDs and ask which to complete. Do not guess.
 - **Task is `skipped`**: Allow marking as `done` — change status from `skipped` to `done`.
+- **Task is `standby`**: Warn about standby state but allow marking as `done`. Clear `waiting_on` and `paused_at`.
 - **File write fails**: Report error, do not silently lose the update.
 - **Concurrent modification**: Read-then-write is sufficient for single-user workflow. If the file was modified between read and write, the latest write wins.

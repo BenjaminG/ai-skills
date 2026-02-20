@@ -1,11 +1,11 @@
 ---
-name: todo
-description: Pick up a task from today's daily task list and gather full context for working on it. This skill should be used when Benjamin says "todo", "next task", "pick up task", or wants context for a specific task ID or Jira key.
+name: next
+description: Pick up the next task from today's daily task list and gather full context for working on it. This skill should be used when Benjamin says "next", "next task", "what's next", "pick up task", "start task", or wants context for a specific task ID or Jira key.
 argument-hint: "[task-id or JIRA-KEY]"
 disable-model-invocation: true
 ---
 
-# Todo — Pick Up Next Task
+# Next — Pick Up Next Task
 
 Load today's task list, select a task, gather deep context, mark it as in-progress, and present a structured briefing.
 
@@ -45,7 +45,7 @@ cat ~/.claude/daily-tasks/$(date +%Y-%m-%d).json 2>/dev/null
 Parse the JSON. Display a compact status summary:
 
 ```
-📋 Today's tasks: N total · N pending · N in_progress · N done
+📋 Today's tasks: N total · N pending · N in_progress · N standby · N done
 ```
 
 ### 2. Select Task
@@ -54,13 +54,19 @@ Parse the JSON. Display a compact status summary:
 
 **If `$ARGUMENTS` matches a Jira key pattern** (e.g., `RGI-265`, `MITB-599`): find the task with matching `jira_key`.
 
-**If `$ARGUMENTS` is empty:** select the first task with `status: "pending"`, scanning from id=1 upward. This respects tier priority since IDs are continuous across tiers (DO NOW items have lowest IDs).
+**If `$ARGUMENTS` is empty:** select the first task with `status: "pending"`, scanning from id=1 upward. This respects tier priority since IDs are continuous across tiers (DO NOW items have lowest IDs). **Skip tasks with `status: "standby"` during auto-selection.**
+
+**If the selected task has `status: "standby"`:** Warn and stop — do not allow picking up a standby task directly:
+```
+⏸️ Task #N ($KEY) is on standby. Waiting on: {waiting_on}
+   Run /unblock $N first to activate it, then /next $N to pick it up.
+```
 
 **If a task is already `in_progress`:**
 - Warn: "⚠️ Task #N (KEY) is already in progress."
 - Ask whether to continue with the in-progress task, or switch to the requested one.
 
-**If no pending tasks remain:** "All tasks done or in progress. Run `/done` to complete current task, or `/morning-standup` to refresh."
+**If no pending tasks remain:** "All tasks done, in progress, or on standby. Run `/done` to complete current task, `/unblock` to activate a standby task, or `/morning-standup` to refresh."
 
 ### 3. Gather Deep Context
 
@@ -71,7 +77,7 @@ For the selected task, fetch comprehensive context based on its source type.
 Fetch issue details, full comment history, and attachments in a single bash call:
 
 ```bash
-mkdir -p /tmp/todo-attachments
+mkdir -p /tmp/next-attachments
 key="$JIRA_KEY"
 echo "=== $key ==="
 acli jira workitem view $key --json 2>&1 | jq '{key: .key, status: .fields.status.name, priority: .fields.priority.name, assignee: .fields.assignee.displayName, summary: .fields.summary, description: .fields.description, labels: .fields.labels, created: .fields.created, updated: .fields.updated}'
@@ -89,7 +95,7 @@ acli jira workitem view $key --json 2>&1 | jq '.fields.issuelinks'
 ```bash
 curl -L -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   "https://hgdata.atlassian.net/rest/api/3/attachment/content/$ATTACHMENT_ID" \
-  --output "/tmp/todo-attachments/$KEY-$FILENAME"
+  --output "/tmp/next-attachments/$KEY-$FILENAME"
 ```
 
 - Use the **Read tool** to view each downloaded image (multimodal)
@@ -174,13 +180,14 @@ Adapt the briefing based on available data. Omit sections with no content. The "
 ### 6. Cleanup
 
 ```bash
-rm -rf /tmp/todo-attachments
+rm -rf /tmp/next-attachments
 ```
 
 ## Edge Cases
 
 - **Task file exists but is empty** (no tasks array): "Task list is empty. Re-run `/morning-standup`."
-- **Selected task already `done`**: "Task #N is already done. Pick another or run `/todo` for the next pending task."
+- **Selected task already `done`**: "Task #N is already done. Pick another or run `/next` for the next pending task."
 - **Selected task `skipped`**: Allow picking it up — set status back to `in_progress`.
+- **Selected task `standby`**: Warn and stop. Tell user to `/unblock N` first.
 - **Jira API errors**: Show whatever context is available from the task file itself (`summary`, `context` fields), note that live data is unavailable.
 - **Multiple tasks `in_progress`**: List all in-progress tasks, ask which to continue or whether to start a new one.

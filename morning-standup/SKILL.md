@@ -238,6 +238,7 @@ When a Jira issue has a matching open PR (matched by issue key in PR title or br
 | 🔄 UNBLOCK OTHERS | 🟡 | Own PRs with `CHANGES_REQUESTED` review decision (reviewers waiting on Benjamin); teammate PRs requesting Benjamin's review; watched issues where someone asked for input |
 | 🔨 IN PROGRESS | 🟠 | Items in active statuses (In Progress, In QA, In Review) waiting on external action (not currently blocked on Benjamin); own PRs awaiting review (`REVIEW_REQUIRED` with 0 reviews) |
 | 📋 UP NEXT | 🔴 ⬜ | Ready for Development, On Deck items. Use 🔴 for High priority, ⬜ for normal |
+| ⏳ WAITING | ⏸ | Tasks with `status === "standby"` from today's or yesterday's task file (carried over). Sort by `paused_at` ascending (longest-waiting first). These tasks are NOT shown in any other tier. |
 
 **Within each tier**, sort by: Jira priority (Blocker > Critical > High > Medium > Low), then by most recent activity.
 
@@ -250,7 +251,7 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  🌅  STANDUP — {date}                                       │
-│  Last sync: {previous_date} · {N} active · {N} new · {N} msg│
+│  Last sync: {previous_date} · {N} active · {N} new · {N} standby · {N} msg│
 └─────────────────────────────────────────────────────────────┘
 
 ⚡ DO NOW
@@ -275,8 +276,14 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
   7. ⬜ [KEY](url) — Summary
      └─ Brief context
 
+⏳ WAITING
+  8. ⏸ [KEY](url) — Summary
+     └─ Waiting on: {waiting_on} · standby Xh ago
+  9. ⏸ [KEY](url) — Summary
+     └─ Waiting on: {waiting_on} · standby 1d ago
+
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-🔔 Overnight: 🆕 KEY reason · ➡️ KEY old → new · ✅ KEY done
+🔔 Overnight: 🆕 KEY reason · ➡️ KEY old → new · ✅ KEY done · ⏸ KEY reason · ▶️ KEY
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
 🔍 Analysis: KEY (brief) · KEY (brief)
@@ -285,8 +292,9 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 ```
 
 **Header box rules:**
-- Summary counters: count items in active statuses, new items since last standup, pending Slack messages
+- Summary counters: count items in active statuses, new items since last standup, pending Slack messages, standby tasks
 - `Last sync: {date}` uses the most recent previous standup date. Omit if first standup.
+- Omit `{N} standby` from the header if zero standby tasks.
 
 **Context line (`└─`) rules:**
 - Every item MUST have a `└─` context line underneath
@@ -312,13 +320,15 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 
 **Overnight diff rules:**
 - Compact single-line format between `╌` dividers
-- Use emoji prefixes: 🆕 (new items), ➡️ (status changes), ✅ (completed/resolved), ⚠️ (stale 3+ standups)
+- Use emoji prefixes: 🆕 (new items), ➡️ (status changes), ✅ (completed/resolved), ⚠️ (stale 3+ standups), ⏸ (newly on standby), ▶️ (unblocked since last standup)
 - All changes on one line, separated by ` · `
 - Compare by Jira issue key and status from previous standup file
 - **Completed** = keys in previous standup but absent from today's data
 - **New** = keys in today's data but absent from previous standup
 - **Status Changes** = keys present in both with different status
 - **Stale** = keys with identical status across 3+ consecutive standups
+- **Newly standby** = keys that transitioned to `standby` since last standup — show as `⏸ KEY reason`
+- **Unblocked** = keys that transitioned from `standby` to active since last standup — show as `▶️ KEY`
 - Omit the entire overnight section if no previous standup exists
 
 **Footer section rules:**
@@ -384,7 +394,9 @@ mkdir -p ~/.claude/daily-tasks
       "source": "jira",
       "started_at": null,
       "completed_at": null,
-      "carried_from": null
+      "carried_from": null,
+      "waiting_on": null,
+      "paused_at": null
     }
   ]
 }
@@ -393,9 +405,10 @@ mkdir -p ~/.claude/daily-tasks
 **Merge logic — if `~/.claude/daily-tasks/YYYY-MM-DD.json` already exists (re-run):**
 
 1. Read the existing task file
-2. Build a lookup map: `jira_key → {status, started_at, completed_at}` for all existing tasks
-3. For each new task being generated: if its `jira_key` matches an existing task, carry over `status`, `started_at`, `completed_at` from the existing entry
-4. This prevents losing in-progress/done state when re-running standup mid-day
+2. Build a lookup map: `jira_key → {status, started_at, completed_at, waiting_on, paused_at}` for all existing tasks
+3. For each new task being generated: if its `jira_key` matches an existing task, carry over `status`, `started_at`, `completed_at`, `waiting_on`, `paused_at` from the existing entry
+4. Tasks with `status === "standby"` are routed to the `⏳ WAITING` tier regardless of what Jira reports for their status
+5. This prevents losing in-progress/done/standby state when re-running standup mid-day
 
 **Carry-over from previous day:**
 
@@ -406,6 +419,7 @@ cat ~/.claude/daily-tasks/$(date -v-1d +%Y-%m-%d).json 2>/dev/null
 
 For tasks that appeared in yesterday's file and reappear today (matched by `jira_key`):
 - Set `carried_from` to yesterday's date string
+- If yesterday's task had `status === "standby"`, carry over `standby` status, `waiting_on`, and `paused_at` intact — the task is still blocked
 
 Write the JSON file using the **Write tool** to `~/.claude/daily-tasks/YYYY-MM-DD.json`.
 
