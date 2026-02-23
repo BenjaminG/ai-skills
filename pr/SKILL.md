@@ -287,14 +287,14 @@ Generate a brief, friendly message that includes the PR link using the template 
 
 | PR Type | Template |
 |---------|----------|
-| **fix** | Fixed **[issue summary]** — would appreciate a review: [PR-URL] |
-| **feature** | New feature: **[feature name]** ready for review! [PR-URL] |
-| **chore** | Maintenance update: **[what was updated]** needs review: [PR-URL] |
-| **refactor** | Code refactor for **[area/component]** — feedback welcome: [PR-URL] |
-| **docs** | Documentation updated: **[what changed]** [PR-URL] |
-| **test** | Added test coverage for **[feature/area]**: [PR-URL] |
-| **perf** | Performance improvement in **[area]** ready for review: [PR-URL] |
-| **style** | Code style/formatting updates applied: [PR-URL] |
+| **fix** | :wrench: Fixed **[issue summary]** — would appreciate a review: [PR-URL] |
+| **feature** | :rocket: New feature: **[feature name]** ready for review! [PR-URL] |
+| **chore** | :broom: Maintenance update: **[what was updated]** needs review: [PR-URL] |
+| **refactor** | :recycle: Code refactor for **[area/component]** — feedback welcome: [PR-URL] |
+| **docs** | :books: Documentation updated: **[what changed]** [PR-URL] |
+| **test** | :test_tube: Added test coverage for **[feature/area]**: [PR-URL] |
+| **perf** | :zap: Performance improvement in **[area]** ready for review: [PR-URL] |
+| **style** | :art: Code style/formatting updates applied: [PR-URL] |
 
 **Action:**
 1. Select the appropriate template based on the PR type from the table
