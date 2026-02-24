@@ -176,8 +176,8 @@ From the results:
 - Note PR age using `createdAt` field
 - **Classify each non-draft PR by review state for tier routing:**
   - `CHANGES_REQUESTED` → UNBLOCK OTHERS (reviewers waiting on Benjamin)
-  - `REVIEW_REQUIRED` with 0 reviews → IN PROGRESS with "⏸ Awaiting review"
-  - `APPROVED` → IN PROGRESS or DO NOW (ready to merge)
+  - `REVIEW_REQUIRED` with 0 reviews → MONITORING footer (Benjamin is waiting, no action needed)
+  - `APPROVED` → IN PROGRESS (ready to merge — Benjamin needs to act)
 
 ### 5. Validate Slack Items Against Jira
 
@@ -236,9 +236,29 @@ When a Jira issue has a matching open PR (matched by issue key in PR title or br
 |------|-------|----------|
 | ⚡ DO NOW | 💬 🔴 | Unresponded Slack @mentions; items reopened/escalated by priority users (Claire, Matthieu); Blocker/Urgent priority; items explicitly requested same-day |
 | 🔄 UNBLOCK OTHERS | 🟡 | Own PRs with `CHANGES_REQUESTED` review decision (reviewers waiting on Benjamin); teammate PRs requesting Benjamin's review; watched issues where someone asked for input |
-| 🔨 IN PROGRESS | 🟠 | Items in active statuses (In Progress, In QA, In Review) waiting on external action (not currently blocked on Benjamin); own PRs awaiting review (`REVIEW_REQUIRED` with 0 reviews) |
+| 🔨 IN PROGRESS | 🟠 | Items with Jira status "In Progress" where Benjamin is actively working (not blocked, not waiting on others). PRs with `APPROVED` review decision ready to merge. |
 | 📋 UP NEXT | 🔴 ⬜ | Ready for Development, On Deck items. Use 🔴 for High priority, ⬜ for normal |
 | ⏳ WAITING | ⏸ | Tasks with `status === "standby"` from today's or yesterday's task file (carried over). Sort by `paused_at` ascending (longest-waiting first). These tasks are NOT shown in any other tier. |
+
+**Monitoring (not a tier — compact footer section):**
+
+Items Benjamin has handed off. These are NOT numbered and appear as a single compact footer line.
+
+| Jira Status | Routes to MONITORING when... | Escalates back when... |
+|-------------|------------------------------|----------------------|
+| In QA | No comments mentioning Benjamin in last 24h | QA comment mentions Benjamin, or test failure needs dev fix |
+| Ready For QA | No pending questions directed at Benjamin | Priority user asks about status |
+| In Review | No review comments directed at Benjamin | Reviewer requests changes or asks question |
+| Blocked by X | Blocker is NOT assigned to Benjamin | Blocker assigned to Benjamin or resolved |
+
+Own PRs with `REVIEW_REQUIRED` / 0 reviews also route to MONITORING (not IN PROGRESS).
+
+**Escalation check:** During step 7, for each item that would route to MONITORING, scan the issue's comments (already fetched in step 2) for:
+1. Comments from the last 24 hours that @mention Benjamin or ask a direct question
+2. Subtasks assigned to Benjamin that are not Done
+3. The issue being reassigned back to Benjamin after being with QA/reviewer
+
+If any escalation trigger fires, route the item to the appropriate action tier instead (see table above).
 
 **Within each tier**, sort by: Jira priority (Blocker > Critical > High > Medium > Low), then by most recent activity.
 
@@ -251,7 +271,7 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  🌅  STANDUP — {date}                                       │
-│  Last sync: {previous_date} · {N} active · {N} new · {N} standby · {N} msg│
+│  Last sync: {previous_date} · {N} action · {N} monitoring · {N} standby · {N} msg│
 └─────────────────────────────────────────────────────────────┘
 
 ⚡ DO NOW
@@ -268,7 +288,7 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 
 🔨 IN PROGRESS
   5. 🟠 [KEY](url) — Summary                     ⌥ [PR #N](gh-url)
-     └─ ⏸ Awaiting review · N days old
+     └─ Active work context / ready to merge
 
 📋 UP NEXT
   6. 🔴 [KEY](url) — Summary                    High
@@ -286,15 +306,19 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 🔔 Overnight: 🆕 KEY reason · ➡️ KEY old → new · ✅ KEY done · ⏸ KEY reason · ▶️ KEY
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
+👀 Monitoring: KEY (brief) · KEY ⌥#N (brief) · KEY (brief) ...
 🔍 Analysis: KEY (brief) · KEY (brief)
 📦 Backlog: KEY (brief) · KEY (brief)
 🧹 Stale PRs: #N(Nd) #N(Nd) ...
 ```
 
 **Header box rules:**
-- Summary counters: count items in active statuses, new items since last standup, pending Slack messages, standby tasks
+- `{N} action` = count of items in DO NOW + UNBLOCK OTHERS + IN PROGRESS + UP NEXT (things requiring Benjamin's involvement)
+- `{N} monitoring` = count of items in the MONITORING footer (handed off, no action needed)
+- `{N} standby` = count of items in WAITING tier
+- `{N} msg` = pending Slack messages
 - `Last sync: {date}` uses the most recent previous standup date. Omit if first standup.
-- Omit `{N} standby` from the header if zero standby tasks.
+- Omit `{N} standby` from the header if zero standby tasks. Omit `{N} monitoring` if zero.
 
 **Context line (`└─`) rules:**
 - Every item MUST have a `└─` context line underneath
@@ -313,8 +337,8 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 - Mark draft PRs explicitly with "(draft)"
 - **Route Benjamin's PRs by review state:**
   - `CHANGES_REQUESTED` → 🔄 UNBLOCK OTHERS (reviewers waiting on Benjamin to address feedback)
-  - `REVIEW_REQUIRED` / 0 reviews → 🔨 IN PROGRESS, annotated with "⏸ Awaiting review"
-  - `APPROVED` but not merged → 🔨 IN PROGRESS or ⚡ DO NOW (ready to merge)
+  - `REVIEW_REQUIRED` / 0 reviews → 👀 MONITORING footer (Benjamin is waiting, no action needed)
+  - `APPROVED` but not merged → 🔨 IN PROGRESS (ready to merge — Benjamin needs to act)
 - Teammate PRs requesting Benjamin's review go in the 🔄 UNBLOCK OTHERS tier
 - Benjamin's open PRs that don't match any Jira issue go in the 🧹 Stale PRs footer line
 
@@ -332,8 +356,12 @@ Construct links for every issue key as `[KEY](https://hgdata.atlassian.net/brows
 - Omit the entire overnight section if no previous standup exists
 
 **Footer section rules:**
-- 🔍 Analysis, 📦 Backlog, 🧹 Stale PRs are compact single-line lists
+- 👀 Monitoring, 🔍 Analysis, 📦 Backlog, 🧹 Stale PRs are compact single-line lists
 - Format: `emoji Label: KEY (brief) · KEY (brief)`
+- **Monitoring line format:** `👀 Monitoring: KEY (brief status) · KEY ⌥#N (brief) · ...`
+  - Each entry: issue key, optional `⌥#N` for linked PR, parenthetical status (~15 chars max)
+  - Sort: In Review → In QA → Ready For QA (closest to done first)
+  - If > 8 items: show first 6 + `+N more`
 - Stale PRs use `#N(Nd)` format showing PR number and age in days
 - Omit any footer line with no items
 
@@ -365,7 +393,7 @@ mkdir -p ~/.claude/daily-tasks
 
 1. For each numbered item (1..N), extract:
    - Item number → `id`
-   - Tier header above it → `tier` (map: `⚡ DO NOW` → `"do_now"`, `🔄 UNBLOCK OTHERS` → `"unblock_others"`, `🔨 IN PROGRESS` → `"in_progress"`, `📋 UP NEXT` → `"up_next"`)
+   - Tier header above it → `tier` (map: `⚡ DO NOW` → `"do_now"`, `🔄 UNBLOCK OTHERS` → `"unblock_others"`, `🔨 IN PROGRESS` → `"in_progress"`, `📋 UP NEXT` → `"up_next"`, `👀 Monitoring` footer → `"monitoring"`)
    - Jira key from `[KEY](url)` pattern → `jira_key`, `jira_url`
    - Summary text after the em dash → `summary`
    - Context line (the `└─` line) → `context`
@@ -373,6 +401,8 @@ mkdir -p ~/.claude/daily-tasks
    - Source: items with `jira_key` → `"jira"`, Slack-only items → `"slack"`, PR-only items → `"github"`
 
 2. Items without a Jira key (e.g., Slack @mentions, PR review requests) should still be included with `jira_key: null`.
+
+3. For monitoring items (from the `👀 Monitoring:` footer line): parse the line, split by ` · `, and create task entries with `tier: "monitoring"`. The `context` field gets the parenthetical text. The `summary` comes from the Jira data already fetched in step 2.
 
 **JSON schema:**
 
