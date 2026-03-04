@@ -74,17 +74,22 @@ acli jira workitem search --jql 'project = MITB AND assignee = "712020:30e7c6ae-
 
 **For each issue returned**, fetch details, full comments, and attachments to build comprehensive context.
 
-**Important:** Fetch all issue data in a **single Bash call using a loop** rather than individual parallel calls, to avoid cascading failures when one call errors:
+**Important:** Fetch all issue data in a **loop** rather than individual parallel calls, to avoid cascading failures when one call errors. First, create the attachments directory:
 
 ```bash
 mkdir -p /tmp/standup-attachments
+```
+
+Then fetch details for each issue:
+
+```bash
 for key in KEY1 KEY2 KEY3; do
   echo "=== $key ==="
-  acli jira workitem view $key --json 2>&1 | jq '{key: .key, status: .fields.status.name, priority: .fields.priority.name, assignee: .fields.assignee.displayName, summary: .fields.summary}'
+  acli jira workitem view "$key" --json 2>&1
   echo "--- comments ---"
-  acli jira workitem comment list --key $key --json 2>&1
+  acli jira workitem comment list --key "$key" --json 2>&1
   echo "--- attachments ---"
-  acli jira workitem attachment list --key $key --json 2>&1
+  acli jira workitem attachment list --key "$key" --json 2>&1
   echo
 done
 ```
@@ -128,7 +133,7 @@ For each watched issue returned:
 - Fetch the last 3 comments to understand what changed:
 
 ```bash
-acli jira workitem comment list --key <KEY> --json 2>&1 | jq -r '.comments[-3:] | .[] | "[\(.author.displayName)] \(.body)"'
+acli jira workitem comment list --key <KEY> --json 2>&1
 ```
 
 From the results, determine if Benjamin needs to act:
