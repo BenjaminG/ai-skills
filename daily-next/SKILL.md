@@ -74,19 +74,24 @@ For the selected task, fetch comprehensive context based on its source type.
 
 **3a. Jira context** (if task has a `jira_key`):
 
-Fetch issue details, full comment history, and attachments in a single bash call:
+Fetch issue details, full comment history, and attachments. First, create the attachments directory:
 
 ```bash
 mkdir -p /tmp/next-attachments
+```
+
+Then fetch all context:
+
+```bash
 key="$JIRA_KEY"
 echo "=== $key ==="
-acli jira workitem view $key --json 2>&1 | jq '{key: .key, status: .fields.status.name, priority: .fields.priority.name, assignee: .fields.assignee.displayName, summary: .fields.summary, description: .fields.description, labels: .fields.labels, created: .fields.created, updated: .fields.updated}'
+acli jira workitem view "$key" --json 2>&1
 echo "--- comments ---"
-acli jira workitem comment list --key $key --json 2>&1
+acli jira workitem comment list --key "$key" --json 2>&1
 echo "--- attachments ---"
-acli jira workitem attachment list --key $key --json 2>&1
+acli jira workitem attachment list --key "$key" --json 2>&1
 echo "--- links ---"
-acli jira workitem view $key --json 2>&1 | jq '.fields.issuelinks'
+acli jira workitem view "$key" --json 2>&1
 ```
 
 **Download recent image attachments** (max 3, most recent first):
