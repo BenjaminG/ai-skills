@@ -50,8 +50,9 @@ Each task `description` MUST include:
 4. The classification rules (see below)
 5. The required output format (see below)
 6. Instruction: **Do NOT modify any files. Report findings only.**
-7. Instruction: Send findings to the lead via `SendMessage` with `type: "message"` and `recipient: "lead"`
-8. Instruction: Mark task completed via `TaskUpdate` with `status: "completed"` after sending findings
+7. Instruction: Write the full findings to `/tmp/quality-gate-findings-<reviewer-name>.md` using the Write tool (e.g. `/tmp/quality-gate-findings-solid-reviewer.md`)
+8. Instruction: Send a brief "done" notification to the lead via `SendMessage` with `type: "message"` and `recipient: "lead"` (the lead will read findings from the file, no need to include full findings in the message)
+9. Instruction: Mark task completed via `TaskUpdate` with `status: "completed"` after sending findings
 
 | Task | subject | activeForm | Skill command & instructions |
 |------|---------|------------|------------------------------|
@@ -77,8 +78,9 @@ Each teammate's prompt must instruct them to:
 1. Check `TaskList` and claim their assigned task via `TaskUpdate` with `status: "in_progress"` and `owner: "<their-name>"`
 2. Invoke the designated skill via the `Skill` tool with the review instructions
 3. Format findings per the output format below
-4. Send findings to the lead via `SendMessage` with `type: "message"`, `recipient: "lead"`, and `summary: "<reviewer-name> findings"`
-5. Mark task completed via `TaskUpdate` with `status: "completed"`
+4. Write the full formatted findings to `/tmp/quality-gate-findings-<their-name>.md` using the Write tool (e.g. `/tmp/quality-gate-findings-solid-reviewer.md`)
+5. Send a brief "done" notification to the lead via `SendMessage` with `type: "message"`, `recipient: "lead"`, and `summary: "<reviewer-name> done — findings written to /tmp/quality-gate-findings-<their-name>.md"`
+6. Mark task completed via `TaskUpdate` with `status: "completed"`
 
 ### 2d. Assign Tasks
 
@@ -119,11 +121,23 @@ If no issues at all, return: `No issues found.`
 
 ### 3a. Collect Results
 
-Monitor `TaskList` until all review tasks reach `completed` status. Findings arrive automatically via `SendMessage` from each teammate.
+Monitor `TaskList` until all review tasks reach `completed` status. Once all tasks are `completed`, read findings from each reviewer's output file using the Read tool:
+
+- `/tmp/quality-gate-findings-solid-reviewer.md`
+- `/tmp/quality-gate-findings-security-reviewer.md`
+- `/tmp/quality-gate-findings-simplify-reviewer.md`
+- `/tmp/quality-gate-findings-slop-cleaner.md`
+- `/tmp/quality-gate-findings-react-reviewer.md` (if spawned)
+
+Do NOT rely on `SendMessage` content for findings — those are "done" pings only. The files are the source of truth.
 
 ### 3b. Shut Down Team
 
-Send `SendMessage` with `type: "shutdown_request"` to each teammate. After all teammates confirm shutdown, call `TeamDelete`.
+Send `SendMessage` with `type: "shutdown_request"` to each teammate. After all teammates confirm shutdown, call `TeamDelete`. Then clean up temp files:
+
+```bash
+rm -f /tmp/quality-gate-findings-*.md
+```
 
 ### 3c. Consolidate
 
