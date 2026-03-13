@@ -62,11 +62,20 @@ Activity logs to stderr, final output to stdout.
 codex exec "Review code for type errors" -o review-report.txt
 ```
 
-**JSON Streaming for Monitoring**
+**JSON Streaming (JSONL to stdout)**
 ```bash
 codex exec --json "Comprehensive security audit" 2>&1 | tee audit-log.jsonl
 ```
-Captures events: `turn.started`, `command_execution`, `file_change`, etc.
+With `--json`, stdout becomes a JSONL stream of every event (stderr retains progress output). Events include `thread.started`, `turn.started`, `turn.completed`, `item.started`, `item.completed`, and `error`. Item types: `agent_message`, `command_execution`, `file_change`, `reasoning`, `mcp_tool_call`, `web_search`, `plan_update`.
+
+Filter specific events:
+```bash
+# Extract only agent messages
+codex exec --json "<task>" | jq 'select(.type == "item.completed" and .item.type == "agent_message")'
+
+# Track token usage per turn
+codex exec --json "<task>" | jq 'select(.type == "turn.completed") | .usage'
+```
 
 **Structured Schema Output**
 ```bash
@@ -76,7 +85,7 @@ Enforces specific JSON structure for automation pipelines.
 
 ### 3. Session-Based Workflows
 
-Maintain context across multiple related tasks:
+Sessions are persisted to disk by default, enabling resume across invocations and environments.
 
 ```bash
 # Initial analysis
@@ -90,7 +99,24 @@ codex exec resume --last "Now identify performance bottlenecks in the identified
 codex exec resume session_abc123 "Generate refactoring recommendations"
 ```
 
-**Note:** Behavior flags must be re-specified on resume (e.g., --full-auto).
+**Taking over a non-interactive session:**
+Resume a session started elsewhere (e.g., CI pipeline) from your local machine:
+```bash
+# In CI: run analysis, capture session ID from output
+SESSION_ID=$(codex exec --json "Audit dependencies for vulnerabilities" 2>/dev/null | jq -r 'select(.type=="thread.started") | .session_id')
+
+# Locally: take over with full context preserved
+codex exec resume "$SESSION_ID" "Fix the critical vulnerabilities you found" --full-auto
+```
+
+**Ephemeral sessions** — use `--ephemeral` to skip persisting session data to disk (useful for one-shot CI tasks that won't be resumed):
+```bash
+codex exec --ephemeral "Generate test coverage report" -o coverage.md
+```
+
+**Notes:**
+- Behavior flags (--full-auto, --sandbox, etc.) must be re-specified on resume
+- Session data is stored locally; cross-machine resume requires shared storage or transferring session files
 
 ### 4. Automation Integration
 

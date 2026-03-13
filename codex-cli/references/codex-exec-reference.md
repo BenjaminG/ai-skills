@@ -51,12 +51,43 @@ codex exec "<task>" --output-last-message output.txt
 ```bash
 codex exec --json "<task>"
 ```
-Produces JSON Lines (JSONL) format with events:
-- `thread.started`, `turn.started`, `turn.completed`, `turn.failed`
-- `item.started`, `item.updated`, `item.completed`
-- Error events with details
 
-Item types: `agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `web_search`, `todo_list`
+With `--json`, stdout becomes a JSONL stream of every event Codex emits. Stderr continues to show streaming progress.
+
+**Event types:**
+
+| Event | Description | Key Fields |
+|---|---|---|
+| `thread.started` | Session begins | `thread_id` |
+| `turn.started` | Agent turn begins | — |
+| `turn.completed` | Turn ends | `usage` (`input_tokens`, `cached_input_tokens`, `output_tokens`) |
+| `turn.failed` | Turn error | error details |
+| `item.started` | Item begins processing | `item` (`id`, `type`, `status`) |
+| `item.completed` | Item finishes | `item` (`id`, `type`, type-specific fields) |
+| `error` | General error | error details |
+
+**Item types:** `agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `web_search`, `plan_update`
+
+**Example stream:**
+```jsonl
+{"type":"thread.started","thread_id":"0199a213-81c0-7800-8aa1-bbab2a035a53"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Repo contains docs, sdk, and examples directories."}}
+{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122}}
+```
+
+**Filtering with jq:**
+```bash
+# Only agent messages
+codex exec --json "<task>" | jq 'select(.type == "item.completed" and .item.type == "agent_message")'
+
+# Token usage per turn
+codex exec --json "<task>" | jq 'select(.type == "turn.completed") | .usage'
+
+# Command executions only
+codex exec --json "<task>" | jq 'select(.item.type == "command_execution")'
+```
 
 ### Structured Output with Schema
 ```bash
@@ -68,6 +99,8 @@ codex exec "<task>" --output-schema ~/schema.json
 
 ## Session Management
 
+Sessions are persisted to disk by default, making every non-interactive run resumable.
+
 ### Resume Previous Sessions
 ```bash
 # Resume last session
@@ -77,10 +110,28 @@ codex exec resume --last "<follow-up task>"
 codex exec resume <SESSION_ID> "<follow-up task>"
 ```
 
+### Ephemeral Sessions
+Prevent session persistence for one-shot tasks:
+```bash
+codex exec --ephemeral "<task>"
+```
+
+### Taking Over Non-Interactive Sessions
+Resume a session started in a different context (e.g., CI → local):
+```bash
+# CI pipeline captures session ID from JSON stream
+SESSION_ID=$(codex exec --json "<task>" 2>/dev/null | \
+  jq -r 'select(.type=="thread.started") | .session_id')
+
+# Local machine resumes with full conversation context
+codex exec resume "$SESSION_ID" "<follow-up task>" --full-auto
+```
+
 **Important Notes:**
 - Conversation context persists across resumed sessions
-- Behavior flags (--full-auto, --sandbox, etc.) must be re-specified
-- Each invocation is independent for permission settings
+- Behavior flags (--full-auto, --sandbox, etc.) must be re-specified on each invocation
+- Session data is stored locally; cross-machine resume requires shared/transferred session files
+- Use `--ephemeral` to opt out of persistence for disposable runs
 
 ## Environment and Requirements
 
