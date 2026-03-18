@@ -1,7 +1,7 @@
 ---
 name: investigate
 description: Fetch and review details about a task from Jira.
-argument-hint: "[JIRA-KEY]"
+argument-hint: "[JIRA-KEY or URL]"
 disable-model-invocation: true
 ---
 
