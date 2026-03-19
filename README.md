@@ -14,7 +14,7 @@ Personal collection of Claude Code skills from `~/.claude/skills/`.
 | `daily-unblock` | Activate a standby task when its blocker is resolved |
 | **Other skills** | |
 | `applying-solid-principles` | SOLID principles and clean code practices |
-| `atlassian-cli-jira` | Jira management via acli |
+| `acli` | Jira management via acli |
 | `backend-developer` | TypeScript backend specialist (NestJS, APIs, databases) |
 | `codex-cli` | OpenAI Codex CLI for automated code analysis |
 | `confluence-cli` | Confluence content management via CLI |

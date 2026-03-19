@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 ## 1. Fetch Task Details from Jira
-Use /atlassian-cli-jira skill to retrieve and review details about a task from Jira.
+Use /acli skill to retrieve and review details about a task from Jira.
 Fetch the task's description, status, assignee, attachments, linked issues, and any relevant comments to understand its context and current state.
 
 ## 2. Fetch previous work and conversations

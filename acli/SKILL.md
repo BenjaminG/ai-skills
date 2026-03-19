@@ -1,5 +1,5 @@
 ---
-name: atlassian-cli-jira
+name: acli
 description: Use Atlassian CLI (acli) to manage Jira work items, projects, and workflows from the command line. Ideal for bulk operations, automation, scripting, and when users request CLI-based Jira interactions. Trigger on requests like "use Jira CLI", "create Jira issues via CLI", "bulk update Jira tickets", "automate Jira workflows", or when users want to script Jira operations.
 ---
 

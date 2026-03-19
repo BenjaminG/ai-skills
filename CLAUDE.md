@@ -53,5 +53,5 @@ cp -r ~/Dev/ai-skills/* ~/.claude/skills/
 - **Daily workflow** (`daily-*`): Standup compilation, task tracking, Jira/Slack integration. Uses `~/.claude/standups/` and `~/.claude/daily-tasks/` for persistence.
 - **Code quality** (`quality-gate`, `code-slop`, `applying-solid-principles`): Review and auto-fix workflows using agent teams.
 - **Developer tools** (`pr`, `hooks`, `commit`): Git/GitHub automation.
-- **CLI integrations** (`atlassian-cli-jira`, `confluence-cli`, `codex-cli`): Wrappers for external CLI tools.
+- **CLI integrations** (`acli`, `confluence-cli`, `codex-cli`): Wrappers for external CLI tools.
 - **Specialist agents** (`backend-developer`, `frontend-developer`, `madai-investigator`): Domain-specific subagent definitions.
