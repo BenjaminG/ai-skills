@@ -224,6 +224,12 @@ acli jira workitem edit \
   --jql "project = TEAM AND sprint = 'Sprint 10'" \
   --description-file "sprint-goals.adf.json"
 
+# Edit labels (note: --labels plural, not --label)
+acli jira workitem edit --key "KEY-1,KEY-2" --labels "frontend,backend"
+
+# Remove specific labels
+acli jira workitem edit --key "KEY-1" --remove-labels "deprecated"
+
 # From JSON for complex updates
 acli jira workitem edit --generate-json  # Generate template
 acli jira workitem edit --from-json "update.json"
@@ -237,6 +243,8 @@ acli jira workitem edit --from-json "update.json"
 - `--description`: Update description (plain text or ADF)
 - `--description-file`: Read description from file (plain text or ADF)
 - `--assignee`: Change assignee (use '@me' for self, 'default' for project default)
+- `--labels` / `-l`: Edit labels (comma-separated). **Note: plural, unlike `--label` in create**
+- `--remove-labels`: Remove specific labels
 - `--yes`: Skip confirmation (use with caution)
 
 ### Transition Work Items
@@ -1505,6 +1513,40 @@ acli jira workitem --help
 
 # Specific command help
 acli jira workitem create --help
+```
+
+## Gotchas
+
+### `--label` vs `--labels` (edit ≠ create)
+
+`create` and `edit` use different flag names for labels:
+
+| Command | Flag | Type |
+|---------|------|------|
+| `workitem create` | `--label` (singular) | strings |
+| `workitem edit` | `--labels` (plural) | string |
+| `workitem edit` | `--remove-labels` | string |
+
+Using `--label` with `edit` produces `unknown flag: --label`.
+
+```bash
+# ✗ WRONG — --label is not a flag on edit
+acli jira workitem edit --key "KEY-1" --label "my-label" --yes
+
+# ✓ CORRECT — use --labels (plural)
+acli jira workitem edit --key "KEY-1" --labels "my-label" --yes
+```
+
+### Prefer comma-separated `--key` over shell loops
+
+`--key` accepts comma-separated values. Use that instead of looping:
+
+```bash
+# ✗ Slower, noisier
+for key in KEY-1 KEY-2 KEY-3; do acli jira workitem edit --key "$key" --labels "foo" --yes; done
+
+# ✓ Single API-efficient call
+acli jira workitem edit --key "KEY-1,KEY-2,KEY-3" --labels "foo" --yes
 ```
 
 ## Important Notes
