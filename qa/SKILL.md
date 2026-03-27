@@ -2,9 +2,11 @@
 name: qa
 description: >-
   Generate a GitHub issue with manual QA test scenarios from code changes.
+  Focuses on scenarios requiring manual verification, excluding what's
+  automatable via unit/integration tests.
   Accepts a commit hash (diff to HEAD), number of commits ("last N" or bare number),
   or PR number (#123). Creates a structured checklist grouped by feature area with
-  steps, expected results, edge cases, and negative tests.
+  steps, expected results, and edge cases.
   This skill should be used when asked to create QA plans, test checklists, or
   manual test cases for code changes.
 argument-hint: "[commit-hash | N | last N | #PR-number]"
@@ -76,7 +78,7 @@ Prompt: Read each changed file in full (not just diff hunks). For each file iden
 ### Agent 2: `dependency-tracer`
 Prompt: For each changed file, trace callers and consumers using Grep and Read. Identify:
 - Which UI screens, components, or flows consume the changed code
-- What existing tests cover the changed code
+- What existing tests cover the changed code (unit, integration, e2e) and what testing patterns/frameworks the project uses
 - What config changes, new env vars, or migrations are in the diff
 - What new dependencies were added (package.json, requirements.txt, etc.)
 - What feature flags or permission changes are present
@@ -85,21 +87,33 @@ Provide both agents with the changed file list and commit log from Step 2.
 
 ## Step 4: Generate QA Plan
 
-Synthesize the exploration findings into a structured QA plan. Follow these rules:
+Synthesize the exploration findings into a structured QA plan. This plan targets **manual-only scenarios** — things that require human eyes, real environments, or multi-step user interaction to verify.
+
+**Exclusion filter — do NOT include scenarios that are:**
+- Pure logic/computation (unit-testable)
+- Input validation & boundary values for individual fields (unit-testable)
+- Individual API endpoint request/response correctness (integration-testable)
+- Database CRUD correctness (integration-testable)
+- Error handling for specific error codes/messages (unit-testable)
+- Permission checks on individual endpoints (integration-testable)
+
+If the dependency-tracer found existing automated test coverage for a behavior, exclude it.
 
 **Grouping:** Cluster changes by feature area. Derive areas from directory structure, component/module boundaries, API route groups, or file naming patterns.
 
-**For each feature area, generate:**
-1. **Happy-path scenarios** — the intended behavior of the change
-2. **Negative tests** — invalid inputs, unauthorized access, missing data
-3. **Boundary conditions** — edge values, empty states, max limits, concurrent operations
-4. **Error states** — network failures, timeouts, graceful degradation
-5. **Permission checks** — if auth-related code changed, test role boundaries
+**For each feature area, generate scenarios in these categories:**
+1. **User flows & interactions** — multi-step workflows, navigation paths, form submission sequences spanning multiple components/pages
+2. **Visual & layout** — UI rendering, responsive behavior, content overflow, visual regressions, animation/transition correctness
+3. **Cross-system integration** — behavior across service boundaries, third-party integrations, webhook flows, real external API behavior
+4. **State & data consistency** — race conditions, concurrent user actions, stale data, cache invalidation, optimistic update rollbacks
+5. **Environment-specific behavior** — browser/device differences, network conditions (slow/offline), timezone/locale effects, feature flag combinations
+
+Only include categories relevant to the changes — omit empty categories.
 
 **Additionally generate:**
 - **Prerequisites** — inferred from config changes: env vars, migrations, feature flags, required access/roles, test data setup
-- **Regression checks** — existing behavior that must remain unchanged, derived from dependency-tracer findings
-- **Error handling** — graceful failure scenarios
+- **Regression checks** — user-visible regressions only (not internal correctness already covered by automated tests)
+- **Error handling** — graceful degradation visible to the user (not API error codes or programmatic error responses)
 
 ## Step 5: Create GitHub Issue
 
