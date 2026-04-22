@@ -1,7 +1,7 @@
 ---
 name: pr
-description: Publish a pull request with automated type detection, Jira linking, PR templates, and Slack review message.
-argument-hint: "[type] [JIRA-ID]"
+description: Publish a pull request with automated type detection, Linear/Jira linking, PR templates, and Slack review message.
+argument-hint: "[type] [ISSUE-ID]"
 ---
 
 # Publish PR
@@ -10,11 +10,12 @@ argument-hint: "[type] [JIRA-ID]"
 
 Publish a pull request by following this automated workflow.
 
-**Arguments:** `$0` = `[type] [JIRA-ID]` (both optional)
-- `/pr` — auto-detect type, no Jira
-- `/pr fix` — fix PR, no Jira
-- `/pr fix MITB-565` — fix PR with Jira
-- `/pr MITB-565` — auto-detect type with Jira (detected via `[A-Z]+-\d+` pattern)
+**Arguments:** `$0` = `[type] [ISSUE-ID]` (both optional)
+- `/pr` — auto-detect type, no issue
+- `/pr fix` — fix PR, no issue
+- `/pr fix ENG-1234` — fix PR with a Linear issue
+- `/pr fix MITB-565` — fix PR with a Jira issue
+- `/pr ENG-1234` — auto-detect type with an issue ID (`[A-Z]+-\d+` matches both Linear and Jira; tracker is resolved in Step 1.6)
 
 ## 1. Review the Full Diff
 
@@ -77,23 +78,38 @@ git --no-pager diff main     # Inspect everything that changed vs. main
 5. **Ask for confirmation if confidence < 100%:** "Does this look correct, or would you prefer **[alternative type]**?"
 6. Use AskUserQuestion tool to ask the user for confirmation before proceeding to Step 2
 
-## 1.6. Jira Issue Detection (Optional)
+## 1.6. Issue Tracker Detection (Optional)
 
-Detect Jira issue ID to include in branch name and PR title.
+Detect an issue ID (Linear or Jira) to include in branch name, PR title, and PR body. IDs from both trackers share the `[A-Z]+-\d+` shape, so the tracker is resolved after the ID is found.
 
-**Detection Order:**
-1. Check if Jira ID passed as argument (pattern: `[A-Z]+-\d+`)
-2. Search conversation context for Jira references
+**Detection Order (find the ID):**
+1. Check if an ID was passed as argument (pattern: `[A-Z]+-\d+`)
+2. Search conversation context for issue references
 3. Check current branch name: `git rev-parse --abbrev-ref HEAD | grep -oE '[A-Z]+-[0-9]+'`
 4. Check recent commits: `git log --oneline -5 | grep -oE '[A-Z]+-[0-9]+' | head -1`
 
-**If Jira ID found:**
-- Store it for use in branch naming (Step 2) and PR title (Step 5)
-- Confirm: "Detected Jira issue: **[JIRA-ID]** — using in branch and PR title"
+**Resolve the tracker (if an ID was found):**
 
-**If no Jira ID found:**
-- Continue without Jira (it's optional)
-- Note: "No Jira issue detected — proceeding without Jira reference"
+Try Linear first, fall back to Jira:
+
+```bash
+if linear issue view <ID> >/dev/null 2>&1; then
+  TRACKER=Linear
+  ISSUE_URL=$(linear issue url <ID>)
+else
+  TRACKER=Jira
+  ISSUE_URL="https://hgdata.atlassian.net/browse/<ID>"
+fi
+```
+
+- Store `ID`, `TRACKER`, and `ISSUE_URL` for use in branch naming (Step 2), PR title (Step 5), and PR body (Step 5).
+- Confirm: "Detected **<TRACKER>** issue: **<ID>** — <ISSUE_URL>"
+
+Requires the `linear` CLI on PATH (provided by the `linear-cli` skill). If `linear` is unavailable, treat the ID as Jira.
+
+**If no ID found:**
+- Continue without an issue reference (it's optional)
+- Note: "No issue ID detected — proceeding without tracker reference"
 
 ## 2. Ensure on a Dedicated Branch
 
@@ -109,8 +125,8 @@ git checkout -b <branch-name>
 ```
 
 **Branch naming format:**
-- **With Jira:** `{type}/{JIRA-ID}-{description}` → `feat/MITB-565-add-auth`
-- **Without Jira:** `{type}/{description}` → `feat/add-auth`
+- **With issue ID:** `{type}/{ID}-{description}` → `feat/ENG-1234-add-auth` or `feat/MITB-565-add-auth`
+- **Without issue ID:** `{type}/{description}` → `feat/add-auth`
 
 ## 3. Stage and Commit All Pending Changes
 
@@ -131,8 +147,8 @@ git push -u origin HEAD
 **Configuration:**
 - **Base branch:** `develop` for **mk-copilot** projects, `master` for all other repos
 - **PR title format:**
-  - **With Jira:** `{type}({JIRA-ID}): description` → `feat(MITB-565): add user auth`
-  - **Without Jira:** `{type}: description` → `feat: add user auth`
+  - **With issue ID:** `{type}({ID}): description` → `feat(ENG-1234): add user auth` or `feat(MITB-565): add user auth`
+  - **Without issue ID:** `{type}: description` → `feat: add user auth`
 - **PR body:** Use the appropriate template below based on the PR type
 
 ### Fix PR Template (type = "fix"):
@@ -153,7 +169,7 @@ git push -u origin HEAD
 
 <linked issues or #numbers>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Feature PR Template (type = "feature" or "feat"):
@@ -166,7 +182,7 @@ git push -u origin HEAD
 
 <UI shots, API examples or GIFs>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Chore PR Template (type = "chore"):
@@ -183,7 +199,7 @@ git push -u origin HEAD
 
 <any related updates or breaking changes>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Refactor PR Template (type = "refactor"):
@@ -204,7 +220,7 @@ git push -u origin HEAD
 
 <confirm no behavior changes>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Docs PR Template (type = "docs"):
@@ -221,7 +237,7 @@ git push -u origin HEAD
 
 <why these docs needed updating>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Test PR Template (type = "test"):
@@ -238,7 +254,7 @@ git push -u origin HEAD
 
 <link to the code being tested>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Performance PR Template (type = "perf"):
@@ -259,7 +275,7 @@ git push -u origin HEAD
 
 <affected components or users>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Style PR Template (type = "style"):
@@ -276,7 +292,7 @@ git push -u origin HEAD
 
 <which files were affected>
 
-**Jira issue**: https://hgdata.atlassian.net/browse/{JIRA-ID}  <!-- Include only if Jira ID exists -->
+**{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ## 6. Request Review on Slack (MANDATORY)
@@ -306,7 +322,7 @@ Generate a brief, friendly message that includes the PR link using the template 
 **Critical Rules:**
 - Execute each step sequentially in order (1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6)
 - **Do not skip Step 1.5** unless PR type was explicitly provided via arguments
-- **Step 1.6 is optional** — proceed without Jira if none detected
+- **Step 1.6 is optional** — proceed without a tracker reference if no ID is detected
 - **Do not skip Step 6** — Slack message is mandatory before considering PR complete
 - Wait for user confirmation before proceeding if any diff looks unexpected
 
@@ -317,15 +333,16 @@ Generate a brief, friendly message that includes the PR link using the template 
 **Standard Workflow:**
 1. Execute Step 1 (diff review)
 2. **MANDATORY:** Complete Step 1.5 (type detection & confirmation) — unless type was provided as argument or you are confident in the type
-3. Execute Step 1.6 (Jira detection) — optional, use if found
+3. Execute Step 1.6 (issue tracker detection — Linear or Jira) — optional, use if found
 4. Execute Steps 2-5 (branch, commit, push, create PR)
 5. **MANDATORY:** Complete Step 6 (generate and output Slack message)
 6. Confirm PR is ready: all steps completed, Slack message generated
 
-**Optional Arguments:** `/pr [type] [JIRA-ID]`
-- `/pr` — Auto-detect PR type, no Jira
-- `/pr feature` — Create feature PR, no Jira
-- `/pr fix` — Create fix PR, no Jira
-- `/pr fix MITB-565` — Create fix PR with Jira ID
-- `/pr MITB-565` — Auto-detect type with Jira ID
+**Optional Arguments:** `/pr [type] [ISSUE-ID]`
+- `/pr` — Auto-detect PR type, no issue
+- `/pr feature` — Create feature PR, no issue
+- `/pr fix` — Create fix PR, no issue
+- `/pr fix ENG-1234` — Create fix PR with a Linear ID
+- `/pr fix MITB-565` — Create fix PR with a Jira ID
+- `/pr ENG-1234` — Auto-detect type with an issue ID (tracker resolved in Step 1.6)
 
