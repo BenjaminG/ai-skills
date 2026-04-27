@@ -35,6 +35,7 @@ Refactor monolithic instruction files into a minimal root, scoped `.claude/rules
    - Package manager, only if non-default (`pnpm`, `yarn`, `bun`, `uv`, etc.)
    - Non-standard build / typecheck / test commands
    - Truly universal rules (e.g., "never commit to `main`")
+   - Domain concepts that differ from common usage (e.g., "organization" means X, not Y) — these are more stable than file paths and worth keeping
 
 5. **Classify remaining content.** For each extracted section, decide the destination:
    - **`.claude/rules/<domain>.md`** — short, actionable rules. For each, recommend whether to add `paths:` frontmatter (lazy) or leave without (always loaded), with a one-line rationale.
@@ -51,8 +52,9 @@ Refactor monolithic instruction files into a minimal root, scoped `.claude/rules
 7. **Flag for deletion.** Mark instructions (in root, rules, or docs) that are:
    - **Redundant** — the agent already knows this (e.g., "write readable code")
    - **Too vague** to be actionable
-   - **Inferable** from the codebase or standard docs
-   - **Structural** — documents file paths or directory layouts that will rot
+   - **Inferable** — agents discover project structure on their own; codebase overviews and architecture descriptions trigger extra exploration without improving accuracy
+   - **Structural** — file paths, directory layouts, or architectural maps that rot and mislead
+   - **Over-directive** — imperative instructions that force unnecessary work (e.g., "always run the full test suite", "review all related modules") without scoping when they apply
 
 8. **Propose the structure before writing.** Output:
    - The new minimal root file (with links)
