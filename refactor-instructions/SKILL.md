@@ -38,7 +38,8 @@ Refactor monolithic instruction files into a minimal root, scoped `.claude/rules
    - Domain concepts that differ from common usage (e.g., "organization" means X, not Y) — these are more stable than file paths and worth keeping
 
 5. **Classify remaining content.** For each extracted section, decide the destination:
-   - **`.claude/rules/<domain>.md`** — short, actionable rules. For each, recommend whether to add `paths:` frontmatter (lazy) or leave without (always loaded), with a one-line rationale.
+   - **`packages/<pkg>/CLAUDE.md`** — rules scoped to one package with its own conventions (different stack, commands, or domain). Loads lazily when Claude touches that package.
+   - **`.claude/rules/<domain>.md`** — short, actionable rules that cross packages or file types. For each, recommend whether to add `paths:` frontmatter (lazy) or leave without (always loaded), with a one-line rationale.
    - **`docs/<TOPIC>.md`** — longer reference material, domain knowledge, examples, guides.
    - **Delete** — see step 7.
 
@@ -83,8 +84,26 @@ Refactor monolithic instruction files into a minimal root, scoped `.claude/rules
 | Short, actionable, applies globally | `.claude/rules/<domain>.md` (no frontmatter) |
 | Longer reference material or domain knowledge | `docs/<TOPIC>.md` or `.claude/docs/<TOPIC>.md` |
 | Large body of reference material | Nested tree under `docs/` |
-| Package-specific in a monorepo | `packages/<pkg>/CLAUDE.md` (merges with root) |
+| Package has its own stack, commands, or domain rules | `packages/<pkg>/CLAUDE.md` (lazy-loaded when Claude touches that package) |
+| Cross-cutting rule that applies across packages by file type | `.claude/rules/<domain>.md` with `paths:` globs |
 | Invokable procedure / playbook | Agent skill, not a doc |
+
+## Monorepos
+
+Sub-folder `CLAUDE.md` files load lazily — only when Claude touches a file in that directory. They merge with the root at their scope, which makes them ideal for package-specific conventions. But the laziness is not free maintenance.
+
+**Create a sub-folder CLAUDE.md when** the package genuinely diverges from the root: different stack, different commands, package-specific gotchas, or critical domain invariants.
+
+**Do not create one when** the package follows the same conventions as the rest of the repo, or when the content would just restate what Claude can infer from `package.json`, file extensions, or the code. Adding a file "for symmetry" creates a maintenance surface that rots faster than it helps.
+
+**Keep each sub-folder file under ~100 lines.** 200 is the hard ceiling — beyond that, attention drops and rules start getting ignored. Extract reference material to `docs/` or split cross-cutting rules into `.claude/rules/` with scoped globs.
+
+**Sub-folder `CLAUDE.md` vs `.claude/rules/` with globs:**
+- Sub-folder wins when a whole package has coherent, team-owned conventions.
+- Rules with globs win when the rule is cross-cutting (testing, API design, logging) and applies by file type across packages.
+- They complement each other — most monorepos want both.
+
+**Don't document package directory layouts in the root.** Sub-folders load lazily when touched; the root doesn't need to list them. Claude can `ls` the monorepo faster than it can misread a stale inventory.
 
 ## Avoid
 
@@ -97,3 +116,5 @@ Refactor monolithic instruction files into a minimal root, scoped `.claude/rules
 - Modifying user-level `~/.claude/rules/` when operating at project scope.
 - Using overly broad globs (e.g., `**/*`) that defeat lazy loading.
 - Splitting a single coherent rule across multiple files.
+- Creating a sub-folder `CLAUDE.md` for every package in a monorepo — only add one when the package genuinely diverges from the root.
+- Listing monorepo package directories in the root `CLAUDE.md` — structural maps rot, and sub-folder files already load lazily when Claude touches them.
