@@ -1,31 +1,31 @@
-# クリーンコードの基礎
+# Clean Code Basics
 
-日常的なコーディングで適用すべき基本原則を解説します。
+An explanation of the fundamental principles to apply in everyday coding.
 
-## 📋 目次
-1. [命名規則](#命名規則)
-2. [関数設計](#関数設計)
-3. [早期リターン](#早期リターン)
-4. [マジックナンバーの排除](#マジックナンバーの排除)
-5. [コメントとドキュメント](#コメントとドキュメント)
+## 📋 Table of Contents
+1. [Naming Conventions](#naming-conventions)
+2. [Function Design](#function-design)
+3. [Early Returns](#early-returns)
+4. [Eliminating Magic Numbers](#eliminating-magic-numbers)
+5. [Comments and Documentation](#comments-and-documentation)
 
 ---
 
-## 命名規則
+## Naming Conventions
 
-### 原則: 意図を明確にする
+### Principle: Make intent obvious
 
-**良い命名の条件**:
-- 目的が一目でわかる
-- 検索可能
-- 発音可能
-- 文化的に適切
+**Qualities of a good name**:
+- The purpose is clear at a glance.
+- It is searchable.
+- It is pronounceable.
+- It is culturally appropriate.
 
-### 関数名: 動詞で始める
+### Function names: Start with a verb
 
-#### ✅ 良い例: 意図が明確
+#### ✅ Good Example: Clear intent
 ```typescript
-// 動作が明確
+// The action is explicit
 getUserById(id: string): User
 calculateTotalPrice(items: Item[]): number
 validateEmail(email: string): boolean
@@ -33,102 +33,102 @@ formatDate(date: Date): string
 isAuthenticated(): boolean
 hasPermission(user: User, resource: string): boolean
 
-// 状態を取得: get/is/has
+// Reading state: get/is/has
 getActiveUsers(): User[]
 isEmailValid(email: string): boolean
 hasUnreadMessages(): boolean
 
-// 状態を変更: set/update/create/delete
+// Changing state: set/update/create/delete
 setUserName(name: string): void
 updateUserProfile(profile: Profile): void
 createOrder(items: Item[]): Order
 deleteAccount(userId: string): void
 ```
 
-#### ❌ 悪い例: 曖昧な命名
+#### ❌ Bad Example: Ambiguous names
 ```typescript
-// 何をするか不明確
-getUser(id: string): User  // どのユーザー？条件は？
-calc(items: Item[]): number  // 何を計算？
-check(email: string): boolean  // 何をチェック？
-process(data: any): void  // 何を処理？
-handle(event: Event): void  // どう処理？
+// Unclear what they do
+getUser(id: string): User  // which user? under what condition?
+calc(items: Item[]): number  // calculate what?
+check(email: string): boolean  // check what?
+process(data: any): void  // process what?
+handle(event: Event): void  // handle it how?
 
-// 省略しすぎ
+// Over-abbreviated
 usr(): User
 calc(): number
 chk(): boolean
 proc(): void
 ```
 
-### 変数名: 名詞で表現
+### Variable names: Use nouns
 
-#### ✅ 良い例: 目的が明確
+#### ✅ Good Example: Purpose is clear
 ```typescript
-// 具体的で検索可能
+// Concrete and searchable
 const MAX_RETRY_COUNT = 3
 const DEFAULT_TIMEOUT_MS = 5000
 const API_BASE_URL = 'https://api.example.com'
 
-// 複数形で配列を表現
+// Use plurals for arrays
 const activeUsers: User[] = []
 const completedOrders: Order[] = []
 const errorMessages: string[] = []
 
-// boolean は is/has/can で始める
+// Booleans start with is/has/can
 const isAuthenticated: boolean = true
 const hasPermission: boolean = false
 const canEdit: boolean = checkPermission()
 
-// 意味のある名前
+// Meaningful names
 const userRegistrationDate: Date = new Date()
 const totalPriceIncludingTax: number = calculateTotal()
 ```
 
-#### ❌ 悪い例: マジックナンバーと曖昧な名前
+#### ❌ Bad Example: Magic numbers and vague names
 ```typescript
-// マジックナンバー（意味不明）
-setTimeout(() => {}, 5000)  // 5000の意味は？
-for (let i = 0; i < 3; i++) { }  // 3の意味は？
+// Magic numbers (no meaning)
+setTimeout(() => {}, 5000)  // what does 5000 mean?
+for (let i = 0; i < 3; i++) { }  // what does 3 mean?
 
-// 曖昧な名前
-let data: any = {}  // どんなデータ？
-let temp: string = ''  // 一時的な何？
-let result: any = process()  // どんな結果？
-let flag: boolean = true  // 何のフラグ？
+// Vague names
+let data: any = {}  // what kind of data?
+let temp: string = ''  // temporary what?
+let result: any = process()  // what kind of result?
+let flag: boolean = true  // flag for what?
 
-// 省略形（発音不可、検索困難）
+// Abbreviations (unpronounceable, unsearchable)
 let usrNm: string = ''  // userName
 let dtFmt: string = ''  // dateFormat
 let errCd: number = 0   // errorCode
 ```
 
-### クラス名: 名詞で表現
+### Class names: Use nouns
 
-#### ✅ 良い例
+#### ✅ Good Example
 ```typescript
-// 役割が明確
+// Clear role
 class UserRepository { }
 class EmailService { }
 class PaymentProcessor { }
 class OrderValidator { }
 class ReportGenerator { }
 
-// 複数の単語で具体的に
+// Multiple words for specificity
 class UserAuthenticationService { }
 class ProductInventoryManager { }
 class CustomerNotificationService { }
 ```
 
-#### ❌ 悪い例
+#### ❌ Bad Example
 ```typescript
-// 曖昧すぎる
-class Manager { }  // 何を管理？
-class Handler { }  // 何を処理？
-class Helper { }   // 何を助ける？
-class Util { }     // 何のユーティリティ？
+// Too vague
+class Manager { }  // manages what?
+class Handler { }  // handles what?
+class Helper { }   // helps with what?
+class Util { }     // utility for what?
 
-// 動詞で始まる（関数名ではない）
+// Starts with a verb (that's for functions, not classes)
 class ProcessUser { }
 class HandleOrder { }
 class ValidateData { }
@@ -136,13 +136,13 @@ class ValidateData { }
 
 ---
 
-## 関数設計
+## Function Design
 
-### 原則1: 小さく、単一の責任
+### Principle 1: Small, with a single responsibility
 
-#### ✅ 良い例: 小さく分割
+#### ✅ Good Example: Split into small functions
 ```typescript
-// 各関数が単一の責任
+// Each function has a single responsibility
 function validateEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   return emailRegex.test(email)
@@ -171,83 +171,83 @@ function sendWelcomeEmail(user: User): void {
   emailService.send(user.email, 'Welcome!', 'Welcome to our service!')
 }
 
-// メイン処理: 各関数を組み合わせ
+// Main flow: composed from the functions above
 function registerUser(user: User): void {
   saveUser(user)
   sendWelcomeEmail(user)
 }
 ```
 
-**利点**:
-- 各関数の責任が明確
-- テストしやすい
-- 再利用可能
-- 理解しやすい
+**Benefits**:
+- Each function has a clear responsibility.
+- They are easy to test.
+- They are reusable.
+- They are easy to understand.
 
-#### ❌ 悪い例: 巨大で複数の責任
+#### ❌ Bad Example: Enormous and multi-purpose
 ```typescript
-// ❌ 100行以上の巨大関数
+// ❌ One giant function of 100+ lines
 function processUser(user: User) {
-  // バリデーション（20行）
+  // Validation (20 lines)
   if (!user.email || !user.email.includes('@')) {
     throw new Error('Invalid email')
   }
   if (!user.password || user.password.length < 8) {
     throw new Error('Invalid password')
   }
-  // ... さらに検証ロジック
+  // ... more validation logic
 
-  // データベース保存（20行）
+  // Database save (20 lines)
   const db = new Database()
   db.connect()
   db.insert('users', user)
   db.disconnect()
-  // ... さらにDB操作
+  // ... more DB operations
 
-  // メール送信（20行）
+  // Email sending (20 lines)
   const emailService = new EmailService()
   emailService.configure()
   emailService.send(user.email, 'Welcome', 'Welcome!')
-  // ... さらにメール処理
+  // ... more email handling
 
-  // ログ記録（20行）
+  // Logging (20 lines)
   const logger = new Logger()
   logger.log('User registered')
-  // ... さらにログ処理
+  // ... more logging
 
-  // その他の処理...
+  // And so on...
 }
 ```
 
-**問題点**:
-- 何をしているか理解困難
-- テストが複雑
-- 一部の変更が全体に影響
-- 再利用できない
+**Problems**:
+- Hard to understand what it does.
+- Tests are complex.
+- A change in one part can affect everything.
+- Not reusable.
 
-### 原則2: 引数は最小限（0-2個が理想）
+### Principle 2: Minimize parameters (0–2 is ideal)
 
-#### ✅ 良い例: 引数が少ない
+#### ✅ Good Example: Few parameters
 ```typescript
-// 引数0個（理想的）
+// Zero parameters (ideal)
 function getCurrentUser(): User {
   return authService.getUser()
 }
 
-// 引数1個（良い）
+// One parameter (good)
 function getUserById(id: string): User {
   return database.findOne({ id })
 }
 
-// 引数2個（許容範囲）
+// Two parameters (acceptable)
 function createUser(name: string, email: string): User {
   return { name, email }
 }
 ```
 
-#### ⚠️ 引数が多い場合: オブジェクトで渡す
+#### ⚠️ When you need many parameters: Pass an object
 ```typescript
-// ❌ 引数が多すぎる
+// ❌ Too many parameters
 function createUser(
   name: string,
   email: string,
@@ -258,7 +258,7 @@ function createUser(
   zipCode: string
 ) { }
 
-// ✅ オブジェクトで渡す
+// ✅ Pass an object
 interface UserData {
   name: string
   email: string
@@ -273,7 +273,7 @@ function createUser(data: UserData): User {
   return { ...data }
 }
 
-// 使用時
+// Usage
 createUser({
   name: 'John',
   email: 'john@example.com',
@@ -285,40 +285,40 @@ createUser({
 })
 ```
 
-**オブジェクト渡しの利点**:
-- 順序を気にしない
-- 省略可能なプロパティを定義可能
-- 型安全（TypeScriptの場合）
-- 拡張しやすい
+**Benefits of passing an object**:
+- Order doesn't matter.
+- Optional properties can be defined.
+- Type-safe (in TypeScript).
+- Easy to extend.
 
-### 原則3: 副作用を避ける
+### Principle 3: Avoid side effects
 
-#### ✅ 良い例: 純粋関数
+#### ✅ Good Example: Pure functions
 ```typescript
-// 副作用なし: 新しい配列を返す
+// No side effects: returns a new array
 function addItem(items: Item[], newItem: Item): Item[] {
   return [...items, newItem]
 }
 
-// 副作用なし: 新しいオブジェクトを返す
+// No side effects: returns a new object
 function updateUserName(user: User, newName: string): User {
   return { ...user, name: newName }
 }
 
-// 計算のみ: 外部状態を変更しない
+// Pure computation: no external state changes
 function calculateTotal(items: Item[]): number {
   return items.reduce((sum, item) => sum + item.price, 0)
 }
 ```
 
-#### ❌ 悪い例: 副作用あり
+#### ❌ Bad Example: With side effects
 ```typescript
-// ❌ 引数を直接変更（予測不可能）
+// ❌ Mutates its argument (unpredictable)
 function addItem(items: Item[], newItem: Item): void {
-  items.push(newItem)  // 元の配列を変更
+  items.push(newItem)  // mutates the original array
 }
 
-// ❌ グローバル状態を変更
+// ❌ Mutates global state
 let totalPrice = 0
 function calculateTotal(items: Item[]): void {
   totalPrice = items.reduce((sum, item) => sum + item.price, 0)
@@ -327,14 +327,14 @@ function calculateTotal(items: Item[]): void {
 
 ---
 
-## 早期リターン
+## Early Returns
 
-### 原則: ガード句でネストを減らす
+### Principle: Use guard clauses to reduce nesting
 
-#### ✅ 良い例: 早期リターンでネスト削減
+#### ✅ Good Example: Early returns to flatten nesting
 ```typescript
 function processOrder(order: Order | null): void {
-  // ガード句: 早期リターン
+  // Guard clauses: early return
   if (!order) {
     console.log('Order is null')
     return
@@ -350,25 +350,25 @@ function processOrder(order: Order | null): void {
     return
   }
 
-  // メインロジック（ネストなし）
+  // Main logic (no nesting)
   const total = calculateTotal(order)
   sendConfirmation(order, total)
   updateInventory(order)
 }
 ```
 
-**利点**:
-- ネストが浅い（理解しやすい）
-- エラーケースが明確
-- メインロジックが目立つ
+**Benefits**:
+- Shallow nesting (easy to read).
+- Error cases are explicit.
+- The main logic stands out.
 
-#### ❌ 悪い例: 深いネスト
+#### ❌ Bad Example: Deep nesting
 ```typescript
 function processOrder(order: Order | null): void {
-  if (order) {  // ネスト1
-    if (order.status === 'pending') {  // ネスト2
-      if (order.items.length > 0) {  // ネスト3
-        // メインロジック（深いネストの中）
+  if (order) {  // nest 1
+    if (order.status === 'pending') {  // nest 2
+      if (order.items.length > 0) {  // nest 3
+        // Main logic (buried in deep nesting)
         const total = calculateTotal(order)
         sendConfirmation(order, total)
         updateInventory(order)
@@ -384,14 +384,14 @@ function processOrder(order: Order | null): void {
 }
 ```
 
-**問題点**:
-- ネストが深い（理解困難）
-- メインロジックが埋もれる
-- elseが多く複雑
+**Problems**:
+- Deep nesting (hard to read).
+- The main logic is hidden.
+- Lots of `else` branches add complexity.
 
-### 複雑な条件の場合
+### For complex conditions
 
-#### ✅ 良い例: 条件を関数化
+#### ✅ Good Example: Extract the condition into a function
 ```typescript
 function canProcessOrder(order: Order | null): boolean {
   if (!order) return false
@@ -406,7 +406,7 @@ function processOrder(order: Order | null): void {
     return
   }
 
-  // メインロジック
+  // Main logic
   const total = calculateTotal(order)
   sendConfirmation(order!, total)
   updateInventory(order!)
@@ -415,20 +415,20 @@ function processOrder(order: Order | null): void {
 
 ---
 
-## マジックナンバーの排除
+## Eliminating Magic Numbers
 
-### 原則: 定数に名前をつける
+### Principle: Give constants meaningful names
 
-#### ✅ 良い例: 意味のある定数名
+#### ✅ Good Example: Named constants
 ```typescript
-// 定数として定義
+// Define as constants
 const MAX_RETRY_COUNT = 3
 const DEFAULT_TIMEOUT_MS = 5000
 const API_RATE_LIMIT_PER_MINUTE = 100
 const MIN_PASSWORD_LENGTH = 8
 const MAX_FILE_SIZE_MB = 10
 
-// 使用例
+// Usage
 function retryRequest(request: Request): Promise<Response> {
   for (let i = 0; i < MAX_RETRY_COUNT; i++) {
     try {
@@ -445,36 +445,36 @@ function validatePassword(password: string): boolean {
 }
 ```
 
-**利点**:
-- 意図が明確
-- 検索可能
-- 変更が容易（1箇所で管理）
-- 型安全（TypeScriptの場合）
+**Benefits**:
+- Intent is clear.
+- Searchable.
+- Easy to change (managed in one place).
+- Type-safe (in TypeScript).
 
-#### ❌ 悪い例: マジックナンバー
+#### ❌ Bad Example: Magic numbers
 ```typescript
-// ❌ 数値の意味が不明
+// ❌ The meaning of the numbers is unclear
 function retryRequest(request: Request): Promise<Response> {
-  for (let i = 0; i < 3; i++) {  // 3の意味は？
+  for (let i = 0; i < 3; i++) {  // what does 3 mean?
     try {
       return await fetch(request)
     } catch (error) {
-      if (i === 2) throw error  // なぜ2？
-      await sleep(5000)  // 5000msの理由は？
+      if (i === 2) throw error  // why 2?
+      await sleep(5000)  // why 5000ms?
     }
   }
 }
 
 function validatePassword(password: string): boolean {
-  return password.length >= 8  // なぜ8文字？
+  return password.length >= 8  // why 8 characters?
 }
 ```
 
-### Enum の活用
+### Using Enums
 
-#### ✅ 良い例: 状態をEnumで管理
+#### ✅ Good Example: Manage state with an enum
 ```typescript
-// TypeScript Enum
+// TypeScript enum
 enum OrderStatus {
   Pending = 'pending',
   Processing = 'processing',
@@ -485,11 +485,11 @@ enum OrderStatus {
 
 function processOrder(order: Order): void {
   if (order.status === OrderStatus.Pending) {
-    // 処理
+    // handle
   }
 }
 
-// または const assertion（推奨）
+// Or a const assertion (recommended)
 const OrderStatus = {
   Pending: 'pending',
   Processing: 'processing',
@@ -503,21 +503,21 @@ type OrderStatus = typeof OrderStatus[keyof typeof OrderStatus]
 
 ---
 
-## コメントとドキュメント
+## Comments and Documentation
 
-### 原則: コードで説明できないことのみコメント
+### Principle: Only comment what code cannot express
 
-#### ✅ 良いコメント
+#### ✅ Good Comments
 ```typescript
-// ビジネスロジックの説明
-// 注文金額が10,000円以上の場合、送料無料
+// Explains business logic
+// Orders of 10,000 yen or more ship for free
 function calculateShippingFee(orderAmount: number): number {
   const FREE_SHIPPING_THRESHOLD = 10000
   return orderAmount >= FREE_SHIPPING_THRESHOLD ? 0 : 500
 }
 
-// 複雑なアルゴリズムの説明
-// Quick Sort: 平均O(n log n)、最悪O(n^2)
+// Explains a complex algorithm
+// Quick Sort: average O(n log n), worst case O(n^2)
 function quickSort(arr: number[]): number[] {
   if (arr.length <= 1) return arr
   const pivot = arr[0]
@@ -526,44 +526,44 @@ function quickSort(arr: number[]): number[] {
   return [...quickSort(left), pivot, ...quickSort(right)]
 }
 
-// TODO、FIXME、NOTE
-// TODO: 将来的にキャッシュ機能を追加
-// FIXME: エラーハンドリングを改善する必要あり
-// NOTE: この処理は非同期で実行される
+// TODO, FIXME, NOTE
+// TODO: add caching in the future
+// FIXME: error handling needs improvement
+// NOTE: this runs asynchronously
 ```
 
-#### ❌ 不要なコメント
+#### ❌ Unnecessary Comments
 ```typescript
-// ❌ コードを読めばわかる
-// ユーザーIDを取得
+// ❌ The code already says this
+// Get the user ID
 const userId = user.id
 
-// ❌ コードと矛盾
-// ユーザーを削除（実際は無効化）
+// ❌ Contradicts the code
+// Delete the user (actually deactivates)
 function deleteUser(userId: string): void {
   database.update({ id: userId, active: false })
 }
 
-// ❌ コメントアウトされたコード（削除すべき）
+// ❌ Commented-out code (should be removed)
 // function oldFunction() {
-//   // 古い実装
+//   // old implementation
 // }
 
-// ❌ 履歴情報（Git履歴で管理すべき）
-// 2023-01-01: John - 初回実装
-// 2023-02-01: Jane - バグ修正
+// ❌ Change log (belongs in git history)
+// 2023-01-01: John - initial implementation
+// 2023-02-01: Jane - bug fix
 ```
 
-### JSDoc の活用（TypeScript）
+### Using JSDoc (TypeScript)
 
-#### ✅ 良い例: 公開APIのドキュメント
+#### ✅ Good Example: Documenting a public API
 ```typescript
 /**
- * ユーザーをIDで検索
+ * Look up a user by ID.
  *
- * @param userId - ユーザーの一意識別子
- * @returns 見つかったユーザー、または null
- * @throws {DatabaseError} データベースエラー時
+ * @param userId - The unique identifier of the user.
+ * @returns The matching user, or null if none was found.
+ * @throws {DatabaseError} If a database error occurs.
  *
  * @example
  * const user = await getUserById('user-123')
@@ -578,12 +578,12 @@ async function getUserById(userId: string): Promise<User | null> {
 
 ---
 
-## 🔗 関連ドキュメント
+## 🔗 Related Documents
 
-- [SOLID原則の詳細](./SOLID-PRINCIPLES.md)
-- [品質チェックリスト](./QUALITY-CHECKLIST.md)
-- [クイックリファレンス](./QUICK-REFERENCE.md)
+- [SOLID Principles in Detail](./SOLID-PRINCIPLES.md)
+- [Quality Checklist](./QUALITY-CHECKLIST.md)
+- [Quick Reference](./QUICK-REFERENCE.md)
 
-## 📖 参考リンク
+## 📖 References
 
-- [クリーンコード メインページ](./SKILL.md)
+- [Clean Code main page](./SKILL.md)

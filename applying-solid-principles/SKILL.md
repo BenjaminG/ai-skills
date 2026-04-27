@@ -3,26 +3,26 @@ name: applying-solid-principles
 description: This skill should be used when implementing code that requires SOLID principles and clean code practices. It provides detailed guidance on Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion principles with comparison examples in TypeScript.
 ---
 
-# SOLID原則とクリーンコード - ファイル内容
+# SOLID Principles and Clean Code - File Contents
 
-このドキュメントは、すべてのコード実装で必須となるSOLID原則とクリーンコード実践ガイドです。
+This document is a mandatory guide to SOLID principles and clean code practices for all code implementations.
 
-## 主要な構成要素
+## Main Components
 
-このスキルは4つの詳細ドキュメントで構成されています：
+This skill is made up of four detailed documents:
 
-1. **SOLID原則の詳細** - 5つの設計原則（単一責任、開放閉鎖、リスコフの置換、インターフェース分離、依存関係逆転）の解説と比較例
+1. **SOLID Principles in Detail** - Explanation and comparison examples for the five design principles (Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion). See @SOLID-PRINCIPLES.md.
 
-2. **クリーンコードの基礎** - 日常的な実装における命名規則、関数設計、ネスト削減、マジックナンバー排除の基本
+2. **Clean Code Basics** - Fundamentals for everyday implementation: naming conventions, function design, reducing nesting, and eliminating magic numbers. See @CLEAN-CODE-BASICS.md.
 
-3. **品質チェックリスト** - 設計原則の遵守確認、コードスメル検出、リファクタリング判断基準
+3. **Quality Checklist** - Criteria for confirming adherence to design principles, detecting code smells, and deciding when to refactor. See @QUALITY-CHECKLIST.md.
 
-4. **クイックリファレンス** - 迅速な参照用に1行要約、一般的な誤りと修正方法、コードレビューポイント
+4. **Quick Reference** - One-line summaries for rapid lookup, common mistakes and fixes, and code review points. See @QUICK-REFERENCE.md.
 
-## 5つのSOLID原則
+## The Five SOLID Principles
 
-ドキュメントでは、「変更する理由は1つだけ」という単一責任から始まり、拡張性と保守性を支えるパターンについて体系的に説明しています。
+The documentation systematically explains the patterns that underpin extensibility and maintainability, starting with the Single Responsibility rule that "there should be only one reason to change."
 
-## 関連する補足原則
+## Related Supplementary Principles
 
-記載されているDRY、YAGNI、KISSといった追加原則も、設計の実効性を高めるための枠組みを提供しています。
+The additional principles referenced — DRY, YAGNI, and KISS — also provide frameworks that increase the effectiveness of your design.

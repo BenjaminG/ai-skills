@@ -1,47 +1,47 @@
-# クイックリファレンス
+# Quick Reference
 
-素早く参照できる簡潔な情報をまとめたリファレンスです。
+A concise reference you can scan quickly.
 
-## 📋 目次
-1. [SOLID原則 1行まとめ](#solid原則-1行まとめ)
-2. [よくある間違いと修正](#よくある間違いと修正)
-3. [コードレビューポイント](#コードレビューポイント)
-4. [設計パターン早見表](#設計パターン早見表)
+## 📋 Table of Contents
+1. [SOLID Principles in One Line](#solid-principles-in-one-line)
+2. [Common Mistakes and Fixes](#common-mistakes-and-fixes)
+3. [Code Review Checkpoints](#code-review-checkpoints)
+4. [Design Pattern Cheat Sheet](#design-pattern-cheat-sheet)
 
 ---
 
-## SOLID原則 1行まとめ
+## SOLID Principles in One Line
 
-### S - Single Responsibility（単一責任）
-**「変更する理由」は1つだけ**
+### S - Single Responsibility
+**There is only one reason to change.**
 ```typescript
 // ❌ class User { save(), sendEmail(), generateReport() }
 // ✅ class User { }, class UserRepository { }, class EmailService { }
 ```
 
-### O - Open/Closed（開放閉鎖）
-**拡張に開き、修正に閉じる**
+### O - Open/Closed
+**Open to extension, closed to modification.**
 ```typescript
 // ❌ if (type === 'A') { } else if (type === 'B') { }
 // ✅ interface Handler { handle() }; class HandlerA implements Handler { }
 ```
 
-### L - Liskov Substitution（リスコフの置換）
-**派生クラスは基底クラスと置換可能**
+### L - Liskov Substitution
+**Subclasses must be substitutable for their base class.**
 ```typescript
 // ❌ class Penguin extends Bird { fly() { throw Error } }
 // ✅ class Penguin extends Bird implements Swimmable { }
 ```
 
-### I - Interface Segregation（インターフェース分離）
-**使わないメソッドへの依存を強制しない**
+### I - Interface Segregation
+**Don't force dependencies on methods that aren't used.**
 ```typescript
 // ❌ interface Worker { work(), eat(), sleep() }
 // ✅ interface Workable { work() }; interface Eatable { eat() }
 ```
 
-### D - Dependency Inversion（依存関係逆転）
-**抽象に依存、具象に依存しない**
+### D - Dependency Inversion
+**Depend on abstractions, not concretions.**
 ```typescript
 // ❌ class UserService { db = new MySQLDatabase() }
 // ✅ class UserService { constructor(private db: Database) }
@@ -49,13 +49,13 @@
 
 ---
 
-## よくある間違いと修正
+## Common Mistakes and Fixes
 
-### 1. 巨大なクラス・関数
+### 1. Oversized classes/functions
 ```typescript
-// ❌ 悪い例
+// ❌ Bad
 class UserManager {
-  // 500行以上...
+  // 500+ lines...
   validateUser() { }
   saveUser() { }
   sendEmail() { }
@@ -63,20 +63,20 @@ class UserManager {
   // ...
 }
 
-// ✅ 良い例
+// ✅ Good
 class UserValidator { validateUser() { } }
 class UserRepository { saveUser() { } }
 class EmailService { sendEmail() { } }
 class ReportGenerator { generateReport() { } }
 ```
 
-### 2. マジックナンバー
+### 2. Magic numbers
 ```typescript
-// ❌ 悪い例
+// ❌ Bad
 if (user.age > 18) { }
 setTimeout(() => {}, 5000)
 
-// ✅ 良い例
+// ✅ Good
 const ADULT_AGE = 18
 const DEFAULT_TIMEOUT_MS = 5000
 
@@ -84,30 +84,30 @@ if (user.age > ADULT_AGE) { }
 setTimeout(() => {}, DEFAULT_TIMEOUT_MS)
 ```
 
-### 3. 深いネスト
+### 3. Deep nesting
 ```typescript
-// ❌ 悪い例
+// ❌ Bad
 if (user) {
   if (user.isActive) {
     if (user.hasPermission) {
-      // 処理
+      // handle
     }
   }
 }
 
-// ✅ 良い例（早期リターン）
+// ✅ Good (early returns)
 if (!user) return
 if (!user.isActive) return
 if (!user.hasPermission) return
-// 処理
+// handle
 ```
 
-### 4. 引数が多すぎる
+### 4. Too many parameters
 ```typescript
-// ❌ 悪い例
+// ❌ Bad
 function createUser(name, email, age, address, phone, country) { }
 
-// ✅ 良い例
+// ✅ Good
 interface UserData {
   name: string
   email: string
@@ -120,49 +120,49 @@ interface UserData {
 function createUser(data: UserData) { }
 ```
 
-### 5. 曖昧な命名
+### 5. Ambiguous naming
 ```typescript
-// ❌ 悪い例
+// ❌ Bad
 function getData(id) { }
 let temp = {}
 const result = process()
 
-// ✅ 良い例
+// ✅ Good
 function getUserById(userId: string): User { }
 let temporaryUserData: User = {}
 const validationResult: ValidationResult = validateUser()
 ```
 
-### 6. 副作用のある関数
+### 6. Functions with side effects
 ```typescript
-// ❌ 悪い例（引数を変更）
+// ❌ Bad (mutates its argument)
 function addItem(items: Item[], newItem: Item): void {
-  items.push(newItem)  // 元の配列を変更
+  items.push(newItem)  // mutates the original array
 }
 
-// ✅ 良い例（新しい配列を返す）
+// ✅ Good (returns a new array)
 function addItem(items: Item[], newItem: Item): Item[] {
   return [...items, newItem]
 }
 ```
 
-### 7. 具象クラスへの直接依存
+### 7. Direct dependency on concrete classes
 ```typescript
-// ❌ 悪い例
+// ❌ Bad
 class UserService {
-  private db = new MySQLDatabase()  // 具象に依存
+  private db = new MySQLDatabase()  // depends on a concrete class
   saveUser(user: User) {
     this.db.save(user)
   }
 }
 
-// ✅ 良い例（依存性注入）
+// ✅ Good (dependency injection)
 interface Database {
   save(data: any): void
 }
 
 class UserService {
-  constructor(private db: Database) { }  // 抽象に依存
+  constructor(private db: Database) { }  // depends on an abstraction
   saveUser(user: User) {
     this.db.save(user)
   }
@@ -171,59 +171,59 @@ class UserService {
 
 ---
 
-## コードレビューポイント
+## Code Review Checkpoints
 
-### 🔴 必須チェック（拒否理由になる）
+### 🔴 Required Checks (reasons to reject)
 
-#### セキュリティ
-- [ ] SQLインジェクション対策
-- [ ] XSS対策
-- [ ] CSRF対策
-- [ ] 入力検証
-- [ ] 認証・認可
+#### Security
+- [ ] SQL injection mitigations
+- [ ] XSS mitigations
+- [ ] CSRF mitigations
+- [ ] Input validation
+- [ ] Authentication/authorization
 
-#### 型安全性（TypeScript/Python）
-- [ ] `any`型を使用していない（TypeScript）
-- [ ] `Any`型を使用していない（Python）
-- [ ] 適切な型注釈がある
-- [ ] null/undefinedチェックがある
+#### Type Safety (TypeScript/Python)
+- [ ] No `any` type used (TypeScript)
+- [ ] No `Any` type used (Python)
+- [ ] Appropriate type annotations
+- [ ] null/undefined checks
 
-#### エラーハンドリング
-- [ ] try-catchが適切
-- [ ] エラーメッセージが明確
-- [ ] エラーログが出力される
+#### Error Handling
+- [ ] try-catch used appropriately
+- [ ] Error messages are clear
+- [ ] Errors are logged
 
-### 🟡 推奨チェック（改善を促す）
+### 🟡 Recommended Checks (encourage improvement)
 
-#### SOLID原則
-- [ ] 単一責任の原則
-- [ ] 開放閉鎖の原則
-- [ ] 依存関係逆転の原則
+#### SOLID Principles
+- [ ] Single Responsibility
+- [ ] Open/Closed
+- [ ] Dependency Inversion
 
-#### クリーンコード
-- [ ] 関数が小さい（20行以内）
-- [ ] 引数が少ない（0-2個）
-- [ ] 深いネストがない（3階層以内）
-- [ ] マジックナンバーがない
+#### Clean Code
+- [ ] Small functions (under 20 lines)
+- [ ] Few parameters (0–2)
+- [ ] No deep nesting (3 levels max)
+- [ ] No magic numbers
 
-#### 命名
-- [ ] 意図が明確
-- [ ] 一貫性がある
-- [ ] 検索可能
+#### Naming
+- [ ] Intent is clear
+- [ ] Consistent
+- [ ] Searchable
 
-#### テスト
-- [ ] ユニットテストがある
-- [ ] エッジケースをカバー
-- [ ] テストが意味のある内容
+#### Tests
+- [ ] Unit tests present
+- [ ] Edge cases covered
+- [ ] Tests are meaningful
 
 ---
 
-## 設計パターン早見表
+## Design Pattern Cheat Sheet
 
-### 生成パターン
+### Creational Patterns
 
-#### Singleton（シングルトン）
-**用途**: 1つのインスタンスのみを保証
+#### Singleton
+**Use case**: Guarantee a single instance.
 ```typescript
 class Singleton {
   private static instance: Singleton
@@ -239,8 +239,8 @@ class Singleton {
 }
 ```
 
-#### Factory（ファクトリ）
-**用途**: オブジェクト生成を抽象化
+#### Factory
+**Use case**: Abstract object creation.
 ```typescript
 interface Product {
   operation(): string
@@ -265,10 +265,10 @@ class Factory {
 
 ---
 
-### 構造パターン
+### Structural Patterns
 
-#### Adapter（アダプター）
-**用途**: インターフェースを変換
+#### Adapter
+**Use case**: Translate between interfaces.
 ```typescript
 interface Target {
   request(): string
@@ -289,8 +289,8 @@ class Adapter implements Target {
 }
 ```
 
-#### Decorator（デコレーター）
-**用途**: 動的に機能を追加
+#### Decorator
+**Use case**: Add functionality dynamically.
 ```typescript
 interface Component {
   operation(): string
@@ -311,10 +311,10 @@ class Decorator implements Component {
 
 ---
 
-### 振る舞いパターン
+### Behavioral Patterns
 
-#### Strategy（ストラテジー）
-**用途**: アルゴリズムを切り替え可能に
+#### Strategy
+**Use case**: Make algorithms swappable.
 ```typescript
 interface Strategy {
   execute(data: any): any
@@ -341,8 +341,8 @@ class Context {
 }
 ```
 
-#### Observer（オブザーバー）
-**用途**: イベント通知を実装
+#### Observer
+**Use case**: Implement event notifications.
 ```typescript
 interface Observer {
   update(data: any): void
@@ -369,93 +369,93 @@ class ConcreteObserver implements Observer {
 
 ---
 
-## 🎯 実装時クイックチェック
+## 🎯 Quick Checks During Implementation
 
-実装中に素早く確認できる項目：
+Items to quickly confirm while coding:
 
-### 関数を書いているとき
+### When writing a function
 ```
-✓ 20行以内か？ → 超えたら分割
-✓ 引数は0-2個か？ → 3個以上ならオブジェクトで渡す
-✓ 副作用はないか？ → 純粋関数を優先
-✓ 早期リターンを使っているか？ → ネストを減らす
-```
-
-### クラスを書いているとき
-```
-✓ 単一責任か？ → 「〜と〜をする」となったら分割
-✓ 抽象に依存しているか？ → newではなくDI
-✓ インターフェースは小さいか？ → 使わないメソッドは分離
+✓ Under 20 lines? → split if not
+✓ 0–2 parameters? → pass an object if 3+
+✓ No side effects? → prefer pure functions
+✓ Using early returns? → reduce nesting
 ```
 
-### 変数を定義するとき
+### When writing a class
 ```
-✓ 意図が明確な名前か？ → data, temp, result は避ける
-✓ マジックナンバーでないか？ → 定数化
-✓ 検索可能か？ → 省略形は避ける
+✓ Single responsibility? → split if you catch yourself saying "does X and Y"
+✓ Depending on abstractions? → use DI rather than `new`
+✓ Small interfaces? → split off methods that aren't used
 ```
 
-### コミット前
+### When defining a variable
 ```
-✓ SOLID原則を守っているか？
-✓ テストは書いたか？
-✓ コードスメルはないか？
-✓ セキュリティは大丈夫か？
+✓ Name conveys intent? → avoid data, temp, result
+✓ Not a magic number? → turn it into a constant
+✓ Searchable? → avoid abbreviations
+```
+
+### Before committing
+```
+✓ SOLID principles respected?
+✓ Tests written?
+✓ No code smells?
+✓ Secure?
 ```
 
 ---
 
-## 📊 コード品質メトリクス
+## 📊 Code Quality Metrics
 
-### 良い値の目安
+### Target Values
 
-| メトリクス | 理想値 | 許容範囲 | 要改善 |
+| Metric | Ideal | Acceptable | Needs work |
 |---------|-------|---------|--------|
-| 関数の行数 | <20行 | <50行 | >50行 |
-| 引数の数 | 0-2個 | 3個 | >3個 |
-| ネストの深さ | 1-2階層 | 3階層 | >3階層 |
-| クラスの行数 | <200行 | <500行 | >500行 |
-| サイクロマティック複雑度 | <10 | <20 | >20 |
-| テストカバレッジ | >80% | >60% | <60% |
+| Function length | <20 lines | <50 lines | >50 lines |
+| Parameter count | 0–2 | 3 | >3 |
+| Nesting depth | 1–2 levels | 3 levels | >3 levels |
+| Class length | <200 lines | <500 lines | >500 lines |
+| Cyclomatic complexity | <10 | <20 | >20 |
+| Test coverage | >80% | >60% | <60% |
 
 ---
 
-## 🔗 関連ドキュメント
+## 🔗 Related Documents
 
-- [SOLID原則の詳細](./SOLID-PRINCIPLES.md) - 各原則の詳細解説
-- [クリーンコードの基礎](./CLEAN-CODE-BASICS.md) - 命名、関数、コメント
-- [品質チェックリスト](./QUALITY-CHECKLIST.md) - 実装完了前の確認項目
+- [SOLID Principles in Detail](./SOLID-PRINCIPLES.md) — detailed explanation of each principle
+- [Clean Code Basics](./CLEAN-CODE-BASICS.md) — naming, functions, comments
+- [Quality Checklist](./QUALITY-CHECKLIST.md) — items to check before completion
 
-## 📖 参考リンク
+## 📖 References
 
-- [クイックリファレンス メインページ](./SKILL.md)
+- [Quick Reference main page](./SKILL.md)
 
 ---
 
-## 💡 ワンポイントアドバイス
+## 💡 One-Line Tips
 
-### 迷ったときの判断基準
+### When in doubt
 
-**シンプルさを優先**
+**Favor simplicity**
 ```
-複雑な設計 vs シンプルな設計
-→ 迷ったらシンプルな方を選ぶ
-```
-
-**テストしやすさを優先**
-```
-テストが書きにくい
-→ 設計を見直すサイン
+Complex design vs. simple design
+→ When in doubt, pick the simple one.
 ```
 
-**読みやすさを優先**
+**Favor testability**
 ```
-コメントが長くなる
-→ コードで説明できないか検討
+Hard to write tests
+→ A sign the design needs rethinking.
 ```
 
-**変更しやすさを優先**
+**Favor readability**
 ```
-変更の影響範囲が広い
-→ 責任が分離されていない可能性
+Comments keep getting longer
+→ See if the code itself can convey the meaning.
+```
+
+**Favor ease of change**
+```
+Changes ripple widely
+→ Responsibilities may not be properly separated.
 ```

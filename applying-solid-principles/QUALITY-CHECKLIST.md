@@ -1,95 +1,95 @@
-# 品質チェックリスト
+# Quality Checklist
 
-実装完了前に確認すべき項目をまとめたチェックリストです。
+A checklist of items to verify before considering an implementation complete.
 
-## 📋 目次
-1. [実装完了前チェックリスト](#実装完了前チェックリスト)
-2. [コードスメル検出](#コードスメル検出)
-3. [リファクタリング判断](#リファクタリング判断)
-4. [設計原則の確認](#設計原則の確認)
-
----
-
-## 実装完了前チェックリスト
-
-### 🎯 SOLID原則の遵守
-
-#### Single Responsibility（単一責任）
-- [ ] 各クラス・関数は単一の責任のみを持つ
-- [ ] 「変更する理由」は1つだけ
-- [ ] 複数の関心事が混在していない
-
-**確認方法**:
-```
-クラス/関数を説明してみる
-→ 「〜と〜をする」となる場合は分割を検討
-→ 「〜をする」と単純に説明できればOK
-```
-
-#### Open/Closed（開放閉鎖）
-- [ ] 拡張に開いている（新機能を追加しやすい）
-- [ ] 修正に閉じている（既存コードを変更しない）
-- [ ] インターフェース・抽象クラスで拡張可能
-
-**確認方法**:
-```
-新しい機能を追加する場合
-→ 既存のif文やswitch文を修正する必要がある場合は要改善
-→ 新しいクラスを追加するだけなら良い設計
-```
-
-#### Liskov Substitution（リスコフの置換）
-- [ ] 派生クラスは基底クラスと置換可能
-- [ ] サブクラスは親クラスの契約を破らない
-- [ ] 継承よりコンポジションを優先
-
-**確認方法**:
-```
-親クラス型の変数に子クラスを代入
-→ 期待通り動作するかテスト
-→ 例外が発生する場合は継承関係を見直す
-```
-
-#### Interface Segregation（インターフェース分離）
-- [ ] 使用しないメソッドへの依存を強制していない
-- [ ] 小さく特化したインターフェース
-- [ ] 必要な機能のみを実装
-
-**確認方法**:
-```
-実装クラスで空実装やエラー投げているメソッドがある
-→ インターフェースが大きすぎる
-→ 分割を検討
-```
-
-#### Dependency Inversion（依存関係逆転）
-- [ ] 抽象（インターフェース）に依存
-- [ ] 具象クラスに直接依存していない
-- [ ] 依存性注入（DI）を活用
-
-**確認方法**:
-```
-new演算子でクラスを直接生成している箇所を確認
-→ 多い場合はDIコンテナの導入を検討
-→ テスト時にモックを注入できるか確認
-```
+## 📋 Table of Contents
+1. [Pre-Completion Checklist](#pre-completion-checklist)
+2. [Detecting Code Smells](#detecting-code-smells)
+3. [Refactoring Decisions](#refactoring-decisions)
+4. [Design Principle Review](#design-principle-review)
 
 ---
 
-### 🎨 クリーンコードの基本
+## Pre-Completion Checklist
 
-#### 命名
-- [ ] 意図が明確な命名
-- [ ] 検索可能な名前（定数化）
-- [ ] 発音可能な名前
-- [ ] 一貫性のある命名規則
+### 🎯 SOLID Principle Adherence
 
-**NG例**:
+#### Single Responsibility
+- [ ] Each class/function has a single responsibility.
+- [ ] There is only one "reason to change."
+- [ ] Multiple concerns are not mixed together.
+
+**How to verify**:
+```
+Try to describe the class/function aloud.
+→ If it comes out as "does X and does Y," consider splitting it.
+→ If "does X" is enough, you're fine.
+```
+
+#### Open/Closed
+- [ ] Open to extension (easy to add new features).
+- [ ] Closed to modification (existing code is not changed).
+- [ ] Extension is possible via interfaces or abstract classes.
+
+**How to verify**:
+```
+When adding a new feature:
+→ If you need to modify existing if/switch statements, it needs improvement.
+→ If you can just add a new class, the design is good.
+```
+
+#### Liskov Substitution
+- [ ] Subclasses are substitutable for their base class.
+- [ ] Subclasses do not violate the parent's contract.
+- [ ] Prefer composition over inheritance.
+
+**How to verify**:
+```
+Assign an instance of the subclass to a variable of the base type.
+→ Test whether it behaves as expected.
+→ If exceptions occur, rethink the inheritance relationship.
+```
+
+#### Interface Segregation
+- [ ] You are not forcing dependencies on unused methods.
+- [ ] Interfaces are small and specialized.
+- [ ] Classes implement only the features they need.
+
+**How to verify**:
+```
+If an implementing class has empty methods or methods that throw errors,
+→ the interface is too big.
+→ Consider splitting it.
+```
+
+#### Dependency Inversion
+- [ ] Depends on abstractions (interfaces).
+- [ ] Does not depend directly on concrete classes.
+- [ ] Uses dependency injection (DI).
+
+**How to verify**:
+```
+Look at places where you instantiate classes with `new`.
+→ If there are many, consider a DI container.
+→ Check whether you can inject a mock in tests.
+```
+
+---
+
+### 🎨 Clean Code Fundamentals
+
+#### Naming
+- [ ] Names clearly convey intent.
+- [ ] Names are searchable (constants).
+- [ ] Names are pronounceable.
+- [ ] Naming conventions are consistent.
+
+**Bad examples**:
 ```typescript
 // ❌
-let d: number  // 何の日数？
-let temp: any  // 何の一時変数？
-let usrNm: string  // 省略しすぎ
+let d: number  // days of what?
+let temp: any  // temp what?
+let usrNm: string  // over-abbreviated
 
 // ✅
 let daysSinceCreation: number
@@ -97,112 +97,112 @@ let temporaryUserData: User
 let userName: string
 ```
 
-#### 関数
-- [ ] 関数は小さい（理想は20行以内）
-- [ ] 単一の責任
-- [ ] 引数は0-2個（最大3個）
-- [ ] 副作用を避ける
+#### Functions
+- [ ] Functions are small (ideally under 20 lines).
+- [ ] Single responsibility.
+- [ ] 0–2 parameters (3 maximum).
+- [ ] Avoid side effects.
 
-**確認方法**:
+**How to verify**:
 ```
-関数が画面に収まらない → 分割を検討
-引数が3個以上 → オブジェクトで渡す
-テストが書きにくい → 責任が多すぎる可能性
+If a function doesn't fit on one screen → consider splitting it.
+If there are 3+ parameters → pass them as an object.
+If it's hard to test → responsibilities may be doing too much.
 ```
 
-#### ネスト
-- [ ] 深いネスト（3階層以上）を避ける
-- [ ] 早期リターンでガード句を使用
-- [ ] 複雑な条件は関数化
+#### Nesting
+- [ ] Avoid deep nesting (3+ levels).
+- [ ] Use guard clauses with early returns.
+- [ ] Extract complex conditions into functions.
 
-**NG例**:
+**Bad example**:
 ```typescript
-// ❌ 深いネスト
+// ❌ Deep nesting
 if (user) {
   if (user.isActive) {
     if (user.hasPermission) {
-      // 処理
+      // handle
     }
   }
 }
 
-// ✅ 早期リターン
+// ✅ Early returns
 if (!user) return
 if (!user.isActive) return
 if (!user.hasPermission) return
-// 処理
+// handle
 ```
 
 ---
 
-### 📐 設計とアーキテクチャ
+### 📐 Design and Architecture
 
-#### DRY（Don't Repeat Yourself）
-- [ ] コードの重複を避ける
-- [ ] 共通処理は関数化・モジュール化
-- [ ] Magic Numberを定数化
+#### DRY (Don't Repeat Yourself)
+- [ ] Avoid duplicated code.
+- [ ] Extract shared logic into functions or modules.
+- [ ] Turn magic numbers into constants.
 
-**確認方法**:
+**How to verify**:
 ```
-同じコードが3回以上出現 → 関数化を検討
-数値リテラルが複数箇所 → 定数化を検討
-```
-
-#### YAGNI（You Aren't Gonna Need It）
-- [ ] 不要な機能を実装していない
-- [ ] 将来の拡張性のための過度な抽象化を避ける
-- [ ] 現在必要な機能のみを実装
-
-**確認方法**:
-```
-「将来使うかもしれない」機能がある
-→ 現在必要か再確認
-→ 不要なら削除
+The same code appears 3+ times → consider extracting a function.
+Numeric literals appear in several places → consider constants.
 ```
 
-#### KISS（Keep It Simple, Stupid）
-- [ ] シンプルな設計
-- [ ] 過度な抽象化を避ける
-- [ ] 理解しやすいコード
+#### YAGNI (You Aren't Gonna Need It)
+- [ ] Don't implement features you don't need.
+- [ ] Avoid over-abstraction for hypothetical future needs.
+- [ ] Implement only what's needed now.
 
-**確認方法**:
+**How to verify**:
 ```
-他の開発者が理解できるか
-→ 説明が長くなる場合は複雑すぎる
-→ シンプル化を検討
+A feature exists "in case we need it later."
+→ Check whether it is actually needed now.
+→ If not, remove it.
+```
+
+#### KISS (Keep It Simple, Stupid)
+- [ ] Simple design.
+- [ ] Avoid over-abstraction.
+- [ ] Easy-to-understand code.
+
+**How to verify**:
+```
+Can another developer understand it?
+→ If the explanation becomes long, it's too complex.
+→ Consider simplifying.
 ```
 
 ---
 
-## コードスメル検出
+## Detecting Code Smells
 
-### 🚨 レッドフラグ（即座に修正すべき）
+### 🚨 Red Flags (fix immediately)
 
-#### 1. 巨大なクラス・関数
+#### 1. Oversized classes/functions
 ```typescript
-// ❌ 500行以上のクラス
+// ❌ A class with 500+ lines
 class UserManager {
-  // 多数のメソッド...
+  // many methods...
 }
 
-// ✅ 責任を分割
+// ✅ Split the responsibilities
 class UserRepository { }
 class UserService { }
 class UserValidator { }
 ```
 
-#### 2. 長いパラメータリスト
+#### 2. Long parameter lists
 ```typescript
-// ❌ 5個以上の引数
+// ❌ 5+ parameters
 function createUser(name, email, age, address, phone) { }
 
-// ✅ オブジェクトで渡す
+// ✅ Pass an object
 function createUser(userData: UserData) { }
 ```
 
-#### 3. 重複コード
+#### 3. Duplicated code
 ```typescript
-// ❌ 同じ処理が複数箇所
+// ❌ The same logic appears in multiple places
 function processUserA(user) {
   if (!user.email.includes('@')) throw new Error('Invalid email')
   // ...
@@ -213,13 +213,13 @@ function processUserB(user) {
   // ...
 }
 
-// ✅ 関数化
+// ✅ Extract into a function
 function validateEmail(email: string) {
   if (!email.includes('@')) throw new Error('Invalid email')
 }
 ```
 
-#### 4. マジックナンバー
+#### 4. Magic numbers
 ```typescript
 // ❌
 if (user.age > 18) { }
@@ -233,40 +233,40 @@ if (user.age > ADULT_AGE) { }
 setTimeout(() => {}, DEFAULT_TIMEOUT_MS)
 ```
 
-#### 5. デッドコード
+#### 5. Dead code
 ```typescript
-// ❌ 使用されていない関数・変数
-function oldFunction() { }  // どこからも呼ばれない
-const unusedVariable = 10   // 使用されていない
+// ❌ Unused functions/variables
+function oldFunction() { }  // never called
+const unusedVariable = 10   // never used
 
-// ✅ 削除（Git履歴で管理）
+// ✅ Delete (git history preserves it)
 ```
 
 ---
 
-### ⚠️ イエローフラグ（改善を検討すべき）
+### ⚠️ Yellow Flags (consider improving)
 
-#### 1. コメントアウトされたコード
+#### 1. Commented-out code
 ```typescript
 // ❌
 // function oldImplementation() {
-//   // 古いコード
+//   // old code
 // }
 
-// ✅ 削除（必要ならGit履歴から復元）
+// ✅ Delete (restore from git history if needed)
 ```
 
-#### 2. 過度な条件分岐
+#### 2. Excessive branching
 ```typescript
-// ❌ switch文が巨大
+// ❌ Huge switch statement
 switch (type) {
-  case 'A': // 処理A
-  case 'B': // 処理B
-  case 'C': // 処理C
-  // ... 20個以上のcase
+  case 'A': // handle A
+  case 'B': // handle B
+  case 'C': // handle C
+  // ... 20+ cases
 }
 
-// ✅ ポリモーフィズム
+// ✅ Polymorphism
 interface Handler {
   handle(): void
 }
@@ -280,30 +280,30 @@ const handlers: Record<string, Handler> = {
 handlers[type].handle()
 ```
 
-#### 3. 深いネスト
+#### 3. Deep nesting
 ```typescript
-// ❌ 3階層以上
+// ❌ 3+ levels
 if (a) {
   if (b) {
     if (c) {
-      // 処理
+      // handle
     }
   }
 }
 
-// ✅ 早期リターン
+// ✅ Early returns
 if (!a) return
 if (!b) return
 if (!c) return
-// 処理
+// handle
 ```
 
-#### 4. 長いメソッドチェーン
+#### 4. Long method chains
 ```typescript
-// ❌ 読みにくい
+// ❌ Hard to read
 user.getOrders().filter(o => o.status === 'pending').map(o => o.total).reduce((a, b) => a + b, 0)
 
-// ✅ 変数に分割
+// ✅ Split across variables
 const pendingOrders = user.getOrders().filter(o => o.status === 'pending')
 const orderTotals = pendingOrders.map(o => o.total)
 const totalAmount = orderTotals.reduce((a, b) => a + b, 0)
@@ -311,124 +311,124 @@ const totalAmount = orderTotals.reduce((a, b) => a + b, 0)
 
 ---
 
-## リファクタリング判断
+## Refactoring Decisions
 
-### いつリファクタリングすべきか
+### When to Refactor
 
-#### 🔴 即座にリファクタリング
-- [ ] バグの原因となっている
-- [ ] セキュリティリスクがある
-- [ ] パフォーマンス問題がある
-- [ ] 新機能追加の障害になっている
+#### 🔴 Refactor immediately
+- [ ] It is causing bugs.
+- [ ] It creates a security risk.
+- [ ] It has a performance problem.
+- [ ] It's blocking a new feature.
 
-#### 🟡 計画的にリファクタリング
-- [ ] テストが書きにくい
-- [ ] 変更の影響範囲が予測できない
-- [ ] 同じバグが繰り返し発生
-- [ ] コードレビューで指摘が多い
+#### 🟡 Refactor on a plan
+- [ ] Tests are hard to write.
+- [ ] The blast radius of changes is unpredictable.
+- [ ] The same bug keeps recurring.
+- [ ] Code reviews surface many concerns.
 
-#### 🟢 余裕があればリファクタリング
-- [ ] コードスメルがある
-- [ ] 命名が不適切
-- [ ] コメントが多すぎる（コードで説明できる）
+#### 🟢 Refactor when you have time
+- [ ] Code smells are present.
+- [ ] Naming is poor.
+- [ ] Too many comments (the code could speak for itself).
 
-### リファクタリングの手順
+### Refactoring Procedure
 
-1. **テストを書く**
-   - 既存の振る舞いを保証するテスト
-   - リファクタリング後も同じ動作を確認
+1. **Write tests**
+   - Tests that pin down the existing behavior.
+   - Confirm the behavior after refactoring.
 
-2. **小さく変更**
-   - 一度に1つの改善
-   - コミットを細かく分ける
+2. **Change in small steps**
+   - One improvement at a time.
+   - Split commits into small units.
 
-3. **テストを実行**
-   - 各ステップでテスト
-   - 失敗したら戻す
+3. **Run the tests**
+   - Run tests after each step.
+   - Revert if they fail.
 
-4. **レビュー**
-   - コードレビューで確認
-   - 改善点を議論
-
----
-
-## 設計原則の確認
-
-### ✅ 良い設計のサイン
-
-- [ ] クラス・関数が小さい
-- [ ] 責任が明確
-- [ ] テストが書きやすい
-- [ ] 変更が局所的（影響範囲が限定）
-- [ ] 新機能を追加しやすい
-- [ ] コードレビューで理解しやすいと言われる
-
-### ❌ 悪い設計のサイン
-
-- [ ] クラス・関数が大きい（100行以上）
-- [ ] 責任が不明確（説明が長い）
-- [ ] テストが書きにくい（モックが多数必要）
-- [ ] 変更が広範囲に影響
-- [ ] 新機能追加のたびに既存コードを大幅修正
-- [ ] コードレビューで質問が多い
+4. **Review**
+   - Confirm via code review.
+   - Discuss improvements.
 
 ---
 
-## 🎯 実装完了前の最終チェック
+## Design Principle Review
 
-実装完了時に以下をすべて確認してください：
+### ✅ Signs of a Good Design
 
-### 設計・アーキテクチャ
-- [ ] SOLID原則を遵守しているか
-- [ ] DRY原則に従っているか
-- [ ] YAGNIに従っているか（不要な機能を実装していないか）
-- [ ] 適切な抽象化レベルか
+- [ ] Classes/functions are small.
+- [ ] Responsibilities are clear.
+- [ ] Tests are easy to write.
+- [ ] Changes stay local (blast radius is limited).
+- [ ] New features are easy to add.
+- [ ] Reviewers say the code is easy to understand.
 
-### コードの品質
-- [ ] 関数は小さく単一責任か（20行以内が理想）
-- [ ] 引数は最小限か（0-2個が理想、最大3個）
-- [ ] 深いネスト（3階層以上）を避けているか
-- [ ] マジックナンバーを定数化しているか
+### ❌ Signs of a Bad Design
 
-### 命名と可読性
-- [ ] 命名は一貫性があり意図が明確か
-- [ ] コメントは必要最小限か（コードで説明できることをコメントにしていないか）
-- [ ] 早期リターンを活用しているか
-
-### エラーハンドリング
-- [ ] 適切なエラーハンドリングがあるか
-- [ ] エラーメッセージは明確か
-- [ ] 例外は適切にキャッチしているか
-
-### テスト
-- [ ] ユニットテストが書かれているか
-- [ ] テストは意味のあるテストか（形式的なテストでないか）
-- [ ] エッジケースをカバーしているか
-
-### セキュリティ
-- [ ] 入力検証をしているか
-- [ ] SQLインジェクション対策をしているか
-- [ ] XSS対策をしているか
-- [ ] 認証・認可が適切か
-
-### パフォーマンス
-- [ ] 不要なループや計算がないか
-- [ ] データベースクエリは最適化されているか
-- [ ] キャッシュを適切に使用しているか
-
-### ドキュメント
-- [ ] 公開APIにJSDocがあるか
-- [ ] 複雑なロジックに説明コメントがあるか
-- [ ] READMEは更新されているか
+- [ ] Classes/functions are big (100+ lines).
+- [ ] Responsibilities are unclear (explanations run long).
+- [ ] Tests are hard to write (you need many mocks).
+- [ ] Changes ripple widely.
+- [ ] Every new feature forces large edits to existing code.
+- [ ] Reviewers ask many questions.
 
 ---
 
-## 🔗 関連ドキュメント
+## 🎯 Final Check Before Completion
 
-- [SOLID原則の詳細](./SOLID-PRINCIPLES.md)
-- [クリーンコードの基礎](./CLEAN-CODE-BASICS.md)
-- [クイックリファレンス](./QUICK-REFERENCE.md)
+Go through all of the following when you consider an implementation done:
 
-## 📖 参考リンク
+### Design and Architecture
+- [ ] SOLID principles are respected.
+- [ ] DRY principle is followed.
+- [ ] YAGNI is respected (no unnecessary features).
+- [ ] The abstraction level is appropriate.
 
-- [品質チェックリスト メインページ](./SKILL.md)
+### Code Quality
+- [ ] Functions are small and single-purpose (20 lines ideally).
+- [ ] Parameter counts are minimal (0–2 ideal, 3 max).
+- [ ] Deep nesting (3+ levels) is avoided.
+- [ ] Magic numbers are lifted into constants.
+
+### Naming and Readability
+- [ ] Naming is consistent and intent is clear.
+- [ ] Comments are kept to a minimum (nothing that the code already conveys).
+- [ ] Early returns are used.
+
+### Error Handling
+- [ ] Error handling is appropriate.
+- [ ] Error messages are clear.
+- [ ] Exceptions are caught appropriately.
+
+### Tests
+- [ ] Unit tests are written.
+- [ ] Tests are meaningful (not merely ceremonial).
+- [ ] Edge cases are covered.
+
+### Security
+- [ ] Inputs are validated.
+- [ ] SQL injection is prevented.
+- [ ] XSS is prevented.
+- [ ] Authentication and authorization are correct.
+
+### Performance
+- [ ] No unnecessary loops or computation.
+- [ ] Database queries are optimized.
+- [ ] Caching is used appropriately.
+
+### Documentation
+- [ ] Public APIs have JSDoc.
+- [ ] Complex logic is documented with explanatory comments.
+- [ ] The README is up to date.
+
+---
+
+## 🔗 Related Documents
+
+- [SOLID Principles in Detail](./SOLID-PRINCIPLES.md)
+- [Clean Code Basics](./CLEAN-CODE-BASICS.md)
+- [Quick Reference](./QUICK-REFERENCE.md)
+
+## 📖 References
+
+- [Quality Checklist main page](./SKILL.md)

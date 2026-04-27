@@ -1,62 +1,62 @@
-# SOLID原則の詳細
+# SOLID Principles in Detail
 
-5つのSOLID原則を詳細に解説します。各原則について、悪い例と良い例を対比して説明します。
+A detailed explanation of the five SOLID principles. Each principle is described using contrasting bad and good examples.
 
-## 📋 目次
-1. [Single Responsibility Principle](#1-single-responsibility-principle単一責任の原則)
-2. [Open/Closed Principle](#2-openclosed-principle開放閉鎖の原則)
-3. [Liskov Substitution Principle](#3-liskov-substitution-principleリスコフの置換原則)
-4. [Interface Segregation Principle](#4-interface-segregation-principleインターフェース分離の原則)
-5. [Dependency Inversion Principle](#5-dependency-inversion-principle依存関係逆転の原則)
+## 📋 Table of Contents
+1. [Single Responsibility Principle](#1-single-responsibility-principle)
+2. [Open/Closed Principle](#2-openclosed-principle)
+3. [Liskov Substitution Principle](#3-liskov-substitution-principle)
+4. [Interface Segregation Principle](#4-interface-segregation-principle)
+5. [Dependency Inversion Principle](#5-dependency-inversion-principle)
 
 ---
 
-## 1. Single Responsibility Principle（単一責任の原則）
+## 1. Single Responsibility Principle
 
-### 定義
-**各クラス・関数は単一の責任のみを持つ**
+### Definition
+**Each class and function should have a single responsibility.**
 
-「変更する理由」が1つだけになるように設計します。
+Design so that there is only one "reason to change."
 
-### なぜ重要か
-- **保守性向上**: 変更の影響範囲が限定される
-- **テストしやすい**: 単一の機能のみをテストすればよい
-- **再利用性**: 責任が明確な部品は再利用しやすい
+### Why It Matters
+- **Better maintainability**: The scope of change is limited.
+- **Easier to test**: You only need to test a single piece of functionality.
+- **Reusability**: Components with clearly defined responsibilities are easier to reuse.
 
-### ❌ 悪い例: 複数の責任を持つクラス
+### ❌ Bad Example: A class with multiple responsibilities
 ```typescript
 class User {
   name: string
   email: string
 
-  // ❌ ユーザークラスがDB操作の責任を持っている
+  // ❌ The User class is responsible for database operations
   saveToDatabase() {
     const db = new Database()
     db.insert('users', this)
   }
 
-  // ❌ ユーザークラスがメール送信の責任を持っている
+  // ❌ The User class is responsible for sending emails
   sendEmail(subject: string, body: string) {
     const emailService = new EmailService()
     emailService.send(this.email, subject, body)
   }
 
-  // ❌ ユーザークラスがレポート生成の責任を持っている
+  // ❌ The User class is responsible for generating reports
   generateReport(): string {
     return `User Report: ${this.name} (${this.email})`
   }
 }
 ```
 
-**問題点**:
-- DBスキーマ変更時にUserクラスを修正
-- メール送信ロジック変更時にUserクラスを修正
-- レポート形式変更時にUserクラスを修正
-- テストが複雑（DB、メール、レポートすべてをモック）
+**Problems**:
+- The User class must be modified whenever the DB schema changes.
+- The User class must be modified whenever email-sending logic changes.
+- The User class must be modified whenever the report format changes.
+- Tests are complex (you must mock the DB, email, and reporting).
 
-### ✅ 良い例: 責任を分離
+### ✅ Good Example: Responsibilities separated
 ```typescript
-// ユーザーエンティティ: データ保持のみ
+// User entity: holds data only
 class User {
   constructor(
     public readonly name: string,
@@ -64,7 +64,7 @@ class User {
   ) {}
 }
 
-// DB操作の責任を分離
+// Database responsibility extracted
 class UserRepository {
   save(user: User): void {
     const db = new Database()
@@ -77,7 +77,7 @@ class UserRepository {
   }
 }
 
-// メール送信の責任を分離
+// Email responsibility extracted
 class UserEmailService {
   sendWelcomeEmail(user: User): void {
     const emailService = new EmailService()
@@ -89,7 +89,7 @@ class UserEmailService {
   }
 }
 
-// レポート生成の責任を分離
+// Report-generation responsibility extracted
 class UserReportGenerator {
   generate(user: User): string {
     return `User Report: ${user.name} (${user.email})`
@@ -97,27 +97,27 @@ class UserReportGenerator {
 }
 ```
 
-**改善点**:
-- 各クラスが単一の責任を持つ
-- 変更の影響範囲が限定される
-- テストが容易（各クラスを独立してテスト）
-- 再利用しやすい
+**Improvements**:
+- Each class has a single responsibility.
+- The scope of change is limited.
+- Tests are simpler (each class can be tested independently).
+- Easier to reuse.
 
 ---
 
-## 2. Open/Closed Principle（開放閉鎖の原則）
+## 2. Open/Closed Principle
 
-### 定義
-**拡張に対して開いており、修正に対して閉じている**
+### Definition
+**Software entities should be open for extension but closed for modification.**
 
-新機能追加時に既存コードを変更せず、拡張で対応します。
+When adding new functionality, extend existing code rather than modifying it.
 
-### なぜ重要か
-- **安全性**: 既存コードを変更しないため、既存機能を壊すリスクが低い
-- **拡張性**: 新機能を追加しやすい
-- **保守性**: 既存コードの理解が不要
+### Why It Matters
+- **Safety**: Because existing code is not modified, there is less risk of breaking existing behavior.
+- **Extensibility**: New features are easy to add.
+- **Maintainability**: You don't need to understand the existing code to extend it.
 
-### ❌ 悪い例: 新しいタイプ追加で既存コード修正が必要
+### ❌ Bad Example: Adding a new type requires modifying existing code
 ```typescript
 class Shape {
   type: 'circle' | 'square' | 'rectangle'
@@ -137,20 +137,20 @@ function getArea(shape: Shape): number {
   if (shape.type === 'rectangle') {
     return shape.width! * shape.height!
   }
-  // 新しい形状（例: 三角形）を追加する場合
-  // → この関数を修正する必要がある
+  // To add a new shape (e.g. a triangle),
+  // you must modify this function.
   throw new Error('Unknown shape type')
 }
 ```
 
-**問題点**:
-- 新しい形状を追加するたびに`getArea`関数を修正
-- 修正時に既存機能を壊すリスク
-- テストケースも増え続ける
+**Problems**:
+- Every new shape forces you to change `getArea`.
+- Each change risks breaking existing behavior.
+- Test cases keep growing.
 
-### ✅ 良い例: インターフェースで拡張
+### ✅ Good Example: Extend through interfaces
 ```typescript
-// インターフェースで抽象化
+// Abstract through an interface
 interface Shape {
   getArea(): number
 }
@@ -182,7 +182,7 @@ class Rectangle implements Shape {
   }
 }
 
-// 新しい形状を追加（既存コードは変更不要）
+// Adding a new shape without changing existing code
 class Triangle implements Shape {
   constructor(
     private base: number,
@@ -194,32 +194,32 @@ class Triangle implements Shape {
   }
 }
 
-// 使用側のコードは変更不要
+// Calling code doesn't need to change
 function printArea(shape: Shape): void {
   console.log(`Area: ${shape.getArea()}`)
 }
 ```
 
-**改善点**:
-- 新しい形状追加時に既存コードを変更しない
-- 各形状のロジックが独立
-- テストも独立して実施可能
+**Improvements**:
+- Adding a new shape does not require changing existing code.
+- Each shape's logic is independent.
+- Tests can be written independently as well.
 
 ---
 
-## 3. Liskov Substitution Principle（リスコフの置換原則）
+## 3. Liskov Substitution Principle
 
-### 定義
-**派生クラスは基底クラスと置換可能である**
+### Definition
+**Subclasses must be substitutable for their base classes.**
 
-サブクラスは親クラスの契約（振る舞い）を破ってはいけません。
+Subclasses must not break the contract (behavior) of their parent class.
 
-### なぜ重要か
-- **信頼性**: 継承階層の振る舞いが予測可能
-- **ポリモーフィズム**: 安全に基底クラス型で扱える
-- **保守性**: 継承関係が明確
+### Why It Matters
+- **Reliability**: Behavior across the inheritance hierarchy is predictable.
+- **Polymorphism**: You can safely use base-class types.
+- **Maintainability**: Inheritance relationships are clear.
 
-### ❌ 悪い例: 親の契約を破る継承
+### ❌ Bad Example: Subclass breaks the parent's contract
 ```typescript
 class Bird {
   fly(): void {
@@ -233,58 +233,58 @@ class Sparrow extends Bird {
   }
 }
 
-// ❌ ペンギンは飛べないため、親の契約を破る
+// ❌ Penguins cannot fly, so they break the parent's contract
 class Penguin extends Bird {
   fly(): void {
     throw new Error('Penguins cannot fly!')
   }
 }
 
-// 使用側で問題が発生
+// Problems appear at the call site
 function makeBirdFly(bird: Bird): void {
-  bird.fly()  // Penguinの場合、エラーが発生
+  bird.fly()  // With Penguin, this throws
 }
 
 makeBirdFly(new Sparrow())  // OK
-makeBirdFly(new Penguin())  // ❌ 例外が発生
+makeBirdFly(new Penguin())  // ❌ throws
 ```
 
-**問題点**:
-- `Bird`型を期待する関数が`Penguin`で壊れる
-- 継承関係が適切でない
+**Problems**:
+- A function expecting `Bird` breaks with `Penguin`.
+- The inheritance relationship is inappropriate.
 
-### ✅ 良い例: 適切な抽象化
+### ✅ Good Example: Correct abstraction
 ```typescript
-// 基底クラス: すべての鳥に共通
+// Base class: common to all birds
 class Bird {
   constructor(public name: string) {}
 }
 
-// 飛べる能力をインターフェースで分離
+// Ability to fly expressed as an interface
 interface Flyable {
   fly(): void
 }
 
-// 泳げる能力をインターフェースで分離
+// Ability to swim expressed as an interface
 interface Swimmable {
   swim(): void
 }
 
-// スズメ: 飛べる鳥
+// Sparrow: a bird that can fly
 class Sparrow extends Bird implements Flyable {
   fly(): void {
     console.log(`${this.name} is flying`)
   }
 }
 
-// ペンギン: 泳げる鳥
+// Penguin: a bird that can swim
 class Penguin extends Bird implements Swimmable {
   swim(): void {
     console.log(`${this.name} is swimming`)
   }
 }
 
-// アヒル: 飛べて泳げる鳥
+// Duck: a bird that can fly and swim
 class Duck extends Bird implements Flyable, Swimmable {
   fly(): void {
     console.log(`${this.name} is flying`)
@@ -295,7 +295,7 @@ class Duck extends Bird implements Flyable, Swimmable {
   }
 }
 
-// 使用側: 能力に応じた関数
+// Call sites: functions that require specific abilities
 function makeFly(flyable: Flyable): void {
   flyable.fly()
 }
@@ -310,26 +310,26 @@ makeFly(new Duck('Donald'))     // OK
 makeSwim(new Duck('Donald'))    // OK
 ```
 
-**改善点**:
-- 継承とインターフェースを適切に使い分け
-- 各クラスは実装できる能力のみを持つ
-- 型安全に使用可能
+**Improvements**:
+- Inheritance and interfaces are used appropriately.
+- Each class only exposes the abilities it can implement.
+- Everything is type-safe.
 
 ---
 
-## 4. Interface Segregation Principle（インターフェース分離の原則）
+## 4. Interface Segregation Principle
 
-### 定義
-**クライアントが使用しないメソッドへの依存を強制しない**
+### Definition
+**Clients should not be forced to depend on methods they do not use.**
 
-大きなインターフェースより、小さく特化したインターフェースを複数用意します。
+Prefer many small, specialized interfaces over a single large one.
 
-### なぜ重要か
-- **柔軟性**: 必要な機能のみを実装
-- **保守性**: インターフェース変更の影響範囲が限定
-- **理解しやすさ**: 役割が明確
+### Why It Matters
+- **Flexibility**: Implement only the capabilities you need.
+- **Maintainability**: The blast radius of interface changes is limited.
+- **Clarity**: Roles are explicit.
 
-### ❌ 悪い例: 巨大なインターフェース
+### ❌ Bad Example: A bloated interface
 ```typescript
 interface Worker {
   work(): void
@@ -345,44 +345,44 @@ class Human implements Worker {
   takeBreak() { console.log('Taking a break') }
 }
 
-// ❌ ロボットは食事も睡眠も必要ない
+// ❌ Robots don't need to eat or sleep
 class Robot implements Worker {
   work() { console.log('Processing tasks') }
 
-  // 不要なメソッドを実装しなければならない
+  // Has to implement methods it doesn't need
   eat() { throw new Error('Robots do not eat') }
   sleep() { throw new Error('Robots do not sleep') }
   takeBreak() { throw new Error('Robots do not take breaks') }
 }
 ```
 
-**問題点**:
-- ロボットに不要なメソッドを実装
-- インターフェース変更時の影響が大きい
+**Problems**:
+- Robots must implement methods they don't need.
+- Interface changes have a large blast radius.
 
-### ✅ 良い例: 分離されたインターフェース
+### ✅ Good Example: Segregated interfaces
 ```typescript
-// 作業する能力
+// Ability to work
 interface Workable {
   work(): void
 }
 
-// 食事する能力
+// Ability to eat
 interface Eatable {
   eat(): void
 }
 
-// 睡眠する能力
+// Ability to sleep
 interface Sleepable {
   sleep(): void
 }
 
-// 休憩する能力
+// Ability to take breaks
 interface Breakable {
   takeBreak(): void
 }
 
-// 人間: すべての能力を持つ
+// Humans: have every ability
 class Human implements Workable, Eatable, Sleepable, Breakable {
   work() { console.log('Working') }
   eat() { console.log('Eating') }
@@ -390,12 +390,12 @@ class Human implements Workable, Eatable, Sleepable, Breakable {
   takeBreak() { console.log('Taking a break') }
 }
 
-// ロボット: 作業する能力のみ
+// Robots: just the ability to work
 class Robot implements Workable {
   work() { console.log('Processing tasks') }
 }
 
-// 使用側: 必要な能力のみを要求
+// Call sites: require only the abilities they need
 function assignWork(worker: Workable): void {
   worker.work()
 }
@@ -407,64 +407,64 @@ function serveMeal(eater: Eatable): void {
 assignWork(new Human())   // OK
 assignWork(new Robot())   // OK
 serveMeal(new Human())    // OK
-// serveMeal(new Robot()) // コンパイルエラー（型安全）
+// serveMeal(new Robot()) // compile error (type-safe)
 ```
 
-**改善点**:
-- 各インターフェースが単一の能力を定義
-- クラスは必要な能力のみを実装
-- 型安全に使用可能
+**Improvements**:
+- Each interface defines a single ability.
+- Classes implement only the abilities they need.
+- Everything remains type-safe.
 
 ---
 
-## 5. Dependency Inversion Principle（依存関係逆転の原則）
+## 5. Dependency Inversion Principle
 
-### 定義
-**上位モジュールは下位モジュールに依存しない。両者は抽象に依存する**
+### Definition
+**High-level modules should not depend on low-level modules. Both should depend on abstractions.**
 
-具象クラスではなく、インターフェース（抽象）に依存します。
+Depend on interfaces (abstractions) rather than on concrete classes.
 
-### なぜ重要か
-- **柔軟性**: 実装を簡単に切り替えられる
-- **テストしやすさ**: モックやスタブを注入可能
-- **疎結合**: モジュール間の依存が弱い
+### Why It Matters
+- **Flexibility**: Implementations can be swapped easily.
+- **Testability**: Mocks and stubs can be injected.
+- **Loose coupling**: Dependencies between modules are weak.
 
-### ❌ 悪い例: 具象クラスに直接依存
+### ❌ Bad Example: Directly depending on a concrete class
 ```typescript
-// 具象クラス
+// Concrete class
 class MySQLDatabase {
   save(data: any): void {
     console.log('Saving to MySQL:', data)
   }
 }
 
-// ❌ UserServiceがMySQLDatabaseに直接依存
+// ❌ UserService depends directly on MySQLDatabase
 class UserService {
-  private db = new MySQLDatabase()  // 具象クラスに依存
+  private db = new MySQLDatabase()  // Depends on a concrete class
 
   saveUser(user: User): void {
     this.db.save(user)
   }
 }
 
-// PostgreSQLに変更したい場合
-// → UserServiceを修正する必要がある
+// If you want to switch to PostgreSQL
+// → UserService must be modified
 ```
 
-**問題点**:
-- DB実装変更時にUserServiceを修正
-- テスト時に実際のDBが必要
-- UserServiceとMySQLDatabaseが密結合
+**Problems**:
+- Changing DB implementations forces UserService to change.
+- Testing requires a real database.
+- UserService and MySQLDatabase are tightly coupled.
 
-### ✅ 良い例: 抽象（インターフェース）に依存
+### ✅ Good Example: Depend on an abstraction (interface)
 ```typescript
-// 抽象（インターフェース）
+// Abstraction (interface)
 interface Database {
   save(data: any): void
   findById(id: string): any
 }
 
-// 具象クラス1: MySQL実装
+// Concrete class 1: MySQL implementation
 class MySQLDatabase implements Database {
   save(data: any): void {
     console.log('Saving to MySQL:', data)
@@ -476,7 +476,7 @@ class MySQLDatabase implements Database {
   }
 }
 
-// 具象クラス2: PostgreSQL実装
+// Concrete class 2: PostgreSQL implementation
 class PostgreSQLDatabase implements Database {
   save(data: any): void {
     console.log('Saving to PostgreSQL:', data)
@@ -488,7 +488,7 @@ class PostgreSQLDatabase implements Database {
   }
 }
 
-// 具象クラス3: In-Memory実装（テスト用）
+// Concrete class 3: In-memory implementation (for tests)
 class InMemoryDatabase implements Database {
   private data = new Map()
 
@@ -501,9 +501,9 @@ class InMemoryDatabase implements Database {
   }
 }
 
-// ✅ UserServiceは抽象に依存（依存性注入）
+// ✅ UserService depends on the abstraction (dependency injection)
 class UserService {
-  constructor(private db: Database) {}  // 抽象に依存
+  constructor(private db: Database) {}  // Depends on the abstraction
 
   saveUser(user: User): void {
     this.db.save(user)
@@ -514,21 +514,21 @@ class UserService {
   }
 }
 
-// 使用時に実装を注入
+// Inject the implementation at use time
 const mysqlService = new UserService(new MySQLDatabase())
 const postgresService = new UserService(new PostgreSQLDatabase())
 const testService = new UserService(new InMemoryDatabase())
 ```
 
-**改善点**:
-- UserServiceは抽象（インターフェース）に依存
-- DB実装を簡単に切り替え可能
-- テスト時にモックを注入可能
-- UserServiceとDB実装が疎結合
+**Improvements**:
+- UserService depends on an abstraction (interface).
+- DB implementations can be swapped trivially.
+- Mocks can be injected for tests.
+- UserService and DB implementations are loosely coupled.
 
-### 依存性注入（DI）の実践例
+### Dependency Injection (DI) in Practice
 ```typescript
-// DIコンテナの簡単な例
+// Simple DI container
 class Container {
   private services = new Map<string, any>()
 
@@ -541,7 +541,7 @@ class Container {
   }
 }
 
-// 使用例
+// Usage
 const container = new Container()
 container.register('database', new MySQLDatabase())
 container.register('userService',
@@ -553,12 +553,12 @@ const userService = container.resolve<UserService>('userService')
 
 ---
 
-## 🔗 関連ドキュメント
+## 🔗 Related Documents
 
-- [クリーンコードの基礎](./CLEAN-CODE-BASICS.md)
-- [品質チェックリスト](./QUALITY-CHECKLIST.md)
-- [クイックリファレンス](./QUICK-REFERENCE.md)
+- [Clean Code Basics](./CLEAN-CODE-BASICS.md)
+- [Quality Checklist](./QUALITY-CHECKLIST.md)
+- [Quick Reference](./QUICK-REFERENCE.md)
 
-## 📖 参考リンク
+## 📖 References
 
-- [SOLID原則 メインページ](./SKILL.md)
+- [SOLID Principles main page](./SKILL.md)
