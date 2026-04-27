@@ -139,11 +139,17 @@ Send `SendMessage` with `type: "shutdown_request"` to each teammate. After all t
 rm -f /tmp/quality-gate-findings-*.md
 ```
 
-### 3c. Consolidate
+### 3c. Consolidate and Detect Conflicts
 
 1. Collect all **FIX** items across all reviewers
-2. Deduplicate overlapping findings on the same file:line
-3. Display a summary:
+2. Group by `file:line`
+3. For each group with ≥2 FIX items, classify the group:
+   - **Duplicate**: suggestions describe the same edit (same intent, same code outcome) → collapse to one item, keep the most specific wording
+   - **Conflict**: suggestions describe *different* edits on the same location (e.g., SOLID says "extract into hook", Simplify says "inline it") → flag as a conflict candidate
+4. If any conflict candidates exist → proceed to **Step 3d (Arbitrate)**
+5. If no conflicts → skip Step 3d and proceed directly to Step 4
+
+Once the final FIX list is settled (after Step 3d if needed), display the summary:
 
 ```
 ### Quality Gate Results
@@ -154,8 +160,26 @@ rm -f /tmp/quality-gate-findings-*.md
 - [Security] file:line — description (x items)
 - [Simplify] file:line — description (x items)
 - [Slop Cleaner] file:line — description (x items)
+**Conflicts arbitrated:** N items   ← include only if Step 3d ran
 **Nitpicks for review:** N items
 ```
+
+## Step 3d: Arbitrate Conflicts (conditional)
+
+**Skip this step entirely if Step 3c found zero conflicts.**
+
+Spawn a single standalone arbitrator via the `Agent` tool (NOT part of the team):
+
+- **subagent_type**: `general-purpose`
+- **description**: `Arbitrate FIX conflicts`
+- **prompt**: Provide the arbitrator with:
+  1. The conflict groups only (not all findings) — each group is one `file:line` with the competing FIX items from different reviewers, including the reviewer name and their suggested fix
+  2. The relevant file excerpts (read each conflicted file's surrounding context and include it in the prompt)
+  3. The fixed priority chain: **Security > Correctness > SOLID > Simplify > Style**. Within the same tier, prefer the fix with the smallest blast radius (fewer lines changed, no new abstractions)
+  4. Instruction: return a JSON-like block per conflict with `file:line`, `winner: <reviewer-name>`, `chosen_fix: <verbatim fix>`, `reason: <one sentence>`. Optionally, if two fixes are compatible and can be merged, return `merged` instead with the combined edit
+  5. Instruction: **read-only — do NOT edit any files**
+
+Merge the arbitrator's winning fixes back into the FIX list (replacing the conflict groups). Non-conflicted FIX items pass through unchanged. Record the count for the summary line `**Conflicts arbitrated:** N`.
 
 ## Step 4: Auto-Fix
 
@@ -196,9 +220,37 @@ Ask: "Which nitpicks should I apply?" with options:
 
 Apply whichever nitpicks the user selected.
 
-## Step 7: Commit & Push (if changes made)
+## Step 7: Post-Fix Validation
 
-If any changes were applied (fixes or nitpicks):
+**Run this step only if any changes were applied in Step 4 or Step 6.** Skip it if no fixes and no nitpicks were applied.
+
+Spawn a single standalone validator via the `Agent` tool (NOT part of the team):
+
+- **subagent_type**: `general-purpose`
+- **description**: `Validate post-fix diff`
+- **prompt**: Provide the validator with:
+  1. The output of `git diff <base>...HEAD` (the full branch diff, including the applied fixes and nitpicks)
+  2. The list of FIX + nitpick items that were applied (from Step 4 and Step 6)
+  3. Role: read-only semantic review of the final diff. Check for:
+     - Fixes that break another fix (e.g., partial renames, inconsistent refactors across files)
+     - Fixes that reintroduce an issue the original diff was meant to address
+     - Linter/formatter changes that masked a real problem
+     - Applied changes that do not match their stated intent (spot-check a sample)
+  4. Required output format — exactly one of:
+     - `APPROVED` on the first line, nothing else required
+     - `ISSUES_FOUND:` on the first line, followed by a bulleted list of `- file:line — problem description`
+  5. Instruction: **read-only — do NOT edit any files**
+
+**If the validator returns `APPROVED`:** proceed to Step 8.
+
+**If the validator returns `ISSUES_FOUND`:** display the issue list and `git diff --stat`, then use `AskUserQuestion` with:
+- **Proceed anyway** — commit as-is (go to Step 8)
+- **Rollback fixes** — run `git restore .` to discard all applied fixes and nitpicks, then abort the skill and report which validator issues were flagged
+- **Let me review** — exit without committing, leave the working tree dirty so the user can inspect and edit
+
+## Step 8: Commit & Push (if changes made)
+
+If any changes were applied (fixes or nitpicks) and validation passed or the user chose to proceed:
 
 ```bash
 git add .
@@ -213,10 +265,13 @@ git push
 ## Execution Notes
 
 - **Requires**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable in settings
-- **Total teammates**: 4-5 (skip react-reviewer if not a React project)
+- **Agent roster**: 4–5 parallel team reviewers (skip react-reviewer if not a React project) + up to 2 sequential standalone specialists (`conflict-arbitrator` conditional, `post-fix-validator` runs whenever changes were applied)
+- **Standalone specialists** (`conflict-arbitrator`, `post-fix-validator`) are spawned via the `Agent` tool and are NOT part of the `quality-gate` team — no TeamCreate/TeamDelete coupling, no shared TaskList
+- **Arbitrator fires only when ≥1 conflict is detected in Step 3c** — zero cost when reviewers agree
+- **Arbitrator priority** (deterministic): **Security > Correctness > SOLID > Simplify > Style**; within the same tier prefer the fix with the smallest blast radius
 - **Team lifecycle**: `TeamCreate` at Step 2a, `TeamDelete` at Step 3b
-- **All review teammates are read-only** — they report findings via SendMessage, the lead applies fixes
+- **All review teammates and standalone specialists are read-only** — only the lead edits files
 - **Teammate idle is normal** — teammates go idle after each turn; do not treat idle notifications as errors
-- **Deduplication matters** — multiple reviewers may flag the same issue differently; apply only once
+- **Deduplication vs. arbitration** — syntactic duplicates collapse in Step 3c; semantic conflicts (different edits on the same `file:line`) route to Step 3d
 - **Preserve behavior** — fixes must not change functionality, only improve quality
 - **Be surgical** — only modify code that was part of the original diff, do not refactor unrelated code
