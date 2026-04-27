@@ -10,6 +10,30 @@ argument-hint: "[base-branch]"
 
 **Arguments:** `$0` (optional) — base branch to diff against. If omitted, auto-detect.
 
+## Step 0: Verify Dependencies
+
+This skill invokes four external skills plus one Claude Code built-in. Before doing anything else, verify each is installed at `~/.claude/skills/<name>/SKILL.md` (or as a built-in). `simplify` is a Claude Code built-in command and does not require installation.
+
+Check each path in a single shell call:
+
+```bash
+for s in vercel-react-best-practices applying-solid-principles security-review code-slop; do
+  [ -f ~/.claude/skills/$s/SKILL.md ] && echo "OK  $s" || echo "MISS $s"
+done
+```
+
+If any report `MISS`, stop and tell the user which skills are missing with the exact install command for each. Do not proceed until the user confirms they are installed.
+
+| Skill | Install command |
+|-------|-----------------|
+| `vercel-react-best-practices` | `npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -g` |
+| `applying-solid-principles` | `npx skills add https://github.com/BenjaminG/ai-skills --skill applying-solid-principles -g` |
+| `security-review` | `npx skills add https://github.com/getsentry/skills --skill security-review -g` |
+| `code-slop` | `npx skills add https://github.com/BenjaminG/ai-skills --skill code-slop -g` |
+| `simplify` | Built-in to Claude Code — no install needed |
+
+If the project does not use React/Next.js, `vercel-react-best-practices` is optional (Task 1 in Step 2 is skipped anyway).
+
 ## Step 1: Get the Diff
 
 Detect the base branch:
