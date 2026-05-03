@@ -35,6 +35,19 @@ The skill accepts an optional free-form focus string (e.g., `feedback-loop`, `de
    - **DX & infrastructure** — testing strategy, observability, logging, error tracking, feature flags, local dev
 5. **Apply focus filter** if a focus argument was given. Drop non-matching candidates.
 6. **Check each candidate against ADRs/rules.** If a candidate contradicts an ADR, keep it in the matrix but flag it as **ADR-blocked** and de-rank it (it is not actionable without revisiting the ADR first).
+6.5. **Check prior attempts via `devsql`.** For each candidate, search this project's Claude/Codex history and git commits for prior work on the same topic. Derive 2+ keywords from the candidate, scope to the current project (`history.project = '<cwd>'`), and **read the matching prompts/commits before classifying** — a keyword hit is not proof. See the `devsql-querying` skill for table shapes and the standard `datetime(timestamp/1000,'unixepoch')` conversion.
+
+   **Take the date into account.** A candidate that failed 6+ months ago due to missing prerequisites, tool gaps, or excessive effort may be viable today. Do not let a stale failure kill a currently-viable candidate.
+
+   Classify each candidate's prior-attempt state and tag it:
+   - **`shipped`** — matching commits present and not reverted → **drop the candidate** (already done)
+   - **`reverted-recent`** (<3 months) — Confidence=Low, Notes cite revert SHA + likely reason
+   - **`reverted-stale`** (≥6 months) — Keep original Confidence, Notes call out the prior attempt and ask the user whether the blocker still applies before committing to the score
+   - **`struggled`** — many prompts on the topic with zero commits → Confidence=Low, Notes cite the prompt-day
+   - **`deferred`** — prompts discussing it but no attempt → Notes surface prior rationale, no scoring change
+   - **`none`** — normal scoring
+
+   If `devsql` is unavailable or the project has no history rows, print `Prior-attempt history: unavailable` above the matrix and skip this step.
 7. **Score** each surviving candidate on four axes (see below).
 8. **Surface load-bearing assumptions.** For each candidate, list the 1–3 assumptions the Impact and Effort scores depend on. Classify each:
    - **`[verified]`** — the assumption is self-evident from code/config already read (cite `file:line` or a specific snippet). Treat as verified.
@@ -80,12 +93,14 @@ ADRs consulted: <list of ADR files / rules found, or "none found">
 
 ## Ranking matrix
 
-| # | Opportunity | Impact | Effort | Risk | Confidence | Probes | Notes |
-|---|---|---|---|---|---|---|---|
-| 1 | <name> | L | S | Low | High | ok | |
-| 2 | <name> | XL | M | Med | Low | 2 pending (1 feasibility) | unverified `[probe:feasibility]` gates XL |
+| # | Opportunity | Impact | Effort | Risk | Confidence | Prior | Probes | Notes |
+|---|---|---|---|---|---|---|---|---|
+| 1 | <name> | L | S | Low | High | none | ok | |
+| 2 | <name> | XL | M | Med | Low | reverted-stale | 2 pending (1 feasibility) | prior attempt 2024-08 (sha1234) — check if blocker still applies; unverified `[probe:feasibility]` gates XL |
 | … |
-| N | <name> | M | S | Low | Low | ok | ⚠️ ADR-blocked (ADR-0012) |
+| N | <name> | M | S | Low | Low | none | ok | ⚠️ ADR-blocked (ADR-0012) |
+
+`Prior` column values: `none / reverted-recent / reverted-stale / struggled / deferred`. `shipped` candidates are dropped, not listed. When the column is omitted entirely, `Prior-attempt history: unavailable` must be printed above the matrix.
 
 `Probes` column: `ok` when every load-bearing assumption is `[verified]`; otherwise `<N> pending` where N counts outstanding `[probe:*]` / `[unverifiable]` entries. If any pending probe is `feasibility`, call it out: `<N> pending (<M> feasibility)`.
 
