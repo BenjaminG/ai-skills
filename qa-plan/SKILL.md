@@ -5,42 +5,44 @@ description: >-
   tester (not a developer). Auto-detects the current PR from the branch, or
   takes a PR number/URL. Produces steps that can be run with only a browser
   and the app's admin UI — no terminal, SQL, GraphQL, or code access.
-  Always renders in chat first so the user can iterate; only publishes to
-  terminal, file, GitHub issue, or Linear sub-issue on explicit approval.
+  Always renders in chat for review and iteration first; publishes to a
+  markdown file, GitHub issue, or Linear sub-issue only on explicit approval.
   Companion skill `qa-run` (future) will guide the tester through executing
   the plan.
   This skill should be used when asked to create a QA plan, test checklist,
   or manual test cases for a PR.
-argument-hint: "[pr-number-or-url] [--terminal | --file | --github | --linear]"
+argument-hint: "[pr-number-or-url] [--file | --github | --linear]"
 ---
 
 # QA Plan Drafter
 
-!IMPORTANT: Follow this process exactly. Never publish before the user approves the draft.
+!IMPORTANT: Draft and iterate in chat. Publish only after explicit user approval.
 
 ## Step 0: Resolve the PR
 
-Parse `$ARGUMENTS`. First, strip any trailing output flag (`--terminal`, `--file`, `--github`, `--linear`) into `OUTPUT_MODE` (default: `terminal`). The remainder, if any, is the PR reference.
+Parse `$ARGUMENTS`. First, strip any trailing publish flag (`--file`, `--github`, `--linear`) into `PUBLISH_TARGET` (default: unset — draft only). The remainder, if any, is the PR reference.
 
 - **PR ref given** (number or URL) → use it directly.
 - **No PR ref** → detect from current branch:
   ```bash
-  gh pr view --json number,url,title,headRefName,baseRefName,state
+  gh pr list --head "$(git branch --show-current)" --state open --json number,url,title,headRefName,baseRefName --limit 5
   ```
-- **No PR on current branch and no arg** → abort: "No PR found. Check out the feature branch or pass a PR number (e.g. `/qa-plan 12363`)."
+  - Exactly one result → use it.
+  - Zero results → abort: "No open PR found for branch. Pass a PR number (e.g. `/qa-plan 12363`)."
+  - More than one → list them and ask the user which to use.
 
 Echo the resolved PR as `#<n> — <title> — <url>` so the user can confirm.
 
-## Step 1: Validate output target
+## Step 1: Validate publish target (if set)
 
-| Flag | `OUTPUT_MODE` | Precondition |
-|------|---------------|--------------|
-| `--terminal` (or none) | `terminal` | none |
+| Flag | `PUBLISH_TARGET` | Precondition |
+|------|------------------|--------------|
+| (none) | unset | none — draft only, stays in chat |
 | `--file` | `file` | none |
-| `--github` | `github` | `gh repo view --json nameWithOwner` must succeed |
-| `--linear` | `linear` | `linear` CLI installed **and** a Linear ticket key discoverable from the PR (see Step 5) |
+| `--github` | `github` | `gh repo view --json nameWithOwner` succeeds |
+| `--linear` | `linear` | `linear` CLI installed **and** a ticket key discoverable from the PR (see Step 6) |
 
-Validate the precondition now. If it fails, abort with a clear message before doing any work.
+Validate the precondition now. If it fails, abort before doing any work.
 
 ## Step 2: Fetch PR diff
 
@@ -66,7 +68,7 @@ For each changed file, read it in full and identify:
 
 ### Agent 2: `tester-surface-scout`
 Map out the **tester-facing surfaces** needed to exercise these changes without dev tooling:
-- Back-office / admin UI routes that let a non-dev configure test data (e.g. `/tools/console` style pages, feature-flag toggles in the UI, entity editors)
+- Back-office / admin UI routes that let a non-dev configure test data (e.g. `/tools/console` style pages, feature-flag toggles in the UI, entity editors, date fields on entities)
 - Email sandbox (e.g. Mailpit) URL in ephemeral/preview envs
 - Ephemeral env URL pattern for this repo (e.g. `*-pr-<N>.*`)
 - Manual job/cron triggers exposed in the admin UI
@@ -81,12 +83,13 @@ Synthesize findings into a plan a PM or QA can run **with only a browser + the a
 ### Hard exclusion — drop any step that requires:
 
 - Reading source code, running scripts, or opening a terminal
-- Direct database edits (Mongo shell, psql, Atlas UI writes)
+- Direct database edits (Mongo shell, psql, Atlas UI writes, raw query panels)
 - GraphQL playground, `curl`, Postman, or browser devtools beyond normal use
-- Time-travel / waiting > 24h / simulating SMTP failures / tweaking system clock
-- Modifying env vars, editing feature-flag configs, or redeploying
+- **Modifying the system clock** or waiting for a real elapsed duration that blocks a QA session (> ~1h). *Seeding a dated fixture through the BO (e.g. setting a `startDate` J+32 on a quote) is fine — the `tester-surface-scout` should have flagged that path.*
+- Simulating SMTP/infra failures at the protocol level
+- Modifying env vars, editing feature-flag configs outside the UI, or redeploying
 
-If a critical scenario can only be verified this way, move it to the **"Out of scope — covered by automated tests"** section at the end of the plan (don't delete it, so the dev can confirm coverage exists).
+If a critical scenario can only be verified via one of the above, move it to **"Out of scope — covered by automated tests"** (don't delete, so the dev confirms coverage).
 
 ### Also exclude (already covered by tests):
 
@@ -96,7 +99,7 @@ If a critical scenario can only be verified this way, move it to the **"Out of s
 - Error code / message strings
 - Per-endpoint permission checks
 
-If the `tester-surface-scout` found automated test coverage for a behavior, exclude it.
+If the `tester-surface-scout` found automated coverage, exclude it.
 
 ### For each scenario
 
@@ -110,7 +113,7 @@ Require a **"How to reach this state"** line that names the concrete tester-faci
 5. Environment-specific behavior (browser, locale, FF combinations reachable from UI)
 
 Also produce:
-- **Prerequisites** — data fixtures / roles / feature flag states / ephemeral env URL / credentials the tester needs before starting
+- **Prerequisites** — only what the tester must have **before clicking Step 1** (env URL, credentials, test-user account, label assignment). Not what the dev did to prepare the branch, not setup that belongs inside a scenario's "How to reach this state". Aim for ≤ 5 items.
 - **Regression checks** — user-visible only
 - **Error handling** — graceful degradation visible in the UI
 
@@ -127,12 +130,11 @@ Also produce:
 
 ### Prerequisites
 
-> Complete before starting QA.
+> What the tester needs before starting. Keep to ≤ 5 items.
 
-- [ ] Access to the ephemeral env: <url pattern>
-- [ ] Back-office credentials with role: <role>
+- [ ] Access to the ephemeral env: <url>
+- [ ] Back-office account with role: <role>
 - [ ] Mailpit inbox: <url>
-- [ ] Test data: <fixture description>
 
 ---
 
@@ -177,21 +179,27 @@ Also produce:
 <sub>Drafted by /qa-plan from PR #<N></sub>
 ```
 
-## Step 5: Preview & iterate (DO NOT publish yet)
+## Step 5: Draft & iterate (always — terminal preview)
 
 Render the plan in chat (fenced markdown). Then ask:
 
-> Review the plan. Reply with edits, or `publish` to send it to **<OUTPUT_MODE>**.
+> Review the plan. Reply with edits, or `publish` to send it to **<PUBLISH_TARGET>** (or pick a target: `file`, `github`, `linear`).
 
-Apply user edits and re-render until they say `publish` (or equivalent: "ship it", "go", "ok publish"). Never proceed to Step 6 without explicit approval.
+Apply user edits and re-render until the user says `publish` (or equivalent: "ship it", "go", "ok publish"). Never proceed to Step 6 without explicit approval.
+
+If `PUBLISH_TARGET` is unset and the user never asks to publish, stop here — the draft lives in the chat.
 
 ## Step 6: Publish (only after approval)
 
-### `terminal`
-Already done in Step 5. Skip to Step 7.
+**Always write the approved plan body to a temp file first**, then pass `--body-file` / `--description-file`. This avoids HEREDOC breakage on plans containing backticks, `$`, `|`, or nested code fences.
+
+```bash
+TMP=$(mktemp -t qa-plan.XXXXXX.md)
+# Write the approved plan body to $TMP via the Write tool
+```
 
 ### `file`
-Write to `./qa-plan-<timestamp>.md` via the Write tool. Timestamp = `date +%Y%m%d-%H%M%S`.
+Write to `./qa-plan-<timestamp>.md` via the Write tool. Timestamp = `date +%Y%m%d-%H%M%S`. (No temp file needed — this target *is* a file.)
 
 ### `github`
 ```bash
@@ -199,10 +207,8 @@ gh label create qa --description "Manual QA test plan" --color "0E8A16" 2>/dev/n
 gh issue create \
   --title "QA: <PR title>" \
   --label "qa" \
-  --body "$(cat <<'EOF'
-<rendered plan body>
-EOF
-)"
+  --body-file "$TMP"
+rm -f "$TMP"
 ```
 
 ### `linear`
@@ -215,15 +221,16 @@ EOF
    linear issue create \
      --parent <KEY> \
      --title "QA: <PR title>" \
-     --description "<rendered plan body>"
+     --description-file "$TMP"
+   rm -f "$TMP"
    ```
-3. **Do not apply a QA label automatically.** Label names vary per team and often trigger Slack notifications (e.g. `QA` vs `QA Produit`). After the issue is created, print:
+3. **Do not apply a QA label automatically.** Label names vary per team and often trigger Slack notifications (e.g. `QA` vs `QA Produit`). After creation, print:
    > Sub-issue created: <URL>
    > To notify the QA channel, apply your team's QA label manually (e.g. `linear issue update <KEY> --label "QA Produit"`).
 
 ## Step 7: Confirm
 
-- `terminal`: "QA plan rendered above — N feature areas, M scenarios."
+- No publish: "QA plan drafted above — N feature areas, M scenarios. Reply `publish` with a target to send it."
 - `file`: "QA plan written to <absolute path>."
 - `github`: "QA issue created: <URL>."
 - `linear`: "Linear sub-issue created: <URL>. Apply the QA label manually to notify the channel."
@@ -232,5 +239,5 @@ EOF
 
 - **Iteration is the default.** Publishing without the user saying `publish` is a bug.
 - **Large diffs (> 50KB):** pass only the changed file list to the Explore agents; let them read files directly.
-- **PR body as signal:** the PR body often lists what the author already tested — use it to skip redundant scenarios, and call it out in the Prerequisites.
+- **PR body as signal:** the PR body often lists what the author already tested — use it to skip redundant scenarios.
 - **Companion:** a future `qa-run` skill will pick up a plan produced here and walk the tester through execution.
