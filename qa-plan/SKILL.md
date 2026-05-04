@@ -241,3 +241,10 @@ rm -f "$TMP"
 - **Large diffs (> 50KB):** pass only the changed file list to the Explore agents; let them read files directly.
 - **PR body as signal:** the PR body often lists what the author already tested — use it to skip redundant scenarios.
 - **Companion:** a future `qa-run` skill will pick up a plan produced here and walk the tester through execution.
+
+## Audience & dogfooding
+
+The plan targets a non-developer tester. The dev (you) runs the plan first
+locally as a dogfooding pass — same constraints as the PM. If a step can't
+be executed via BO + browser + Mailpit, the plan is wrong (or the BO is
+missing a surface) — fix it before handoff, don't break the audience rule.
