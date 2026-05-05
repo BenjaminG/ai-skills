@@ -190,6 +190,19 @@ Report per rework session: `opened with "<first prompt, first 80 chars>", re-tou
 - No jsonl → skip 2e.2 entirely and note this in the report.
 - 2e.1 always runs (git-only).
 
+## 2f. Classify Signals by Harness Subsystem
+
+For each cluster identified in 2a–2e, tag it with the most likely harness subsystem using these heuristics:
+
+- **Instructions** — wrong stack version, naming/convention violation, "didn't know about ADR X", rework vocab (`actually`, `properly`, `forgot`) on the same scope
+- **Tools** — `command not found`, `permission denied`, agent attempted action but lacked capability
+- **Environment** — dep install failures, version mismatches, env var missing, "works on my machine" in CI logs
+- **State** — session N+1 opens with "still broken / didn't work" + re-touches files from N; re-exploration of repo structure across sessions
+- **Feedback** — error caught only in CI / review (not locally), agent declared "done" prematurely, force-push or amend storms, repeated "doesn't work / try again" prompts
+
+Output a `subsystem_map.json` in memory: `{ cluster_id: { subsystem, confidence: high|medium|low, evidence: [...] } }`.
+Low-confidence classifications go to the user in §4.
+
 ## 3. Synthesize the Report
 
 Produce a concise report with these sections. Do NOT persist anything yet.
@@ -206,10 +219,27 @@ Produce a concise report with these sections. Do NOT persist anything yet.
 - <rollback / retry cluster #2> — ...
 - **Rework** (only if `Rw ≥ 2` or `Rs ≥ 1`) — <scope/file> fixed in <N> follow-up commits over <M>h; session <id> opened with "<snippet>" and re-touched <K> files from prior session
 
-### Root causes (hypotheses)
-- <missing context: e.g., "didn't know BWS secrets syntax requires X">
-- <wrong assumption: e.g., "assumed lib Y handled Z but it doesn't">
-- <workflow gap: e.g., "no local validation before push, so CI caught it late">
+### Harness diagnosis
+
+| Subsystem | Incidents | Evidence |
+|---|---|---|
+| Instructions | <N> | <hashes / sessions> |
+| Tools | <N> | … |
+| Environment | <N> | … |
+| State | <N> | … |
+| Feedback | <N> | … |
+
+**Bottleneck this branch:** <subsystem> (<N> incidents, <%>)
+
+### Root causes (hypotheses, grouped by subsystem)
+
+**Instructions**
+- <missing rule that would have prevented the cluster>
+
+**Feedback**
+- <missing verification command>
+
+(skip subsystems with 0 incidents)
 
 ### What would have helped from the start
 - <instruction / CLAUDE.md rule that would have prevented the biggest cluster>
@@ -268,6 +298,10 @@ Print:
 Suggest (but do not execute) follow-ups:
 - "Promote rule X to global `~/.claude/CLAUDE.md` if it applies beyond this repo."
 - "Consider encoding rule Y as a pre-commit hook or skill."
+
+## 6.5. Cross-Retrospective Aggregation
+
+Parse all prior `## Lessons —` sections in `CLAUDE.local.md` from the last 30 days. Count `**Subsystem:**` tags. Render an ASCII bar chart of the distribution. If the top subsystem accounts for ≥40% of lessons, flag it as the systemic bottleneck and surface up to 3 most-recurring remedy suggestions.
 
 ## Execution Notes
 
