@@ -131,6 +131,65 @@ rg -c "FAIL |failed|✘|error TS|ESLint" "$SESSION_FILE"
 - Active prompt span: `MAX(history.timestamp) - MIN(history.timestamp)` in window.
 - Session count: distinct jsonl files touched in window.
 
+### 2e. Rework signals (cross-commit / cross-session)
+
+Rework = later commits or sessions that exist to fix a previous iteration *on the same branch*. This is distinct from 2a's churn (which doesn't tell you *why*) and from 2b's rollback grep (which misses the quiet vocabulary: `fix`, `actually`, `follow-up`, `address feedback`, `forgot`).
+
+#### 2e.1 Cross-commit rework (always runs — git only)
+
+```bash
+# Explicit fixups / squash markers
+git log --format="%h %s" "$BASE..HEAD" | rg -i '^\w+ (fixup!|squash!|amend!)'
+
+# Rework vocabulary in commit messages
+git log --format="%h %s" "$BASE..HEAD" \
+  | rg -i '\b(actually|properly|forgot|follow[- ]?up|address(ed)? (review|feedback|comments?)|revisit|redo|re-?work|take 2|second pass|fix(es|ed)? (previous|prior|earlier))\b'
+
+# Same-scope rewrites: conventional-commit scope pairs like feat(x) → fix(x)
+git log --reverse --format="%h %s" "$BASE..HEAD" \
+  | rg '^[0-9a-f]+ \w+\([^)]+\):' \
+  | awk '{
+      match($0, /\w+\(([^)]+)\):/, m)
+      scope=m[1]
+      if (scope in seen) print seen[scope] " → " $0
+      seen[scope]=$0
+    }'
+```
+
+Then for each file with churn ≥ 2 (from 2a), list consecutive commit pairs on that file where the later commit lands within 24h of the prior *and* the later message matches rework vocabulary or shares the same scope prefix. Output per scope/file: `N rework commits over M hours — {hashes}`.
+
+#### 2e.2 Cross-session rework (needs jsonl; devsql optional)
+
+Order sessions from 2c by earliest timestamp. For each adjacent pair `(N, N+1)`:
+
+```bash
+# First user prompts of session N+1 (rework-opening vocabulary)
+jq -r 'select(.type=="user") | .message.content' "$SESSION_FILE_NEXT" 2>/dev/null \
+  | head -2 \
+  | rg -i '\b(still|didn''t work|doesn''t work|not working|broke|broken|follow[- ]?up|actually|revisit|go back|that change|earlier change|previous (commit|change|attempt))\b'
+
+# Files edited in each session (Edit / Write tool_use entries)
+jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="tool_use" and (.name=="Edit" or .name=="Write")) | .input.file_path' "$SESSION_FILE" 2>/dev/null | sort -u
+```
+
+Compute the intersection of edited files between N and N+1. A session pair is **rework** if:
+- N+1's opening prompt matches the vocabulary above, OR
+- File overlap ≥ 2 files AND N+1 opens within 24h of N's last activity.
+
+Report per rework session: `opened with "<first prompt, first 80 chars>", re-touched <K> files from prior session`.
+
+#### 2e.3 Thresholds & report integration
+
+- Compute `REWORK_COMMITS` (union of 2e.1 detections, deduped by hash) and `REWORK_SESSIONS` (count of flagged session pairs).
+- If `REWORK_COMMITS ≥ 2` OR `REWORK_SESSIONS ≥ 1`, emit a dedicated **Rework** bullet cluster in §3's "What went sideways", with evidence (hashes / session ids / first-prompt snippets).
+- If > 10 rework items, show top 10 by recency.
+
+#### 2e.4 Silent fallbacks
+
+- No devsql → still run 2e.1 and compute file-overlap in 2e.2 from jsonl.
+- No jsonl → skip 2e.2 entirely and note this in the report.
+- 2e.1 always runs (git-only).
+
 ## 3. Synthesize the Report
 
 Produce a concise report with these sections. Do NOT persist anything yet.
@@ -140,11 +199,12 @@ Produce a concise report with these sections. Do NOT persist anything yet.
 
 **Timeframe:** <first commit> → now (<X days, Y hours>)
 **Volume:** <N> commits, <M> prompts, <S> sessions
-**Cost signals:** <K> rollback-flavored prompts, <R> revert commits, <T> tool-call failures, <F> high-churn files
+**Cost signals:** <K> rollback-flavored prompts, <R> revert commits, <T> tool-call failures, <F> high-churn files, <Rw> rework commits, <Rs> rework sessions
 
 ### What went sideways
 - <rollback / retry cluster #1> — <what was attempted, what broke, evidence link>
 - <rollback / retry cluster #2> — ...
+- **Rework** (only if `Rw ≥ 2` or `Rs ≥ 1`) — <scope/file> fixed in <N> follow-up commits over <M>h; session <id> opened with "<snippet>" and re-touched <K> files from prior session
 
 ### Root causes (hypotheses)
 - <missing context: e.g., "didn't know BWS secrets syntax requires X">
