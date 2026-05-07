@@ -13,18 +13,19 @@ Draft Benjamin's `#daily-naboo` Slack post from Linear, in the team's format. Dr
 ```
 DAILY :
 :white_check_mark: DONE :
- <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>,
+ <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>
 :rocket: IN PROGRESS:
- <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>,
+ <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>
 :x: BLOCKERS:
- <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>,
-.
+ <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>
+:hourglass_flowing_sand: TODO:
+ <https://linear.app/naboo-team/issue/KEY/slug|KEY: Title>
 ```
 
 Rules:
 - One space before each bullet line (matches team style).
 - Each line ends with a comma; the whole post ends with a lone `.`.
-- Omit any section that has zero items (except keep `DONE` and `IN PROGRESS` headers even if empty — write `None` under them).
+- Omit any section that has zero items.
 - Bullets use Slack link syntax `<url|KEY: Title>` so Slack renders one clickable label per line (no unfurl cards).
 - If a title contains `|` or `>`, replace them with a space in the label (they break Slack link syntax); keep the full title in the URL.
 
