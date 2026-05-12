@@ -24,7 +24,6 @@ DAILY :
 
 Rules:
 - One space before each bullet line (matches team style).
-- Each line ends with a comma; the whole post ends with a lone `.`.
 - Omit any section that has zero items.
 - Bullets use Slack link syntax `<url|KEY: Title>` so Slack renders one clickable label per line (no unfurl cards).
 - If a title contains `|` or `>`, replace them with a space in the label (they break Slack link syntax); keep the full title in the URL.
