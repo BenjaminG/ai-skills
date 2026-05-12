@@ -34,6 +34,14 @@ If any report `MISS`, stop and tell the user which skills are missing with the e
 
 If the project does not use React/Next.js, `vercel-react-best-practices` is optional (Task 1 in Step 2 is skipped anyway).
 
+**Soft dependencies for Step 3.5 (Context Check).** The `context-fetcher` degrades gracefully when these are missing — log which one is unavailable in the bundle and continue, do not abort the skill:
+
+| Tool | Used for | Probe |
+|------|----------|-------|
+| `linear-cli` skill | Linear issue + comments | `[ -f ~/.claude/skills/linear-cli/SKILL.md ]` |
+| `devsql` CLI | Past Claude Code sessions | `command -v devsql` |
+| `gh` CLI | Open PR body + comments | `command -v gh && gh auth status` |
+
 ## Step 1: Get the Diff
 
 Detect the base branch:
@@ -85,6 +93,42 @@ Each task `description` MUST include:
 | 3 | Review security | Reviewing security | `/security-review Review ONLY the changed code in the diff against the security checklist. Categorize each finding as FIX or NITPICK` |
 | 4 | Review simplification opportunities | Reviewing simplification | `/simplify Review ONLY the changed code in the diff for simplification opportunities (clarity, consistency, maintainability). Categorize each finding as FIX or NITPICK. Do NOT modify any files — report only.` |
 | 5 | Review code slop | Reviewing code slop | `/code-slop` but **override**: Do NOT modify any files. Instead, identify all slop issues and report them in FIX/NITPICK format below. |
+| 6 | Fetch historical context | Fetching historical context | See **Task 6 spec** below. Gathers Linear issue, PR body/comments, and past Claude Code sessions that touched the changed files. Output is consumed in Step 3.5 (Context Check). |
+
+#### Task 6 spec — `context-fetcher`
+
+Goal: assemble a context bundle so Step 3.5 can detect FIX suggestions that contradict prior decisions.
+
+The task `description` MUST instruct the teammate to:
+
+1. **Detect Linear issue ID** from the current branch name. Common patterns: `<prefix>/<TEAM>-<NUM>-<slug>`, `<TEAM>-<NUM>-<slug>`, `feature/<TEAM>-<NUM>`. If a match is found, fetch the issue and all its comments via the `linear-cli` skill (`/linear-cli`). If no ID is detected, record `Linear: not found`.
+2. **Detect open PR** for the current branch via `gh pr view --json number,title,body,comments,reviews`. If a PR exists, capture body, review comments, and conversation comments. If none, record `PR: none`.
+3. **Query past Claude Code sessions** that touched the changed files via `devsql`. For each changed file, run a query similar to:
+   ```sql
+   SELECT t.session_id, datetime(t.timestamp/1000, 'unixepoch') AS ts, t.text
+   FROM transcripts t
+   WHERE t.project LIKE '%<basename of cwd>%'
+     AND (t.tool_use LIKE '%<file path>%' OR t.text LIKE '%<file basename>%')
+   ORDER BY t.timestamp DESC
+   LIMIT 20;
+   ```
+   Cap total at ~80 rows across all files. If `devsql` is unavailable, record `Past sessions: devsql unavailable` and continue — do not fail the task.
+4. **Do NOT modify any files.** Read-only.
+5. **Write the bundle** to `/tmp/quality-gate-context-bundle.md` with this structure:
+   ```
+   ## Linear
+   <issue id, title, status, body, comments — or "not found">
+
+   ## PR
+   <number, title, body, review comments, conversation comments — or "none">
+
+   ## Past Claude Code sessions (per file)
+   ### <file/path.ts>
+   - <ts> session <id…>: <one-line excerpt of the prompt or tool_use that touched this file>
+   - …
+   ```
+   Quote verbatim where possible — Step 3.5 needs textual citations.
+6. Send a "done" notification to `lead` via `SendMessage` and mark the task `completed` via `TaskUpdate`.
 
 ### 2c. Spawn Teammates (all in parallel)
 
@@ -97,6 +141,7 @@ Spawn all teammates **in a single response** using the `Task` tool with `team_na
 | `security-reviewer` | Task 3 |
 | `simplify-reviewer` | Task 4 |
 | `slop-cleaner` | Task 5 |
+| `context-fetcher` | Task 6 |
 
 Each teammate's prompt must instruct them to:
 1. Check `TaskList` and claim their assigned task via `TaskUpdate` with `status: "in_progress"` and `owner: "<their-name>"`
@@ -152,16 +197,13 @@ Monitor `TaskList` until all review tasks reach `completed` status. Once all tas
 - `/tmp/quality-gate-findings-simplify-reviewer.md`
 - `/tmp/quality-gate-findings-slop-cleaner.md`
 - `/tmp/quality-gate-findings-react-reviewer.md` (if spawned)
+- `/tmp/quality-gate-context-bundle.md` (from `context-fetcher` — consumed in Step 3.5)
 
 Do NOT rely on `SendMessage` content for findings — those are "done" pings only. The files are the source of truth.
 
 ### 3b. Shut Down Team
 
-Send `SendMessage` with `type: "shutdown_request"` to each teammate. After all teammates confirm shutdown, call `TeamDelete`. Then clean up temp files:
-
-```bash
-rm -f /tmp/quality-gate-findings-*.md
-```
+Send `SendMessage` with `type: "shutdown_request"` to each teammate. After all teammates confirm shutdown, call `TeamDelete`. **Do not delete temp files yet** — Step 3.5 reads `/tmp/quality-gate-context-bundle.md`. Cleanup happens at the end of Step 3.5.
 
 ### 3c. Consolidate and Detect Conflicts
 
@@ -205,6 +247,53 @@ Spawn a single standalone arbitrator via the `Agent` tool (NOT part of the team)
 
 Merge the arbitrator's winning fixes back into the FIX list (replacing the conflict groups). Non-conflicted FIX items pass through unchanged. Record the count for the summary line `**Conflicts arbitrated:** N`.
 
+## Step 3.5: Context Check (always runs)
+
+Goal: catch FIX items that would undo a deliberate decision documented in Linear, the PR, or past Claude Code sessions. Runs after consolidation/arbitration, before auto-apply.
+
+**Skip this step only if** the FIX list is empty AND there are zero nitpicks worth checking (in practice: skip iff the consolidated FIX list is empty).
+
+Spawn a single standalone `context-checker` via the `Agent` tool (NOT part of the team):
+
+- **subagent_type**: `general-purpose`
+- **description**: `Check FIX list against historical context`
+- **prompt**: Provide the checker with:
+  1. The full consolidated FIX list (post-arbitration), each item with `file:line`, reviewer, rule id, description, suggested fix
+  2. The full content of `/tmp/quality-gate-context-bundle.md`
+  3. The diff (or list of changed files if the diff is too large)
+  4. Decision rule (strict): for each FIX, classify as
+     - **OK** — no contradiction with the bundle, or bundle silent on the topic *and* the FIX is low-risk style (e.g. unused import, formatting)
+     - **CONFLICT** — bundle contains evidence (issue comment, PR review, past session prompt/decision) that this code was written this way *on purpose*
+     - **UNCERTAIN** — bundle mentions the file/symbol but the intent is ambiguous (no clear verdict)
+  5. **Strict posture**: treat `UNCERTAIN` the same as `CONFLICT`. Only `OK` allows the FIX to be auto-applied. Confidence threshold for `OK` is ≥ 80%.
+  6. Required output: a JSON-like block per FIX with `file:line`, `verdict: OK | CONFLICT | UNCERTAIN`, `source: <linear|pr|session|none>`, `citation: "<verbatim excerpt from bundle, ≤ 240 chars>"` (omit if `OK`), `reason: <one sentence>`
+  7. Instruction: **read-only — do NOT edit any files**
+
+Process the verdicts:
+
+- **OK** items stay in the FIX list
+- **CONFLICT** and **UNCERTAIN** items are **removed from the FIX list** and inserted into a new bucket `HISTORICAL_CONFLICTS` with their citation and source. They will be displayed at the head of the nitpick section in Step 5 — they are NOT auto-applied.
+
+Update the Step 3c summary block accordingly:
+
+```
+### Quality Gate Results
+
+**Fixes to auto-apply:** N items
+- [React] file:line — description (x items)
+- [SOLID] file:line — description (x items)
+- ...
+**Conflicts arbitrated:** N items   ← include only if Step 3d ran
+**Historical conflicts (rerouted to nitpicks):** N items   ← include only if Step 3.5 found any
+**Nitpicks for review:** N items
+```
+
+After the checker returns, clean up temp files:
+
+```bash
+rm -f /tmp/quality-gate-findings-*.md /tmp/quality-gate-context-bundle.md
+```
+
 ## Step 4: Auto-Fix
 
 Apply all FIX items to the codebase:
@@ -214,26 +303,36 @@ Apply all FIX items to the codebase:
 
 ## Step 5: Present Nitpicks
 
-If there are nitpicks, display them grouped by category and use AskUserQuestion:
+If there are nitpicks OR historical conflicts, display them and use AskUserQuestion. Render the historical-conflicts section FIRST (header position) so it is impossible to miss:
 
 ```
 ### Nitpicks for your review
 
-**React/Next.js:**
+#### ⚠️ Conflicts with past decisions (rerouted from FIX)
+These FIX items were demoted because the historical context suggests the code was written this way on purpose. Review the citation before applying.
+
+- `file:line` — [reviewer/RULE-ID] description
+  - Suggested fix: <suggestion>
+  - Source: <linear|pr|session> — <reason>
+  - Citation: "<verbatim excerpt>"
+
+#### React/Next.js
 - `file:line` — description — suggestion
 
-**SOLID:**
+#### SOLID
 - `file:line` — description — suggestion
 
-**Security:**
+#### Security
 - `file:line` — description — suggestion
 
-**Simplification:**
+#### Simplification
 - `file:line` — description — suggestion
 
-**Slop Cleaner:**
+#### Slop Cleaner
 - `file:line` — description — suggestion
 ```
+
+Omit the `⚠️ Conflicts with past decisions` block if Step 3.5 found none. Omit any reviewer subsection that has no items.
 
 Ask: "Which nitpicks should I apply?" with options:
 - All of them
@@ -289,13 +388,16 @@ git push
 ## Execution Notes
 
 - **Requires**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable in settings
-- **Agent roster**: 4–5 parallel team reviewers (skip react-reviewer if not a React project) + up to 2 sequential standalone specialists (`conflict-arbitrator` conditional, `post-fix-validator` runs whenever changes were applied)
-- **Standalone specialists** (`conflict-arbitrator`, `post-fix-validator`) are spawned via the `Agent` tool and are NOT part of the `quality-gate` team — no TeamCreate/TeamDelete coupling, no shared TaskList
+- **Agent roster**: 5–6 parallel team members (4–5 reviewers — skip react-reviewer if not a React project — plus the `context-fetcher`) + up to 3 sequential standalone specialists (`conflict-arbitrator` conditional, `context-checker` whenever the FIX list is non-empty, `post-fix-validator` whenever changes were applied)
+- **Standalone specialists** (`conflict-arbitrator`, `context-checker`, `post-fix-validator`) are spawned via the `Agent` tool and are NOT part of the `quality-gate` team — no TeamCreate/TeamDelete coupling, no shared TaskList
 - **Arbitrator fires only when ≥1 conflict is detected in Step 3c** — zero cost when reviewers agree
 - **Arbitrator priority** (deterministic): **Security > Correctness > SOLID > Simplify > Style**; within the same tier prefer the fix with the smallest blast radius
+- **Context fetcher runs in parallel with reviewers** in Step 2 so the bundle is ready by Step 3.5 with no added latency
+- **Context checker is strict by default** — `UNCERTAIN` is treated as `CONFLICT`, both reroute to the historical-conflicts nitpick section. Never auto-apply a non-`OK` verdict.
+- **Context sources** (in order of trust): Linear issue + comments → open PR body + reviews → past Claude Code sessions (devsql `transcripts`/`history`)
 - **Team lifecycle**: `TeamCreate` at Step 2a, `TeamDelete` at Step 3b
 - **All review teammates and standalone specialists are read-only** — only the lead edits files
 - **Teammate idle is normal** — teammates go idle after each turn; do not treat idle notifications as errors
-- **Deduplication vs. arbitration** — syntactic duplicates collapse in Step 3c; semantic conflicts (different edits on the same `file:line`) route to Step 3d
+- **Deduplication vs. arbitration vs. historical check** — syntactic duplicates collapse in Step 3c; semantic conflicts between reviewers (different edits on same `file:line`) route to Step 3d; conflicts with prior intent route to Step 3.5
 - **Preserve behavior** — fixes must not change functionality, only improve quality
 - **Be surgical** — only modify code that was part of the original diff, do not refactor unrelated code
