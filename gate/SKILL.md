@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--fix] [--force-fresh]"
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code unless `--fix` is passed.
 
-**Skill version**: `1` — bump this number whenever the reviewer logic, rule enums, or pipeline changes. Cache entries are keyed on it, so bumping invalidates all caches at once.
+**Skill version**: `2` — bump this number whenever the reviewer logic, rule enums, or pipeline changes. Cache entries are keyed on it, so bumping invalidates all caches at once.
 
 ## Arguments
 
@@ -23,7 +23,7 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 This skill invokes four external skills plus one Claude Code built-in. Before doing anything else, verify each is installed at `~/.claude/skills/<name>/SKILL.md`. `simplify` is a Claude Code built-in.
 
 ```bash
-for s in vercel-react-best-practices applying-solid-principles security-review code-slop; do
+for s in vercel-react-best-practices solid security-review code-slop; do
   [ -f ~/.claude/skills/$s/SKILL.md ] && echo "OK  $s" || echo "MISS $s"
 done
 ```
@@ -33,7 +33,7 @@ If any report `MISS`, stop and tell the user which skills are missing with the i
 | Skill | Install command |
 |-------|-----------------|
 | `vercel-react-best-practices` | `npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -g` |
-| `applying-solid-principles` | `npx skills add https://github.com/BenjaminG/ai-skills --skill applying-solid-principles -g` |
+| `solid` | `npx skills add https://github.com/ramziddin/solid-skills --skill solid -g` |
 | `security-review` | `npx skills add https://github.com/getsentry/skills --skill security-review -g` |
 | `code-slop` | `npx skills add https://github.com/BenjaminG/ai-skills --skill code-slop -g` |
 | `simplify` | Built-in to Claude Code — no install needed |
@@ -92,10 +92,16 @@ BASE_SHA=$(git merge-base $BASE HEAD)
 
 # Working tree hash — captures unstaged + staged changes so the cache invalidates after --fix
 # (HEAD doesn't change after --fix until the user commits, but the working tree does)
-WT_HASH=$(git diff HEAD | shasum | cut -c1-12)
+# Restricted to files in the branch diff: edits to unrelated files must NOT invalidate the cache.
+CHANGED_FILES=$(git diff $BASE_SHA...HEAD --name-only)
+WT_HASH=$( {
+  git diff HEAD -- $CHANGED_FILES
+  # Also include untracked files that are part of the branch's changed set
+  git ls-files --others --exclude-standard -- $CHANGED_FILES | xargs -I{} shasum {} 2>/dev/null
+} | shasum | cut -c1-12)
 
 # Cache key — combines SHAs + working tree state + skill version
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v1"  # v1 = SKILL_VERSION from frontmatter
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v2"  # v2 = SKILL_VERSION from frontmatter
 
 # State file path
 STATE_DIR="$HOME/.claude/gate-state/$REPO_SLUG"
@@ -153,7 +159,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v1",
+  "key": "<BRANCH_SAFE>_v2",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": {
     "linear_ticket_id": "NAB-204" | null,
@@ -233,7 +239,7 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
 **Static blocks (order preserved across all reviewers and runs)**:
 
 1. The skill command to invoke (see table below)
-2. **Self-consistency instruction**: invoke the assigned skill **3 times** on the same diff. After each pass, parse the findings into the JSON schema below. After 3 passes, perform fuzzy matching (±5 lines, same `rule_id`, same file) to group findings across passes. Drop any finding present in fewer than 2 passes. Emit only findings with `votes >= 2`.
+2. **Self-consistency instruction**: invoke the assigned skill **3 times** on the same diff. After each pass, parse the findings into the JSON schema below. After 3 passes, perform fuzzy matching (same `file`, line within ±5, same `rule_id`) to group findings across passes. Matching is **per-occurrence, not per-rule_id**: N occurrences of the same `rule_id` at different `(file, line ±5)` buckets are distinct findings and vote independently (e.g. `slop-defensive-check` at lines 12, 47, 88 are three separate findings). Drop any occurrence present in fewer than 2 passes. Emit only occurrences with `votes >= 2`.
 3. The required JSON output schema (see below)
 4. The rule-ID enum for this reviewer (see below)
 5. Tier classification rules (see below)
@@ -250,7 +256,7 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
 | Reviewer name | Skill | Rule prefix |
 |---|---|---|
 | `react-reviewer` (skip if not React) | `/vercel-react-best-practices` | `react-*` |
-| `solid-reviewer` | `/applying-solid-principles` | `solid-*` |
+| `solid-reviewer` | `/solid` | `solid-*` |
 | `security-reviewer` | `/security-review` | `security-*` |
 | `simplify-reviewer` | `/simplify` | `simplify-*` |
 | `slop-reviewer` | `/code-slop` | `slop-*` |
@@ -328,10 +334,12 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
 2. Source specs (each block is conditional — only included if the source is in `sources_to_fetch`):
 
    **Linear (if stale)**:
-   - Detect ticket ID from branch name (patterns: `<prefix>/<TEAM>-<NUM>-<slug>`, `<TEAM>-<NUM>-<slug>`).
-   - Fetch issue + all comments via `/linear-cli`.
-   - Capture `updatedAt` separately for the freshness signal.
-   - If no ticket detected → emit `## Linear\nnot found` and signal `null`.
+   - Detect ticket ID from branch name. Try patterns in order, first match wins:
+     1. `([A-Z]+-[0-9]+)` anywhere in the branch name (e.g. `feat/NAB-204-extract-pricing` → `NAB-204`)
+     2. Same regex against the last path segment if step 1 yields nothing
+   - Emit a `detection_log` line at the top of the `## Linear` section: `detection: pattern=<regex> branch=<branch> match=<ticket-id|none>`. Always present, even on success — keeps debugging trivial.
+   - If a ticket ID is found, fetch issue + all comments via `/linear-cli` and capture `updatedAt` for the freshness signal.
+   - If no ticket detected → emit `## Linear\n<detection_log>\nnot found` and signal `null`.
 
    **GitHub PR (if stale)**:
    - `gh pr view --json number,title,body,comments,reviews,updatedAt`.
@@ -627,7 +635,7 @@ Write `$STATE_FILE` (`<branch_safe>.json`):
 
 ```json
 {
-  "cache_key": "<HEAD_SHA>_<BASE_SHA>_<WT_HASH>_v1",
+  "cache_key": "<HEAD_SHA>_<BASE_SHA>_<WT_HASH>_v2",
   "cached_at": "<ISO timestamp>",
   "cycle": <new cycle number>,
   "verdict": "PASS | PASS WITH NOTES | FAIL",
@@ -642,7 +650,7 @@ Write `$STATE_DIR/${BRANCH_SAFE}.context.json` (separate file from the findings 
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v1",
+  "key": "<BRANCH_SAFE>_v2",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": { ... from /tmp/gate-freshness-signals.json ... },
   "bundle_sources": {
