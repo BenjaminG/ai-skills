@@ -103,39 +103,50 @@ Vote key: <fields> [+ numeric tolerance if any]
 
 The cache is **only** written after Accept. An edited-then-accepted schema is also cached.
 
-## Step 2: Build the pass prompt
+## Step 2: Build the per-pass prompt
 
-The prompt sent to the executing agent on each pass MUST be assembled in the order below — **static blocks first, dynamic blocks last** — so prompt caching kicks in across the 3 passes.
+Each pass runs in an **independent sub-agent** (Step 3) — the lead does NOT execute the prompt itself. This independence is load-bearing: it preserves the statistical assumption behind self-consistency (Wang et al. 2022 samples are i.i.d.). A serial loop in the lead's own context would let pass 2/3 see pass 1's output and bias toward repetition.
 
-**Static blocks** (identical across all passes):
+The prompt sent to **each** sub-agent is identical except for the `Pass index` field. Build it from these blocks:
 
-1. Role: "You are running pass `<i>` of `<N>` for a self-consistency consensus task. On each pass, reason about the input from scratch. Do NOT reference earlier passes. Convergence on the same finding across passes is a positive signal — copying for consistency is not the goal."
+1. Role: "You are an isolated worker for a self-consistency consensus task. You will see ONLY the prompt and the schema. You do NOT have access to other passes' outputs. Reason about the input from scratch and produce your best answer."
 2. The user's `<prompt>` verbatim.
 3. The required JSON schema (from cache).
 4. Strict instruction: "Output ONLY a JSON object/array matching the schema. No prose, no markdown fences, no preamble."
+5. `Pass index: <i>/<N>` — for traceability only; does not change the task.
+6. Output instruction: "Write your JSON output to `/tmp/consensus-pass-<i>.json`. Do not write anything else to the conversation."
 
-**Dynamic block** (changes per pass — small, kept last to preserve cache prefix):
+The input data is **inside the user's prompt** (we use inline mode — see decision log). Sub-agents don't need a separate `<input>` block.
 
-5. `Pass index: <i>/<N>` — only the index varies between passes.
+## Step 3: Execute N passes in parallel (independent sub-agents)
 
-The input data is **inside the user's prompt** (we use inline mode — see decision log). Reviewers don't need a separate `<input>` block.
+**Spawn N independent sub-agents in a single message** using the `Agent` tool. Do NOT loop in the lead's context. Do NOT use `TeamCreate` (no need for inter-agent messaging — sub-agents are fully isolated).
 
-## Step 3: Execute N passes (serial, single agent)
+For each pass `i` in `1..N`, prepare an `Agent` call with:
 
-Run a loop of `N` passes from a single execution context. Do NOT spawn N agents. Do NOT use TeamCreate.
+- **subagent_type**: `general-purpose`
+- **description**: `consensus pass <i>/<N>`
+- **prompt**: the full per-pass prompt from Step 2, with `<i>` substituted
 
-For each pass `i` in `1..N`:
+Send all N `Agent` calls in **one assistant message** so they run concurrently (parallel sub-agents). Each sub-agent:
 
-1. Send the prompt with the dynamic `Pass index: i/N` line.
-2. Capture the response.
-3. Try `json.loads` on the response.
-4. Validate against the schema (required fields present, enums respected).
-5. If valid → write to `/tmp/consensus-pass-<i>.json`.
-6. If invalid → retry the pass once (re-send same prompt). If still invalid → mark this pass as `failed`, log the reason, and continue. Do NOT abort the run.
+1. Receives only its prompt — has zero visibility into the other passes
+2. Produces its JSON output
+3. Writes it to `/tmp/consensus-pass-<i>.json`
+4. Returns a brief completion notification to the lead
+
+After all N notifications arrive, the lead validates each `/tmp/consensus-pass-<i>.json`:
+
+1. Load the file. If missing → mark pass as `failed` (sub-agent returned nothing parseable).
+2. `json.loads` the content.
+3. Validate against the schema (required fields present, enums respected).
+4. If invalid → re-spawn a single replacement sub-agent for that pass (one retry max). If retry also fails → mark `failed`, continue.
 
 Track a list `failed_passes: [{index, reason}]`.
 
-After all passes: if **all** passes failed, abort with an error. Otherwise continue with the valid subset.
+After validation: if **all** passes failed, abort with an error. Otherwise continue with the valid subset.
+
+**Why parallel sub-agents, not a serial loop**: in a serial loop, pass 2's context window contains pass 1's full output. Auto-regressive models attend to that prior output and disproportionately repeat it — producing artificially inflated convergence ("agreement within a conversation") instead of independent samples. Parallel sub-agents recover the i.i.d. property the technique requires. Cost: each sub-agent pays the prompt input once (no shared cache across sub-agents), so input cost is roughly N× a single-pass prompt. For typical consensus prompts (a few KB) this is negligible compared to the integrity gain.
 
 ## Step 4: Vote (deterministic)
 
@@ -194,6 +205,6 @@ rm -f /tmp/consensus-pass-*.json
 - **No auto-fix, no auto-action**: this skill returns consensus, full stop. Apply, triage, or follow-up actions are out of scope.
 - **Composable**: the result JSON path is stable (`/tmp/consensus-result-<timestamp>.json`) so other skills can chain off of it.
 - **Cache invalidation**: edit the prompt → new hash → cache miss → schema redesign. Use `--force-fresh` to redesign the schema for an unchanged prompt.
-- **Why serial passes, not parallel**: aligns with `gate`, maximizes prompt caching across passes (~95% prefix shared), avoids dependency on Agent Teams.
+- **Why parallel sub-agents, not a serial loop**: serial passes in the lead's context break the i.i.d. assumption that makes self-consistency informative — pass `i+1` sees pass `i`'s output and the model's auto-regressive bias inflates apparent convergence. Independent sub-agents preserve true sampling. Cost trade-off: ~N× prompt input vs serial (no shared cache), accepted to keep the technique honest.
 - **Why deterministic vote**: the whole point of self-consistency is turning N noisy samples into a stable answer. A LLM-judge consolidator would reintroduce the variance.
 - **Reference**: Wang et al., 2022 — "Self-Consistency Improves Chain of Thought Reasoning in Language Models" (https://arxiv.org/abs/2203.11171).
