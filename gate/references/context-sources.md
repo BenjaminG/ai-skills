@@ -118,22 +118,45 @@ Synthesized `claude-md-violation` findings flow through Step 7 verdict counting 
 
 ## F3 — adr-discovery-dynamic (applicability filter)
 
-The existing v2 ADR fetch reads every `docs/adr/*.md` and filters bodies for changed-file/symbol mentions. v3 makes the applicability decision more precise by adding **two** matching strategies on top of the existing body-mention heuristic.
+The existing v2 ADR fetch reads every `docs/adr/*.md` and filters bodies for changed-file/symbol mentions. v3 generalises the **roots** ADRs are read from and makes the applicability decision more precise by adding **two** matching strategies on top of the existing body-mention heuristic.
+
+### ADR roots (where ADRs live)
+
+ADRs are read from the union of these conventional locations — whichever exist in the repo (computed once in Step 1b as `ADR_ROOTS`):
+
+- `docs/adr/`
+- `docs/architecture/decisions/`
+- `.claude/rules/`
+
+`.claude/rules/` is treated as a full ADR root: every `*.md` directly under it is a candidate ADR. The applicability filter (below) handles narrowing — generic rules like `search-tools.md` won't surface unless the diff matches their domain via paths/keyword/body-mention.
+
+If none of the roots exist, the fetcher emits `## ADR\nnone` and `adr_git_sha: null` (same shape as today).
 
 ### Strategy 1 — frontmatter `paths:` glob
 
-If the project ships `.claude/rules/adr-*.md` companion files, those companion rule files may carry frontmatter:
+ADRs can declare which file paths they apply to via YAML frontmatter:
 
 ```yaml
 ---
-adr_id: 0001
 paths:
   - "packages/api/resolvers/**"
   - "packages/api/types/**"
 ---
 ```
 
-For each companion rule with a `paths:` array, evaluate the globs against `CHANGED_FILES`. Any match → mark the corresponding `docs/adr/0001-*.md` as **applicable**.
+This frontmatter is read **directly from each ADR file** (any of the roots above). For each ADR with a `paths:` array, evaluate the globs against `CHANGED_FILES` — any match → mark this ADR as **applicable**.
+
+The legacy *companion-file* form is still supported for ADRs that live under `docs/adr/`. A `.claude/rules/adr-*.md` file with frontmatter like:
+
+```yaml
+---
+adr_id: 0001
+paths:
+  - "packages/api/resolvers/**"
+---
+```
+
+maps to `docs/adr/0001-*.md`. Both forms coexist; either marks the ADR applicable.
 
 ### Strategy 2 — filename keyword match
 
@@ -152,20 +175,23 @@ If neither Strategy 1 nor Strategy 2 marks the ADR applicable, the existing v2 b
 
 ### Output
 
-The fetched `## ADR` section in `/tmp/gate-context-bundle.md` includes only **applicable** ADRs (full body), plus a one-line index of all ADR filenames at the top:
+The fetched `## ADR` section in `/tmp/gate-context-bundle.md` includes only **applicable** ADRs (full body), plus a one-line index of all ADR paths at the top. Paths are full (not just filenames), since multiple roots may contribute:
 
 ```
 ## ADR
 
 ### Index (all ADRs)
-- 0001-graphql-nullability.md
-- 0007-error-handling.md
-- 0012-naming-conventions.md
+- docs/adr/0001-graphql-nullability.md
+- docs/adr/0007-error-handling.md
+- .claude/rules/no-direct-prisma.md
 ...
 
 ### Applicable to this diff
 
 #### docs/adr/0001-graphql-nullability.md
+<verbatim body>
+
+#### .claude/rules/no-direct-prisma.md
 <verbatim body>
 ```
 
@@ -185,7 +211,9 @@ For each applicable ADR:
   - Search for "MUST", "MUST NOT", "SHALL", "SHALL NOT" clauses.
   - If a clause's subject pattern matches the finding's evidence:
     set verdict: CONFLICT, source: "adr",
-    citation: "ADR-<id>: <clause verbatim, ≤240 chars>".
+    citation: "ADR-<id>: <clause verbatim, ≤240 chars>" for numbered ADRs
+    under docs/adr/, or "<ADR full path>: <clause verbatim, ≤240 chars>"
+    for unnumbered files (e.g. .claude/rules/<name>.md).
 
   - If a clause "SHOULD" / "RECOMMENDED" pattern matches but the finding
     is not blocking-severity, set verdict: OK (informational only).
@@ -226,7 +254,8 @@ freshness_signals = {
 bundle_sources = {
   linear,    # v2
   pr,        # v2
-  adr,       # v2 — but content now includes the index + applicability filter
+  adr,       # v2 — content now includes the index + applicability filter,
+             #      and roots are unioned across docs/adr/, docs/architecture/decisions/, .claude/rules/
   claude_md, # v3 NEW
   sessions   # v2
 }

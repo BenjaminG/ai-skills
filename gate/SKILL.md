@@ -117,6 +117,14 @@ WT_HASH=$( {
   git ls-files --others --exclude-standard -- $CHANGED_FILES | xargs -I{} shasum {} 2>/dev/null
 } | shasum | cut -c1-12)
 
+# F3 — ADR roots: union of conventional locations that exist in this repo.
+# `.claude/rules/` is treated as an ADR root in full — see references/context-sources.md § F3.
+ADR_ROOT_CANDIDATES=("docs/adr" "docs/architecture/decisions" ".claude/rules")
+ADR_ROOTS=()
+for d in "${ADR_ROOT_CANDIDATES[@]}"; do
+  [ -d "$REPO_ROOT/$d" ] && ADR_ROOTS+=("$d")
+done
+
 # F2 — CLAUDE.md discovery: root + every <touched_dir>/CLAUDE.md (walking up to repo root)
 # See references/context-sources.md.
 CLAUDE_MD_LIST=$( {
@@ -137,6 +145,14 @@ if [ -n "$CLAUDE_MD_LIST" ]; then
   WT_HASH=$(echo "${WT_HASH} ${CLAUDE_MD_GIT_SHA}" | shasum | cut -c1-12)
 else
   CLAUDE_MD_GIT_SHA=""
+fi
+
+# Same treatment for ADR roots — editing a rule must flip the findings cache.
+if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
+  ADR_GIT_SHA=$(git log -1 --format=%H -- "${ADR_ROOTS[@]}" 2>/dev/null | cut -c1-12)
+  [ -n "$ADR_GIT_SHA" ] && WT_HASH=$(echo "${WT_HASH} ${ADR_GIT_SHA}" | shasum | cut -c1-12)
+else
+  ADR_GIT_SHA=""
 fi
 
 # Cache key — combines SHAs + working tree state + skill version
@@ -205,7 +221,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
     "linear_updated_at": "2026-05-17T14:22:00Z" | null,
     "github_pr_number": 1234 | null,
     "github_pr_updated_at": "2026-05-18T09:55:00Z" | null,
-    "adr_git_sha": "<short sha of last commit touching docs/adr/>" | null,
+    "adr_git_sha": "<short sha of last commit touching any path in ADR_ROOTS>" | null,
     "claude_md_git_sha": "<short sha of last commit touching any CLAUDE.md in scope>" | null,
     "devsql_max_history_ts": 1715300000000 | null,
     "devsql_max_jhistory_ts": 1715300000000 | null
@@ -226,7 +242,7 @@ If `FORCE_FRESH` is 1, skip the probes — full re-fetch is forced. Otherwise:
 
 1. **Linear** — extract ticket ID from branch name (same regex as Step 3g). If found, query `updatedAt` only via `linear-cli`. If unavailable or no ticket → signal is `null`.
 2. **GitHub PR** — `gh pr view --json updatedAt` for current branch. If no PR → signal is `null`.
-3. **ADR** — `git log -1 --format=%H -- docs/adr/ 2>/dev/null` (returns sha or empty). If no `docs/adr/` directory → signal is `null`.
+3. **ADR** — already computed in Step 1b as `ADR_GIT_SHA` (last commit touching any path in `ADR_ROOTS` — union of `docs/adr/`, `docs/architecture/decisions/`, `.claude/rules/`). Reuse the value. If `ADR_ROOTS` is empty → signal is `null`.
 4. **CLAUDE.md** — already computed in Step 1b as `CLAUDE_MD_GIT_SHA` (in-scope = root + touched-dir CLAUDE.md). Reuse the value. If `CLAUDE_MD_LIST` is empty → signal is `null`.
 5. **devsql** — for each changed file, run:
    ```sql
@@ -517,14 +533,14 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
    - If no PR → emit `## PR\nnone` and signal `null`.
 
    **ADR (if stale)** — full applicability spec in `references/context-sources.md` § F3:
-   - Read all markdown files under `docs/adr/` (if the directory exists).
+   - Read all markdown files directly under each path in `ADR_ROOTS` (passed in dynamically — union of `docs/adr/`, `docs/architecture/decisions/`, `.claude/rules/` that exist).
    - Determine applicability via three strategies (in order):
-     1. Frontmatter `paths:` glob in `.claude/rules/adr-*.md` companion files
+     1. Frontmatter `paths:` glob, read either directly from the ADR file or from a `.claude/rules/adr-*.md` companion file with matching `adr_id`
      2. Filename keyword match against changed-file extensions / directory segments
      3. Body-mention fallback (changed file or symbol referenced in the body)
-   - Output: a one-line index of all ADR filenames at the top, then full bodies of applicable ADRs only.
-   - Capture `git log -1 --format=%H -- docs/adr/` for the freshness signal.
-   - If no `docs/adr/` → emit `## ADR\nnone` and signal `null`.
+   - Output: a one-line index of all ADR paths (full path, since multiple roots are possible) at the top, then full bodies of applicable ADRs only.
+   - The freshness signal `adr_git_sha` is already captured in Step 1b — no extra probe.
+   - If `ADR_ROOTS` is empty → emit `## ADR\nnone` and signal `null`.
 
    **CLAUDE.md (if stale)** — full spec in `references/context-sources.md` § F2:
    - Use the `CLAUDE_MD_LIST` computed in Step 1b (root + every `<touched_dir>/CLAUDE.md`).
@@ -562,11 +578,12 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
 
    ## ADR
    ### Index
-   - <filename>
+   - <full path under ADR_ROOTS, e.g. docs/adr/0001-graphql-nullability.md>
+   - <e.g. .claude/rules/no-direct-prisma.md>
    ...
 
    ### Applicable to this diff
-   #### docs/adr/<id>-<slug>.md
+   #### <full ADR path>
    <verbatim body>
 
    ## CLAUDE.md
@@ -601,6 +618,7 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
 7. The `sources_to_fetch` list (subset of `linear, pr, adr, claude_md, sessions`)
 8. The cached portions for sources NOT in `sources_to_fetch` (verbatim markdown to paste)
 9. The `CLAUDE_MD_LIST` computed in Step 1b (used only when `claude_md` is in `sources_to_fetch`)
+10. The `ADR_ROOTS` list computed in Step 1b (used only when `adr` is in `sources_to_fetch`)
 
 **Note**: if `sources_to_fetch` is empty, the teammate just merges the 5 cached portions, writes them to the bundle and signals files, and exits. No external calls.
 
