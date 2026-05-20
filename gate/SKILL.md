@@ -10,13 +10,14 @@ argument-hint: "[base-branch] [--fix] [--force-fresh]"
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code unless `--fix` is passed.
 
-**Skill version**: `2` — bump this number whenever the reviewer logic, rule enums, or pipeline changes. Cache entries are keyed on it, so bumping invalidates all caches at once.
+**Skill version**: `3` — bump this number whenever the reviewer logic, rule enums, or pipeline changes. Cache entries are keyed on it, so bumping invalidates all caches at once.
 
 ## Arguments
 
 - `$0` (optional): base branch to diff against. If omitted, auto-detect (`main` → `master` → `develop`).
 - `--fix` (flag): apply BLOCKER findings that pass validator + context-checker. Never auto-commits.
 - `--force-fresh` (flag): bypass cache and reset convergence counter for this branch.
+- `--ignore-scope-gate` (flag): downgrade the Step 2c hard-stops (file-count, suspicious-files) to top-of-report banners. Soft-warn (1–3 SUSPICIOUS) is unaffected (it never blocks).
 
 ## Step 0: Verify Dependencies
 
@@ -61,13 +62,15 @@ ARGS="$@"
 BASE_ARG=""
 FIX_FLAG=0
 FORCE_FRESH=0
+IGNORE_SCOPE_GATE=0
 
 for tok in $ARGS; do
   case "$tok" in
-    --fix)         FIX_FLAG=1 ;;
-    --force-fresh) FORCE_FRESH=1 ;;
-    --*)           echo "unknown flag: $tok" >&2; exit 2 ;;
-    *)             [ -z "$BASE_ARG" ] && BASE_ARG="$tok" || { echo "extra positional: $tok" >&2; exit 2; } ;;
+    --fix)               FIX_FLAG=1 ;;
+    --force-fresh)       FORCE_FRESH=1 ;;
+    --ignore-scope-gate) IGNORE_SCOPE_GATE=1 ;;
+    --*)                 echo "unknown flag: $tok" >&2; exit 2 ;;
+    *)                   [ -z "$BASE_ARG" ] && BASE_ARG="$tok" || { echo "extra positional: $tok" >&2; exit 2; } ;;
   esac
 done
 ```
@@ -86,6 +89,20 @@ BRANCH_SAFE=$(echo "$BRANCH" | tr '/' '_')
 # Base branch (from arg or auto-detect)
 BASE=${BASE_ARG:-$(git rev-parse --verify main >/dev/null 2>&1 && echo main || (git rev-parse --verify master >/dev/null 2>&1 && echo master || echo develop))}
 
+# F10 — wrong-base-warning. Banner-only, never blocks. Spec: references/scope-gate.md.
+WRONG_BASE_BANNER=""
+if [ -n "$BASE_ARG" ]; then
+  case "$BASE_ARG" in
+    main|master|develop) ;;
+    *) WRONG_BASE_BANNER="Base: ${BASE_ARG} (non-standard — verify this is intentional, otherwise pass main|master|develop explicitly)" ;;
+  esac
+else
+  case "$BASE" in
+    main) ;;
+    *)    WRONG_BASE_BANNER="Base: ${BASE} (auto-detected — main not found locally; verify your branch is rebased on the right base)" ;;
+  esac
+fi
+
 # SHAs
 HEAD_SHA=$(git rev-parse HEAD)
 BASE_SHA=$(git merge-base $BASE HEAD)
@@ -100,8 +117,30 @@ WT_HASH=$( {
   git ls-files --others --exclude-standard -- $CHANGED_FILES | xargs -I{} shasum {} 2>/dev/null
 } | shasum | cut -c1-12)
 
+# F2 — CLAUDE.md discovery: root + every <touched_dir>/CLAUDE.md (walking up to repo root)
+# See references/context-sources.md.
+CLAUDE_MD_LIST=$( {
+  [ -f "$REPO_ROOT/CLAUDE.md" ] && echo "$REPO_ROOT/CLAUDE.md"
+  for f in $CHANGED_FILES; do
+    dir=$(dirname "$f")
+    while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+      [ -f "$REPO_ROOT/$dir/CLAUDE.md" ] && echo "$REPO_ROOT/$dir/CLAUDE.md"
+      dir=$(dirname "$dir")
+    done
+  done
+} | sort -u)
+
+# Fold the latest commit-sha touching any in-scope CLAUDE.md into WT_HASH
+# so editing a rule invalidates the findings cache (committed OR working-tree change).
+if [ -n "$CLAUDE_MD_LIST" ]; then
+  CLAUDE_MD_GIT_SHA=$(git log -1 --format=%H -- $CLAUDE_MD_LIST 2>/dev/null | cut -c1-12)
+  WT_HASH=$(echo "${WT_HASH} ${CLAUDE_MD_GIT_SHA}" | shasum | cut -c1-12)
+else
+  CLAUDE_MD_GIT_SHA=""
+fi
+
 # Cache key — combines SHAs + working tree state + skill version
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v2"  # v2 = SKILL_VERSION from frontmatter
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v3"  # v3 = SKILL_VERSION from frontmatter
 
 # State file path
 STATE_DIR="$HOME/.claude/gate-state/$REPO_SLUG"
@@ -151,7 +190,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
 
 **Cache file**: `$STATE_DIR/${BRANCH_SAFE}.context.json`
 
-**Cache key**: `branch_name + skill_version` (no SHAs — Linear/ADR/sessions are orthogonal to the diff). The bundle survives rebases.
+**Cache key**: `branch_name + skill_version` (no SHAs — Linear/ADR/sessions/CLAUDE.md are orthogonal to the diff). The bundle survives rebases.
 
 **Hard TTL**: 7 days, used only as a garbage-collector for abandoned PRs. Freshness inside the TTL is decided by signal probes, not the timestamp.
 
@@ -159,7 +198,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v2",
+  "key": "<BRANCH_SAFE>_v3",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": {
     "linear_ticket_id": "NAB-204" | null,
@@ -167,6 +206,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
     "github_pr_number": 1234 | null,
     "github_pr_updated_at": "2026-05-18T09:55:00Z" | null,
     "adr_git_sha": "<short sha of last commit touching docs/adr/>" | null,
+    "claude_md_git_sha": "<short sha of last commit touching any CLAUDE.md in scope>" | null,
     "devsql_max_history_ts": 1715300000000 | null,
     "devsql_max_jhistory_ts": 1715300000000 | null
   },
@@ -174,6 +214,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
     "linear": "<verbatim section>" | null,
     "pr": "<verbatim section>" | null,
     "adr": "<verbatim section>" | null,
+    "claude_md": "<verbatim section>" | null,
     "sessions": "<verbatim section>" | null
   }
 }
@@ -186,7 +227,8 @@ If `FORCE_FRESH` is 1, skip the probes — full re-fetch is forced. Otherwise:
 1. **Linear** — extract ticket ID from branch name (same regex as Step 3g). If found, query `updatedAt` only via `linear-cli`. If unavailable or no ticket → signal is `null`.
 2. **GitHub PR** — `gh pr view --json updatedAt` for current branch. If no PR → signal is `null`.
 3. **ADR** — `git log -1 --format=%H -- docs/adr/ 2>/dev/null` (returns sha or empty). If no `docs/adr/` directory → signal is `null`.
-4. **devsql** — for each changed file, run:
+4. **CLAUDE.md** — already computed in Step 1b as `CLAUDE_MD_GIT_SHA` (in-scope = root + touched-dir CLAUDE.md). Reuse the value. If `CLAUDE_MD_LIST` is empty → signal is `null`.
+5. **devsql** — for each changed file, run:
    ```sql
    SELECT MAX(timestamp) FROM history WHERE display LIKE '%<file>%';
    SELECT MAX(timestamp) FROM jhistory WHERE display LIKE '%<file>%';
@@ -222,6 +264,123 @@ jq -r '.dependencies // {} | keys[]' package.json 2>/dev/null | rg '^(react|next
 
 If neither matches, mark `react-reviewer` as skipped.
 
+**Conditional reviewer detection** — set spawn flags for the reviewers that only run when the diff matches their domain. Each flag defaults to 0; flip to 1 when the trigger fires.
+
+```bash
+# F4 — migration-reviewer: any migration file or bulk-update API in the diff,
+# excluding test fixtures.
+SPAWN_MIGRATION=0
+MIGRATION_PATHS=$(echo "$CHANGED_FILES" \
+  | grep -E '(migrations/|.*migration.*\.ts$|.*\.migration\.ts$)' \
+  | grep -vE '(test|spec|fixture|__mocks__)' || true)
+if [ -n "$MIGRATION_PATHS" ]; then
+  SPAWN_MIGRATION=1
+elif git diff $BASE_SHA...HEAD -- $CHANGED_FILES \
+       | grep -E '(updateMany|bulkWrite|deleteMany)' \
+       | grep -vE '(test|spec|fixture|__mocks__)' >/dev/null 2>&1; then
+  SPAWN_MIGRATION=1
+fi
+
+# F6 — a11y-reviewer: any .tsx or .jsx in the diff.
+SPAWN_A11Y=0
+echo "$CHANGED_FILES" | grep -qE '\.(tsx|jsx)$' && SPAWN_A11Y=1
+
+# F8 — i18n-reviewer: a11y trigger AND project uses an i18n library.
+SPAWN_I18N=0
+if [ "$SPAWN_A11Y" -eq 1 ] && jq -r '.dependencies // {}, .devDependencies // {} | keys[]' package.json 2>/dev/null \
+     | grep -qE '^(react-intl|next-intl|formatjs|i18next)$'; then
+  SPAWN_I18N=1
+fi
+```
+
+These flags drive which tasks get spawned in Step 3b. If a flag is 0 the corresponding task is skipped — its rule enum still exists but no work is done and no `/tmp/gate-findings-<reviewer>.json` is produced.
+
+## Step 2c: Scope-gate (file-count + suspicious-files)
+
+**Full spec**: `references/scope-gate.md`. This step has three checks; any hard-stop here exits cleanly without spawning Step 3 reviewers and **does NOT increment `state.cycle`** (Step 10a preserves the existing value).
+
+The whole step is bypassed by `--ignore-scope-gate` for hard-stop conditions only — soft-warn banners still surface.
+
+### 2c.1 — File-count hard-stop (F1)
+
+```bash
+FILE_COUNT=$(echo "$CHANGED_FILES" | wc -l | tr -d ' ')
+if [ "$FILE_COUNT" -gt 200 ]; then
+  if [ "$IGNORE_SCOPE_GATE" -eq 1 ]; then
+    FILE_COUNT_BANNER="🛑 SCOPE-GATE — TOO MANY FILES: ${FILE_COUNT} files. Bypassed via --ignore-scope-gate."
+  else
+    # Hard-stop banner (see references/scope-gate.md for full template)
+    cat <<EOF
+🛑 SCOPE-GATE — TOO MANY FILES
+
+  This diff touches ${FILE_COUNT} files vs ${BASE}.
+  That is almost always a botched rebase or merge — gate refuses to review it.
+
+  Try:
+    • git status                          # check for unintended changes
+    • git diff ${BASE} --stat | head -50  # inspect the largest files
+    • git rebase --abort                  # if mid-rebase
+
+  If this is intentional (mass codemod, generated code), bypass with:
+    /gate ${BASE_ARG:-$BASE} --ignore-scope-gate
+EOF
+    # Skip directly to Step 10 (cycle preserved, no verdict written).
+    exit 0
+  fi
+fi
+```
+
+### 2c.2 — Suspicious-files classification (F9)
+
+Skip entirely if `FILE_COUNT <= 1`.
+
+**Intent source — fallback chain** (first non-empty wins):
+
+1. Linear ticket title + body (from cached context bundle if available — see Step 1f)
+2. `gh pr view --json title,body` for current branch (if `gh` available + PR exists)
+3. `git log -1 --format=%s%n%n%b HEAD` (last commit message)
+4. Branch name normalized (replace `-`/`_`/`/` with spaces, strip prefixes `feat/`, `fix/`, `chore/`, `<TICKET>-`)
+
+Capture which source produced the intent → `INTENT_SOURCE ∈ {linear, pr, commit, branch}`.
+
+**Classifier call** — single Haiku call. Result is cached at `$STATE_DIR/${BRANCH_SAFE}.scope.json` keyed on the SHA-12 of `CHANGED_FILES`. Re-runs on the same diff reuse the cached classification.
+
+Prompt the classifier with:
+
+- The intent statement (capped at 500 chars)
+- The list of changed files (paths only)
+- Required output: JSON array `[{file, classification, reason}]` with `classification ∈ {IN_SCOPE, PLAUSIBLY_IN_SCOPE, SUSPICIOUS}`
+
+The classifier runs as a standalone `Agent` call (`subagent_type: general-purpose`, model: `haiku`, read-only). Write its result to `$STATE_DIR/${BRANCH_SAFE}.scope.json`.
+
+**Decision rules** (after classification):
+
+```
+SUSPICIOUS_COUNT = count of files with classification == "SUSPICIOUS"
+
+| SUSPICIOUS_COUNT | Action                                     |
+|------------------|--------------------------------------------|
+| 0                | Silent — no banner                         |
+| 1–3              | SUSPICIOUS_BANNER set; Step 3 still runs   |
+| ≥ 4              | Hard-stop (unless --ignore-scope-gate)     |
+```
+
+For the soft-warn (1–3), set `SUSPICIOUS_BANNER` to the soft-warn block from `references/scope-gate.md` § "Soft-warn banner format" — Step 7a renders it.
+
+For the hard-stop (≥ 4):
+
+- If `IGNORE_SCOPE_GATE == 1`: set `SUSPICIOUS_BANNER` to the hard-stop block prefixed with `(bypassed via --ignore-scope-gate)` and continue.
+- Otherwise: emit the hard-stop block directly to the user and `exit 0` (cycle preserved, no verdict written).
+
+### 2c.3 — Banner aggregation
+
+After Step 2c.1 and 2c.2, the lead may hold up to two banner strings:
+
+- `FILE_COUNT_BANNER` (only when `--ignore-scope-gate` bypassed a hard-stop)
+- `SUSPICIOUS_BANNER` (soft-warn, or hard-stop bypassed)
+
+Both flow into Step 7a alongside `WRONG_BASE_BANNER`. They never affect the verdict.
+
 ## Step 3: Parallel Review (Agent Team) with Self-Consistency
 
 ### 3a. Create Team
@@ -244,23 +403,30 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
 4. The rule-ID enum for this reviewer (see below)
 5. Tier classification rules (see below)
 6. Boy Scout location classification (see below)
-7. Instruction: **Do NOT modify any files. Read-only.**
-8. Instruction: write the final JSON to `/tmp/gate-findings-<reviewer-name>.json`
-9. Instruction: send a "done" notification to `lead` via `SendMessage` and mark the task `completed`
+7. **Reviewer-specific heuristics** (verbatim block from `references/reviewer-prompts.md` for this reviewer name, when one exists). Examples:
+   - `simplify-reviewer` → the `simplify-missing-test` heuristic (which exports require sibling test files, downgrade rules for trivial cases)
+   - `react-reviewer` → composition heuristics (`react-boolean-prop-bloat`, `react-lifted-state-opportunity`, `react-compound-component-opportunity`)
+   - `a11y-reviewer`, `i18n-reviewer`, `migration-reviewer` → full reviewer prompts including trigger conditions and `auto_fixable` mapping
+8. Instruction: **Do NOT modify any files. Read-only.**
+9. Instruction: write the final JSON to `/tmp/gate-findings-<reviewer-name>.json`
+10. Instruction: send a "done" notification to `lead` via `SendMessage` and mark the task `completed`
 
 **Dynamic blocks (last — different on every run)**:
 
-10. The list of `+` lines per file (extracted from the diff — these are the **diff-lines** for Boy Scout classification)
-11. The full diff (or changed-file list with read instructions if diff > 50KB)
+11. The list of `+` lines per file (extracted from the diff — these are the **diff-lines** for Boy Scout classification)
+12. The full diff (or changed-file list with read instructions if diff > 50KB)
 
-| Reviewer name | Skill | Rule prefix |
-|---|---|---|
-| `react-reviewer` (skip if not React) | `/vercel-react-best-practices` | `react-*` |
-| `solid-reviewer` | `/solid` | `solid-*` |
-| `security-reviewer` | `/security-review` | `security-*` |
-| `simplify-reviewer` | `/simplify` | `simplify-*` |
-| `slop-reviewer` | `/code-slop` | `slop-*` |
-| `context-fetcher` | (no skill — see spec below) | — |
+| Reviewer name | Skill | Rule prefix | Spawn condition |
+|---|---|---|---|
+| `react-reviewer` | `/vercel-react-best-practices` | `react-*` | React/Next.js detected in `package.json` |
+| `solid-reviewer` | `/solid` | `solid-*` | always |
+| `security-reviewer` | `/security-review` | `security-*` | always |
+| `simplify-reviewer` | `/simplify` | `simplify-*` | always |
+| `slop-reviewer` | `/code-slop` | `slop-*` | always |
+| `a11y-reviewer` | (no skill — see `references/reviewer-prompts.md` § a11y-reviewer) | `a11y-*` | `SPAWN_A11Y == 1` (any `.tsx` / `.jsx` in diff) |
+| `i18n-reviewer` | (no skill — see `references/reviewer-prompts.md` § i18n-reviewer) | `i18n-*` | `SPAWN_I18N == 1` (a11y trigger + i18n lib in `package.json`) |
+| `migration-reviewer` | (no skill — see `references/reviewer-prompts.md` § migration-reviewer) | `migration-*` | `SPAWN_MIGRATION == 1` (migration file or bulk-update API in diff, excluding fixtures) |
+| `context-fetcher` | (no skill — see spec below) | — | always |
 
 ### 3c. Required JSON output schema (per reviewer)
 
@@ -288,11 +454,14 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
 
 | Reviewer | Allowed `rule_id` values |
 |---|---|
-| `react-reviewer` | `react-missing-key`, `react-stale-closure`, `react-deps-missing`, `react-deps-extra`, `react-no-memo-needed`, `react-effect-misuse`, `react-server-client-mismatch`, `react-hydration-risk`, `react-state-derivation`, `react-other` |
+| `react-reviewer` | `react-missing-key`, `react-stale-closure`, `react-deps-missing`, `react-deps-extra`, `react-no-memo-needed`, `react-effect-misuse`, `react-server-client-mismatch`, `react-hydration-risk`, `react-state-derivation`, `react-boolean-prop-bloat`, `react-lifted-state-opportunity`, `react-compound-component-opportunity`, `react-other` |
 | `solid-reviewer` | `solid-srp`, `solid-ocp`, `solid-lsp`, `solid-isp`, `solid-dip`, `solid-coupling`, `solid-cohesion`, `solid-other` |
 | `security-reviewer` | `security-xss`, `security-sql-injection`, `security-injection-other`, `security-secrets-leak`, `security-auth-bypass`, `security-csrf`, `security-ssrf`, `security-path-traversal`, `security-unsafe-deserialization`, `security-other` |
-| `simplify-reviewer` | `simplify-dead-code`, `simplify-overengineering`, `simplify-naming`, `simplify-redundant`, `simplify-extract`, `simplify-inline`, `simplify-other` |
+| `simplify-reviewer` | `simplify-dead-code`, `simplify-overengineering`, `simplify-naming`, `simplify-redundant`, `simplify-extract`, `simplify-inline`, `simplify-missing-test`, `simplify-other` |
 | `slop-reviewer` | `slop-defensive-check`, `slop-comment-noise`, `slop-any-cast`, `slop-style-drift`, `slop-unused`, `slop-other` |
+| `a11y-reviewer` | `a11y-missing-alt`, `a11y-missing-aria-label`, `a11y-missing-form-label`, `a11y-keyboard-trap`, `a11y-missing-keyboard-handler`, `a11y-color-contrast`, `a11y-missing-role`, `a11y-other` |
+| `i18n-reviewer` | `i18n-hardcoded-string`, `i18n-dynamic-message-id`, `i18n-string-interpolation`, `i18n-missing-namespace`, `i18n-locale-formatting`, `i18n-plural-handling`, `i18n-other` |
+| `migration-reviewer` | `migration-cron-conflict`, `migration-filter-under-selection`, `migration-filter-over-selection`, `migration-missing-rollback`, `migration-rollback-mismatch`, `migration-business-rule-conflict`, `migration-other` |
 
 ### 3e. Tier classification rules (include in each task description)
 
@@ -326,7 +495,7 @@ For each finding, set `location`:
 
 Goal: assemble a context bundle for Step 6 (context-checker), reusing cached portions whenever the freshness probes (Step 1f) agreed.
 
-The task `description` is built dynamically based on `sources_to_fetch` (the subset of `{linear, pr, adr, sessions}` flagged stale or missing). For each source NOT in `sources_to_fetch`, the cached portion is passed in so the teammate can paste it verbatim into the bundle. **Static blocks first, dynamic blocks last** — same prompt-caching convention as the reviewer tasks.
+The task `description` is built dynamically based on `sources_to_fetch` (the subset of `{linear, pr, adr, claude_md, sessions}` flagged stale or missing). For each source NOT in `sources_to_fetch`, the cached portion is passed in so the teammate can paste it verbatim into the bundle. **Static blocks first, dynamic blocks last** — same prompt-caching convention as the reviewer tasks.
 
 **Static blocks** (constant across all runs):
 
@@ -347,11 +516,21 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
    - Capture `updatedAt` separately for the freshness signal.
    - If no PR → emit `## PR\nnone` and signal `null`.
 
-   **ADR (if stale)**:
+   **ADR (if stale)** — full applicability spec in `references/context-sources.md` § F3:
    - Read all markdown files under `docs/adr/` (if the directory exists).
-   - Filter to ADRs whose body mentions any changed file/symbol.
+   - Determine applicability via three strategies (in order):
+     1. Frontmatter `paths:` glob in `.claude/rules/adr-*.md` companion files
+     2. Filename keyword match against changed-file extensions / directory segments
+     3. Body-mention fallback (changed file or symbol referenced in the body)
+   - Output: a one-line index of all ADR filenames at the top, then full bodies of applicable ADRs only.
    - Capture `git log -1 --format=%H -- docs/adr/` for the freshness signal.
    - If no `docs/adr/` → emit `## ADR\nnone` and signal `null`.
+
+   **CLAUDE.md (if stale)** — full spec in `references/context-sources.md` § F2:
+   - Use the `CLAUDE_MD_LIST` computed in Step 1b (root + every `<touched_dir>/CLAUDE.md`).
+   - For each path, emit a `### <path>` subheading followed by the **verbatim file content**. The teammate does not interpret rules; the context-checker (Step 6) does.
+   - If `CLAUDE_MD_LIST` is empty → emit `## CLAUDE.md\nnone` and signal `null`.
+   - The freshness signal `claude_md_git_sha` is already captured in Step 1b — no extra probe.
 
    **Past sessions (if stale)**:
    - Use `devsql`. Reliable tables: `history` (Claude Code prompts) and `jhistory` (Codex CLI sessions). `transcripts` is often empty.
@@ -382,7 +561,20 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
    <number, title, body, review comments, conversation comments — or "none">
 
    ## ADR
-   <relevant ADR excerpts — or "none">
+   ### Index
+   - <filename>
+   ...
+
+   ### Applicable to this diff
+   #### docs/adr/<id>-<slug>.md
+   <verbatim body>
+
+   ## CLAUDE.md
+   ### <repo-root>/CLAUDE.md
+   <verbatim content>
+
+   ### <repo-root>/<dir>/CLAUDE.md
+   <verbatim content>
 
    ## Past Claude Code sessions (per file)
    ### <file/path.ts>
@@ -396,6 +588,7 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
      "github_pr_number": ...,
      "github_pr_updated_at": "...",
      "adr_git_sha": "...",
+     "claude_md_git_sha": "...",
      "devsql_max_history_ts": ...,
      "devsql_max_jhistory_ts": ...
    }
@@ -405,10 +598,11 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
 **Dynamic blocks** (passed at the end of the prompt):
 
 6. The list of changed files (extracted from Step 2)
-7. The `sources_to_fetch` list (subset of `linear, pr, adr, sessions`)
+7. The `sources_to_fetch` list (subset of `linear, pr, adr, claude_md, sessions`)
 8. The cached portions for sources NOT in `sources_to_fetch` (verbatim markdown to paste)
+9. The `CLAUDE_MD_LIST` computed in Step 1b (used only when `claude_md` is in `sources_to_fetch`)
 
-**Note**: if `sources_to_fetch` is empty, the teammate just merges the 4 cached portions, writes them to the bundle and signals files, and exits. No external calls.
+**Note**: if `sources_to_fetch` is empty, the teammate just merges the 5 cached portions, writes them to the bundle and signals files, and exits. No external calls.
 
 ### 3h. Spawn Teammates (all in parallel)
 
@@ -421,6 +615,9 @@ Spawn all teammates **in a single response** using the `Task` tool with `team_na
 | `security-reviewer` | Security review | **Opus 4.7** |
 | `simplify-reviewer` | Simplify review | **Opus 4.7** |
 | `slop-reviewer` | Slop review | **Opus 4.7** |
+| `a11y-reviewer` | A11y review (only if `SPAWN_A11Y`) | **Opus 4.7** |
+| `i18n-reviewer` | i18n review (only if `SPAWN_I18N`) | **Opus 4.7** |
+| `migration-reviewer` | Migration safety review (only if `SPAWN_MIGRATION`) | **Opus 4.7** |
 | `context-fetcher` | Context bundle | **Haiku 4.5** |
 
 Reviewers run on Opus because review quality is the load-bearing axis of this skill. The context-fetcher runs on Haiku because its work is mechanical (parse JSON from `gh pr view`, run devsql queries, format markdown) — Haiku is sufficient and ~10× cheaper.
@@ -446,6 +643,9 @@ Monitor `TaskList` until all reviewer tasks are `completed`. Read each output fi
 - `/tmp/gate-findings-security-reviewer.json`
 - `/tmp/gate-findings-simplify-reviewer.json`
 - `/tmp/gate-findings-slop-reviewer.json`
+- `/tmp/gate-findings-a11y-reviewer.json` (if `SPAWN_A11Y`)
+- `/tmp/gate-findings-i18n-reviewer.json` (if `SPAWN_I18N`)
+- `/tmp/gate-findings-migration-reviewer.json` (if `SPAWN_MIGRATION`)
 - `/tmp/gate-context-bundle.md`
 - `/tmp/gate-freshness-signals.json` (used in Step 10 to update the context cache)
 
@@ -501,10 +701,19 @@ Spawn a single standalone `context-checker` via the `Agent` tool:
   2. The full content of `/tmp/gate-context-bundle.md`
   3. Decision rule per finding:
      - **OK** — no contradiction, or bundle silent on the topic
-     - **CONFLICT** — bundle contains evidence (issue comment, PR review, past session) that this code was written this way *on purpose*
+     - **CONFLICT** — bundle contains evidence (issue comment, PR review, past session, CLAUDE.md rule, ADR clause) that this code was written this way *on purpose*, OR contradicts a documented MUST/MUST NOT / SHALL / SHALL NOT
      - **UNCERTAIN** — bundle mentions the file/symbol but intent is ambiguous
-  4. Required output: JSON array with `{file, line, rule_id, verdict: OK|CONFLICT|UNCERTAIN, source: linear|pr|session|none, citation: "<≤240 chars>", reason}`
-  5. Instruction: **read-only — do NOT edit any files**
+  4. **CLAUDE.md and ADR enforcement** — append the prompt blocks from `references/context-sources.md` § "Enforcement (Step 6)" for both F2 (CLAUDE.md) and F3 (ADR). The checker must:
+     - For each input finding, additionally check the `## CLAUDE.md` section: if a rule explicitly forbids/permits the pattern, set `verdict: CONFLICT`, `source: "claude-md"`, and cite the rule verbatim (≤240 chars).
+     - For each input finding, additionally check the `## ADR` § "Applicable to this diff": if a MUST / MUST NOT / SHALL / SHALL NOT / SHOULD / RECOMMENDED clause matches, set `verdict: CONFLICT`, `source: "adr"`, citation `ADR-<id>: <clause verbatim>`.
+     - **Synthesize new findings** for diff-level violations of CLAUDE.md (`rule_id: claude-md-violation`) or ADR (`rule_id: adr-violation`). Tier mapping:
+       - CLAUDE.md `MUST NOT` / `MUST` / `MUST NEVER` → BLOCKER
+       - CLAUDE.md `SHOULD` / soft phrasing → MAJOR
+       - ADR `MUST` / `SHALL` → BLOCKER
+       - ADR `SHOULD` / `RECOMMENDED` → MAJOR
+     - Synthesized findings carry `evidence`, `file`, `line`, `citation`, `source` — same shape as reviewer findings — and flow through Step 7 verdict counting normally.
+  5. Required output: JSON array with `{file, line, rule_id, verdict: OK|CONFLICT|UNCERTAIN, source: linear|pr|session|claude-md|adr|none, citation: "<≤240 chars>", reason}`. Synthesized findings additionally carry `tier` and `evidence`.
+  6. Instruction: **read-only — do NOT edit any files**
 
 **Important**: do NOT include freshness timestamps (Linear `updatedAt`, gh PR `updated_at`, devsql `MAX(timestamp)`) in this prompt. Those values change on every run and would break prompt caching for the checker. They live in the state file (Step 1f), not in the agent prompt.
 
@@ -519,6 +728,21 @@ Apply verdicts based on `--fix` flag:
 The verdict computation in Step 7 is unaffected — context check influences display and `--fix` behavior, not the PASS/FAIL gate.
 
 ## Step 7: Compute Verdict
+
+### 7a. Banners (informational, non-blocking)
+
+Before the verdict block, emit any of the following banners that fired during this run. Each banner is a single block. Banners never affect the PASS/FAIL math.
+
+- **`WRONG_BASE_BANNER`** (Step 1b, F10) — if non-empty, emit:
+  ```
+  ⚠️  <WRONG_BASE_BANNER>
+  ```
+- **`FILE_COUNT_BANNER`** (Step 2c.1, F1) — set only when `--ignore-scope-gate` bypassed a >200 files hard-stop. Emit verbatim.
+- **`SUSPICIOUS_BANNER`** (Step 2c.2, F9) — soft-warn (1–3 SUSPICIOUS) or bypassed hard-stop (≥4). Emit verbatim.
+
+If no banners fired, skip this sub-step entirely.
+
+### 7b. Verdict
 
 Count findings by tier (post-validator, post-context-check):
 
@@ -589,10 +813,15 @@ If `--fix` is NOT set: skip directly to Step 9.
 
 If `--fix` is set:
 
-1. Filter the finding list to only `tier == BLOCKER` AND `validator_verdict == VERIFIED` AND `context_verdict == OK`
-2. For each, apply the `suggested_fix` using the Edit tool
-3. After all edits, run any project formatter found in `package.json` scripts (`format`, `prettier`, `lint:fix`) — best-effort, non-blocking on failure
-4. Print summary: `Applied <N> BLOCKER fixes. Working tree is dirty — review with 'git diff' and commit manually.`
+1. Filter the finding list to only `tier == BLOCKER` AND `validator_verdict == VERIFIED` AND `context_verdict == OK`.
+2. **Always exclude these `rule_id` values from auto-fix** (policy / non-mechanical fixes — even when validated):
+   - `simplify-missing-test` (generating tests is anti-pattern slop; user must write them)
+   - `migration-*` (migration fixes require human design — filter, rollback, transactions)
+   - `claude-md-violation` and `adr-violation` (policy violations — user resolves explicitly)
+   - Any finding whose reviewer block in `references/reviewer-prompts.md` lists it as `auto_fixable: no`
+3. For each remaining finding, apply the `suggested_fix` using the Edit tool.
+4. After all edits, run any project formatter found in `package.json` scripts (`format`, `prettier`, `lint:fix`) — best-effort, non-blocking on failure.
+5. Print summary: `Applied <N> BLOCKER fixes. Working tree is dirty — review with 'git diff' and commit manually.`
 
 **Never auto-commit. Never auto-push.**
 
@@ -629,13 +858,15 @@ If `ISSUES_FOUND` → display the issue list and `git diff --stat`, then use `As
 
 ## Step 10: Persist State and Cleanup
 
+**Note**: Step 10 is reached only when Step 3 actually ran. A scope-gate hard-stop in Step 2c (F1 file-count or F9 suspicious-files at ≥4) calls `exit 0` directly, **preserving** the cached `state.cycle` and writing no verdict. This protects the user from burning a cycle on a botched diff.
+
 ### 10a. Findings cache
 
 Write `$STATE_FILE` (`<branch_safe>.json`):
 
 ```json
 {
-  "cache_key": "<HEAD_SHA>_<BASE_SHA>_<WT_HASH>_v2",
+  "cache_key": "<HEAD_SHA>_<BASE_SHA>_<WT_HASH>_v3",
   "cached_at": "<ISO timestamp>",
   "cycle": <new cycle number>,
   "verdict": "PASS | PASS WITH NOTES | FAIL",
@@ -646,18 +877,19 @@ Write `$STATE_FILE` (`<branch_safe>.json`):
 
 ### 10b. Context bundle cache
 
-Write `$STATE_DIR/${BRANCH_SAFE}.context.json` (separate file from the findings cache — survives rebases). Read `/tmp/gate-freshness-signals.json` for the new signals, and `/tmp/gate-context-bundle.md` for the bundle (split it into the four sections to populate `bundle_sources`):
+Write `$STATE_DIR/${BRANCH_SAFE}.context.json` (separate file from the findings cache — survives rebases). Read `/tmp/gate-freshness-signals.json` for the new signals, and `/tmp/gate-context-bundle.md` for the bundle (split it into the five sections to populate `bundle_sources`):
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v2",
+  "key": "<BRANCH_SAFE>_v3",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": { ... from /tmp/gate-freshness-signals.json ... },
   "bundle_sources": {
-    "linear":   "<verbatim ## Linear section>" | null,
-    "pr":       "<verbatim ## PR section>" | null,
-    "adr":      "<verbatim ## ADR section>" | null,
-    "sessions": "<verbatim ## Past Claude Code sessions section>" | null
+    "linear":    "<verbatim ## Linear section>" | null,
+    "pr":        "<verbatim ## PR section>" | null,
+    "adr":       "<verbatim ## ADR section>" | null,
+    "claude_md": "<verbatim ## CLAUDE.md section>" | null,
+    "sessions":  "<verbatim ## Past Claude Code sessions section>" | null
   }
 }
 ```
@@ -674,7 +906,7 @@ rm -f /tmp/gate-findings-*.json /tmp/gate-context-bundle.md /tmp/gate-freshness-
 
 - **Requires**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 - **Coexists** with the legacy `quality-gate` skill (kept as baseline / comparison point)
-- **Reviewer roster**: 5 reviewers (4 if not React) + `context-fetcher`, all in parallel. Each reviewer self-loops 3× internally and votes — single team output is the post-vote JSON.
+- **Reviewer roster**: up to 8 reviewers + `context-fetcher`, all in parallel. Always-spawned: `solid`, `security`, `simplify`, `slop`. Conditional: `react` (if React/Next.js), `a11y` (if `.tsx`/`.jsx`), `i18n` (if `.tsx`/`.jsx` + i18n lib), `migration` (if migration files or bulk-update APIs in diff, excluding fixtures). Each reviewer self-loops 3× internally and votes — single team output is the post-vote JSON.
 - **Model assignment** (per role):
   - Reviewers (Opus 4.7) — review quality is the load-bearing axis
   - `context-fetcher` (Haiku 4.5) — mechanical parsing, ~10× cheaper
