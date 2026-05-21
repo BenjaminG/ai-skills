@@ -774,6 +774,14 @@ Count findings by tier (post-validator, post-context-check):
 | **PASS WITH NOTES** | 0 BLOCKER, ≥1 MAJOR or NIT | **Yes** — MAJOR/NIT are informational only |
 | **FAIL** | ≥1 BLOCKER | No — fix BLOCKERs first |
 
+**Assign stable finding IDs** before rendering. Within each tier, walk the findings in display order (grouped by reviewer, then by `(file, line)` ascending) and assign:
+
+- `B1`, `B2`, … to BLOCKERs
+- `M1`, `M2`, … to MAJORs
+- `N1`, `N2`, … to NITs
+
+IDs are scoped to a single report. Persist them on each finding in the cache (Step 10a) so that a cache-hit re-render produces the same IDs verbatim, and so the user can reference them in a follow-up message (e.g. "fix B1, M1, M2 and N1").
+
 Display:
 
 ```
@@ -799,12 +807,12 @@ For FAIL:
 → This PR cannot merge until BLOCKER items are resolved.
 ```
 
-Then list findings grouped by tier, then by reviewer:
+Then list findings grouped by tier, then by reviewer. **Each finding's heading starts with its ID**:
 
 ```
 ## BLOCKER
 
-### [security-reviewer] security-sql-injection
+### B1 — [security-reviewer] security-sql-injection
 - `src/db/users.ts:42` (diff-line) [votes: 3/3]
   message: User input concatenated into raw SQL query
   evidence: `db.query("SELECT * FROM users WHERE id = " + req.params.id)`
@@ -812,7 +820,7 @@ Then list findings grouped by tier, then by reviewer:
 
 ## MAJOR
 
-### [solid-reviewer] solid-srp
+### M1 — [solid-reviewer] solid-srp
 - `src/services/booking.ts:120` (diff-line) [votes: 2/3] ❔ ambiguous historical context
   message: BookingService now handles 4 unrelated responsibilities
   evidence: …
@@ -821,13 +829,19 @@ Then list findings grouped by tier, then by reviewer:
 
 ## NIT
 
-### [slop-reviewer] slop-defensive-check
+### N1 — [slop-reviewer] slop-defensive-check
 - `src/utils/parse.ts:15` (adjacent) [votes: 2/3]
   message: Null check on guaranteed-non-null parameter
   …
 ```
 
-Conflicts (from Step 4d) are rendered with both findings adjacent and a `⚡ conflicting suggestions` marker.
+Conflicts (from Step 4d) are rendered with both findings adjacent and a `⚡ conflicting suggestions` marker. Each side keeps its own ID.
+
+After the last finding, append a one-line tip so the IDs are discoverable:
+
+```
+Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1, M2 and N1".
+```
 
 ## Step 8: Apply Fixes (only if `--fix`)
 
@@ -884,7 +898,7 @@ If `ISSUES_FOUND` → display the issue list and `git diff --stat`, then use `As
 
 ### 10a. Findings cache
 
-Write `$STATE_FILE` (`<branch_safe>.json`):
+Write `$STATE_FILE` (`<branch_safe>.json`). Each finding carries its display `id` (`B1`, `M1`, `N1`, …) assigned in Step 7b so a cache-hit re-render is byte-stable and the user can reference IDs across runs:
 
 ```json
 {
@@ -892,7 +906,7 @@ Write `$STATE_FILE` (`<branch_safe>.json`):
   "cached_at": "<ISO timestamp>",
   "cycle": <new cycle number>,
   "verdict": "PASS | PASS WITH NOTES | FAIL",
-  "findings": [ … full finding list with all metadata … ],
+  "findings": [ { "id": "B1", "tier": "BLOCKER", "reviewer": "...", "rule_id": "...", "file": "...", "line": 42, "...": "..." } ],
   "applied_fixes": [ … list of fixes applied if --fix, else [] ]
 }
 ```
