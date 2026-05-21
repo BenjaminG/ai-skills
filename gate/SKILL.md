@@ -21,10 +21,10 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 
 ## Step 0: Verify Dependencies
 
-This skill invokes four external skills plus one Claude Code built-in. Before doing anything else, verify each is installed at `~/.claude/skills/<name>/SKILL.md`. `simplify` is a Claude Code built-in.
+This skill invokes five external skills. Before doing anything else, verify each is installed at `~/.claude/skills/<name>/SKILL.md`.
 
 ```bash
-for s in vercel-react-best-practices solid security-review code-slop; do
+for s in vercel-react-best-practices solid security-review code-slop simplify; do
   [ -f ~/.claude/skills/$s/SKILL.md ] && echo "OK  $s" || echo "MISS $s"
 done
 ```
@@ -37,7 +37,7 @@ If any report `MISS`, stop and tell the user which skills are missing with the i
 | `solid` | `npx skills add https://github.com/ramziddin/solid-skills --skill solid -g` |
 | `security-review` | `npx skills add https://github.com/getsentry/skills --skill security-review -g` |
 | `code-slop` | `npx skills add https://github.com/BenjaminG/ai-skills --skill code-slop -g` |
-| `simplify` | Built-in to Claude Code — no install needed |
+| `simplify` | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g` |
 
 If the project does not use React/Next.js, `vercel-react-best-practices` is optional (the react-reviewer is skipped automatically).
 
