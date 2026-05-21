@@ -57,7 +57,7 @@ This way a CLAUDE.md edit (commit OR working tree change) flips the findings cac
 
 ### Fetch (Step 3g)
 
-The context-fetcher reads each in-scope `CLAUDE.md` verbatim and writes a `## CLAUDE.md` section in `/tmp/gate-context-bundle.md`:
+The context-fetcher reads each in-scope `CLAUDE.md` verbatim and writes a `## CLAUDE.md` section in `<TMP_DIR>/context-bundle.md` (per-session scratch dir; see SKILL.md §1b):
 
 ```
 ## CLAUDE.md
@@ -175,7 +175,7 @@ If neither Strategy 1 nor Strategy 2 marks the ADR applicable, the existing v2 b
 
 ### Output
 
-The fetched `## ADR` section in `/tmp/gate-context-bundle.md` includes only **applicable** ADRs (full body), plus a one-line index of all ADR paths at the top. Paths are full (not just filenames), since multiple roots may contribute:
+The fetched `## ADR` section in `<TMP_DIR>/context-bundle.md` includes only **applicable** ADRs (full body), plus a one-line index of all ADR paths at the top. Paths are full (not just filenames), since multiple roots may contribute:
 
 ```
 ## ADR

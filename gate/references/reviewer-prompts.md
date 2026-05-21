@@ -324,7 +324,7 @@ migration-other
 
 **Pass count**: 1 (no self-consistency).
 
-**Output**: `/tmp/gate-context-bundle.md` + `/tmp/gate-freshness-signals.json`.
+**Output**: `<TMP_DIR>/context-bundle.md` + `<TMP_DIR>/freshness-signals.json`, where `<TMP_DIR> = /tmp/gate-${SESSION_ID}` is the per-session scratch dir from SKILL.md §1b.
 
 **Sources** (each conditional on `sources_to_fetch`):
 

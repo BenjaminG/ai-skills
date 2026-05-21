@@ -86,6 +86,15 @@ REPO_SLUG=$(echo -n "$REPO_ROOT" | shasum | cut -c1-12)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 BRANCH_SAFE=$(echo "$BRANCH" | tr '/' '_')
 
+# Session ID — unique per (worktree, branch); stable across re-runs of the same
+# branch in the same worktree, so prompt caches hit. Used to namespace /tmp
+# scratch files and the agent team name so multiple gate sessions can run in
+# parallel across worktrees without colliding.
+SESSION_ID=$(echo -n "${REPO_ROOT}::${BRANCH}" | shasum | cut -c1-12)
+TMP_DIR="/tmp/gate-${SESSION_ID}"
+TEAM_NAME="gate-${SESSION_ID}"
+mkdir -p "$TMP_DIR"
+
 # Base branch (from arg or auto-detect)
 BASE=${BASE_ARG:-$(git rev-parse --verify main >/dev/null 2>&1 && echo main || (git rev-parse --verify master >/dev/null 2>&1 && echo master || echo develop))}
 
@@ -309,7 +318,7 @@ if [ "$SPAWN_A11Y" -eq 1 ] && jq -r '.dependencies // {}, .devDependencies // {}
 fi
 ```
 
-These flags drive which tasks get spawned in Step 3b. If a flag is 0 the corresponding task is skipped — its rule enum still exists but no work is done and no `/tmp/gate-findings-<reviewer>.json` is produced.
+These flags drive which tasks get spawned in Step 3b. If a flag is 0 the corresponding task is skipped — its rule enum still exists but no work is done and no `<TMP_DIR>/findings-<reviewer>.json` is produced.
 
 ## Step 2c: Scope-gate (file-count + suspicious-files)
 
@@ -402,8 +411,10 @@ Both flow into Step 7a alongside `WRONG_BASE_BANNER`. They never affect the verd
 ### 3a. Create Team
 
 ```
-TeamCreate  team_name: "gate"  description: "Deterministic quality gate review"
+TeamCreate  team_name: "<TEAM_NAME>"  description: "Deterministic quality gate review"
 ```
+
+`<TEAM_NAME>` is the per-session team name computed in Step 1b (`gate-${SESSION_ID}`). It is unique per (worktree, branch) so multiple gate runs in different worktrees never collide on the team namespace.
 
 ### 3b. Create Review Tasks
 
@@ -424,13 +435,17 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
    - `react-reviewer` → composition heuristics (`react-boolean-prop-bloat`, `react-lifted-state-opportunity`, `react-compound-component-opportunity`)
    - `a11y-reviewer`, `i18n-reviewer`, `migration-reviewer` → full reviewer prompts including trigger conditions and `auto_fixable` mapping
 8. Instruction: **Do NOT modify any files. Read-only.**
-9. Instruction: write the final JSON to `/tmp/gate-findings-<reviewer-name>.json`
+9. Instruction: write the final JSON to `${TMP_DIR}/findings-<reviewer-name>.json`. **`${TMP_DIR}` is supplied in the dynamic block below — read it from there, do not assume a default.** If the dynamic block is missing it, abort and `SendMessage` an error to `lead`.
 10. Instruction: send a "done" notification to `lead` via `SendMessage` and mark the task `completed`
 
 **Dynamic blocks (last — different on every run)**:
 
-11. The list of `+` lines per file (extracted from the diff — these are the **diff-lines** for Boy Scout classification)
-12. The full diff (or changed-file list with read instructions if diff > 50KB)
+11. **Session paths** — explicit literal values the teammate must use (do NOT compute them):
+    - `TMP_DIR=<absolute resolved path, e.g. /tmp/gate-abc123def456>`
+    - `SESSION_ID=<the 12-char session id>`
+    The lead substitutes the resolved values from Step 1b before sending. The teammate uses the literal path directly (e.g. `Write` to `/tmp/gate-abc123def456/findings-solid-reviewer.json`).
+12. The list of `+` lines per file (extracted from the diff — these are the **diff-lines** for Boy Scout classification)
+13. The full diff (or changed-file list with read instructions if diff > 50KB)
 
 | Reviewer name | Skill | Rule prefix | Spawn condition |
 |---|---|---|---|
@@ -568,7 +583,7 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
    - Capture `MAX(timestamp)` from each table for the freshness signal.
    - If devsql unavailable → emit `## Past sessions\ndevsql unavailable` and signals `null`.
 
-3. Output format — write the merged bundle to `/tmp/gate-context-bundle.md`:
+3. Output format — write the merged bundle to `${TMP_DIR}/context-bundle.md`. **`${TMP_DIR}` is supplied in the dynamic block below — read it from there, do not assume a default.**
    ```
    ## Linear
    <issue id, title, status, body, comments — or "not found">
@@ -597,7 +612,7 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
    ### <file/path.ts>
    - <ts> session <id…>: <one-line excerpt>
    ```
-4. **Also write** the freshness signals JSON to `/tmp/gate-freshness-signals.json`:
+4. **Also write** the freshness signals JSON to `${TMP_DIR}/freshness-signals.json`:
    ```json
    {
      "linear_ticket_id": "...",
@@ -614,17 +629,21 @@ The task `description` is built dynamically based on `sources_to_fetch` (the sub
 
 **Dynamic blocks** (passed at the end of the prompt):
 
-6. The list of changed files (extracted from Step 2)
-7. The `sources_to_fetch` list (subset of `linear, pr, adr, claude_md, sessions`)
-8. The cached portions for sources NOT in `sources_to_fetch` (verbatim markdown to paste)
-9. The `CLAUDE_MD_LIST` computed in Step 1b (used only when `claude_md` is in `sources_to_fetch`)
-10. The `ADR_ROOTS` list computed in Step 1b (used only when `adr` is in `sources_to_fetch`)
+6. **Session paths** — explicit literal values:
+   - `TMP_DIR=<absolute resolved path, e.g. /tmp/gate-abc123def456>` — used to build the output paths above. Use the literal path, do not compute it.
+7. The list of changed files (extracted from Step 2)
+8. The `sources_to_fetch` list (subset of `linear, pr, adr, claude_md, sessions`)
+9. The cached portions for sources NOT in `sources_to_fetch` (verbatim markdown to paste)
+10. The `CLAUDE_MD_LIST` computed in Step 1b (used only when `claude_md` is in `sources_to_fetch`)
+11. The `ADR_ROOTS` list computed in Step 1b (used only when `adr` is in `sources_to_fetch`)
 
 **Note**: if `sources_to_fetch` is empty, the teammate just merges the 5 cached portions, writes them to the bundle and signals files, and exits. No external calls.
 
 ### 3h. Spawn Teammates (all in parallel)
 
-Spawn all teammates **in a single response** using the `Task` tool with `team_name: "gate"`. **Each teammate's prompt MUST explicitly prescribe the model** — teammates do NOT inherit the lead's model by default (cf. https://code.claude.com/docs/en/agent-teams).
+Spawn all teammates **in a single response** using the `Task` tool with `team_name: "<TEAM_NAME>"` (the per-session team name from Step 1b — substitute the literal value, e.g. `team_name: "gate-abc123def456"`). **Each teammate's prompt MUST explicitly prescribe the model** — teammates do NOT inherit the lead's model by default (cf. https://code.claude.com/docs/en/agent-teams).
+
+**Important**: teammates do NOT inherit the lead's shell environment. The lead must substitute literal values for `<TEAM_NAME>`, `${TMP_DIR}`, `${SESSION_ID}` when constructing each prompt — these placeholders only exist in the SKILL.md text, not at runtime. Each teammate prompt must contain the resolved path string (e.g. `/tmp/gate-abc123def456`) in its dynamic block, never the placeholder.
 
 | name | Assigned task | Prescribed model |
 |---|---|---|
@@ -644,8 +663,8 @@ Each teammate's prompt must:
 1. Open with the model directive: `Use Opus 4.7 for this task.` (or `Use Haiku 4.5 for this task.` for the context-fetcher) — this is the first line so the team scheduler picks the right model.
 2. Instruct the teammate to: check `TaskList`, claim their task via `TaskUpdate` (`status: in_progress`, `owner: <their-name>`)
 3. Execute their task as specified (3 passes for reviewers, single pass for context-fetcher)
-4. Write output to `/tmp/gate-findings-<name>.json` (or `/tmp/gate-context-bundle.md`)
-5. Send `SendMessage` to `lead` with `summary: "<name> done — written to /tmp/gate-findings-<name>.json"`
+4. Write output to `${TMP_DIR}/findings-<name>.json` (or `${TMP_DIR}/context-bundle.md`) — `${TMP_DIR}` is the resolved literal path supplied in the dynamic block (e.g. `/tmp/gate-abc123def456`)
+5. Send `SendMessage` to `lead` with `summary: "<name> done — written to <resolved-path>/findings-<name>.json"`
 6. Mark task `completed` via `TaskUpdate`
 
 The lead's model is whatever the user is currently running — no prescription. The lead's role (consolidate JSON, compute verdict, format output) is well within Sonnet/Haiku capability.
@@ -654,18 +673,18 @@ The lead's model is whatever the user is currently running — no prescription. 
 
 ### 4a. Wait and Collect
 
-Monitor `TaskList` until all reviewer tasks are `completed`. Read each output file:
+Monitor `TaskList` until all reviewer tasks are `completed`. Read each output file from the per-session scratch dir `<TMP_DIR>` (= `/tmp/gate-${SESSION_ID}`):
 
-- `/tmp/gate-findings-react-reviewer.json` (if spawned)
-- `/tmp/gate-findings-solid-reviewer.json`
-- `/tmp/gate-findings-security-reviewer.json`
-- `/tmp/gate-findings-simplify-reviewer.json`
-- `/tmp/gate-findings-slop-reviewer.json`
-- `/tmp/gate-findings-a11y-reviewer.json` (if `SPAWN_A11Y`)
-- `/tmp/gate-findings-i18n-reviewer.json` (if `SPAWN_I18N`)
-- `/tmp/gate-findings-migration-reviewer.json` (if `SPAWN_MIGRATION`)
-- `/tmp/gate-context-bundle.md`
-- `/tmp/gate-freshness-signals.json` (used in Step 10 to update the context cache)
+- `<TMP_DIR>/findings-react-reviewer.json` (if spawned)
+- `<TMP_DIR>/findings-solid-reviewer.json`
+- `<TMP_DIR>/findings-security-reviewer.json`
+- `<TMP_DIR>/findings-simplify-reviewer.json`
+- `<TMP_DIR>/findings-slop-reviewer.json`
+- `<TMP_DIR>/findings-a11y-reviewer.json` (if `SPAWN_A11Y`)
+- `<TMP_DIR>/findings-i18n-reviewer.json` (if `SPAWN_I18N`)
+- `<TMP_DIR>/findings-migration-reviewer.json` (if `SPAWN_MIGRATION`)
+- `<TMP_DIR>/context-bundle.md`
+- `<TMP_DIR>/freshness-signals.json` (used in Step 10 to update the context cache)
 
 Do NOT rely on `SendMessage` content for findings — files are the source of truth.
 
@@ -716,7 +735,7 @@ Spawn a single standalone `context-checker` via the `Agent` tool:
 - **description**: `Check findings against historical context`
 - **prompt**: Provide:
   1. The post-validator finding list (BLOCKER + MAJOR; skip NIT)
-  2. The full content of `/tmp/gate-context-bundle.md`
+  2. The full content of `<TMP_DIR>/context-bundle.md`
   3. Decision rule per finding:
      - **OK** — no contradiction, or bundle silent on the topic
      - **CONFLICT** — qualified by source:
@@ -913,13 +932,13 @@ Write `$STATE_FILE` (`<branch_safe>.json`). Each finding carries its display `id
 
 ### 10b. Context bundle cache
 
-Write `$STATE_DIR/${BRANCH_SAFE}.context.json` (separate file from the findings cache — survives rebases). Read `/tmp/gate-freshness-signals.json` for the new signals, and `/tmp/gate-context-bundle.md` for the bundle (split it into the five sections to populate `bundle_sources`):
+Write `$STATE_DIR/${BRANCH_SAFE}.context.json` (separate file from the findings cache — survives rebases). Read `$TMP_DIR/freshness-signals.json` for the new signals, and `$TMP_DIR/context-bundle.md` for the bundle (split it into the five sections to populate `bundle_sources`):
 
 ```json
 {
   "key": "<BRANCH_SAFE>_v3",
   "fetched_at": "<ISO timestamp>",
-  "freshness_signals": { ... from /tmp/gate-freshness-signals.json ... },
+  "freshness_signals": { ... from $TMP_DIR/freshness-signals.json ... },
   "bundle_sources": {
     "linear":    "<verbatim ## Linear section>" | null,
     "pr":        "<verbatim ## PR section>" | null,
@@ -934,14 +953,27 @@ If a source was reused from cache (not re-fetched), keep the existing portion as
 
 ### 10c. Cleanup temp files
 
+Remove only this session's scratch dir — never touch `/tmp/gate-*` globally, since other worktrees may have parallel runs in progress.
+
 ```bash
-rm -f /tmp/gate-findings-*.json /tmp/gate-context-bundle.md /tmp/gate-freshness-signals.json
+rm -rf "$TMP_DIR"
+```
+
+As a safety net, also GC orphan session dirs older than 24h whose `SESSION_ID` does not match an existing worktree:
+
+```bash
+find /tmp -maxdepth 1 -type d -name 'gate-*' -mmin +1440 -print 2>/dev/null \
+  | while read -r d; do
+      # Best-effort: only remove if not the current session's dir
+      [ "$d" != "$TMP_DIR" ] && rm -rf "$d"
+    done
 ```
 
 ## Execution Notes
 
 - **Requires**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 - **Coexists** with the legacy `quality-gate` skill (kept as baseline / comparison point)
+- **Parallel-safe across worktrees**: scratch files (`<TMP_DIR>`) and the agent team name are namespaced by `SESSION_ID = sha12(repo_root + branch)`. Multiple gate runs in different worktrees never collide. Two runs in the **same** worktree on the **same** branch DO share state — sequential by design (cache + cycle counter).
 - **Reviewer roster**: up to 8 reviewers + `context-fetcher`, all in parallel. Always-spawned: `solid`, `security`, `simplify`, `slop`. Conditional: `react` (if React/Next.js), `a11y` (if `.tsx`/`.jsx`), `i18n` (if `.tsx`/`.jsx` + i18n lib), `migration` (if migration files or bulk-update APIs in diff, excluding fixtures). Each reviewer self-loops 3× internally and votes — single team output is the post-vote JSON.
 - **Model assignment** (per role):
   - Reviewers (Opus 4.7) — review quality is the load-bearing axis
@@ -956,7 +988,7 @@ rm -f /tmp/gate-findings-*.json /tmp/gate-context-bundle.md /tmp/gate-freshness-
   - **Findings cache** (`<branch>.json`): keyed on `HEAD_SHA + BASE_SHA + WT_HASH + skill_version`. Hit = zero LLM calls.
   - **Context bundle cache** (`<branch>.context.json`): keyed on `branch_name + skill_version`. Survives rebases. Invalidated source-by-source via 4 freshness probes (Linear `updatedAt`, gh PR `updated_at`, ADR git sha, devsql `MAX(timestamp)`). Fresh sources are reused verbatim; stale sources are re-fetched selectively.
   - Both caches share a hard 7-day TTL as a GC for abandoned PRs.
-- **Prompt caching is load-bearing**: every agent prompt is built **static-first, dynamic-last** (instructions/schemas/rules before diff/findings). Reordering breaks Anthropic's prefix-match cache and inflates cost. Freshness timestamps live in the state file, never in agent prompts. Cf. https://www.anthropic.com/news/prompt-caching.
+- **Prompt caching is load-bearing**: every agent prompt is built **static-first, dynamic-last** (instructions/schemas/rules before diff/findings). Reordering breaks Anthropic's prefix-match cache and inflates cost. Freshness timestamps live in the state file, never in agent prompts. Per-session paths (`TMP_DIR`, `TEAM_NAME`, `SESSION_ID`) are also dynamic — they change per worktree, so they live in the trailing dynamic block, never in the static prefix. Cf. https://www.anthropic.com/news/prompt-caching.
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate
 - **Tier semantics are load-bearing**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
 - **No auto-arbitration** — conflicting suggestions are displayed side-by-side, user decides
