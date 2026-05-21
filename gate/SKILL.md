@@ -719,8 +719,12 @@ Spawn a single standalone `context-checker` via the `Agent` tool:
   2. The full content of `/tmp/gate-context-bundle.md`
   3. Decision rule per finding:
      - **OK** — no contradiction, or bundle silent on the topic
-     - **CONFLICT** — bundle contains evidence (issue comment, PR review, past session, CLAUDE.md rule, ADR clause) that this code was written this way *on purpose*, OR contradicts a documented MUST/MUST NOT / SHALL / SHALL NOT
-     - **UNCERTAIN** — bundle mentions the file/symbol but intent is ambiguous
+     - **CONFLICT** — qualified by source:
+       - For `linear` / `pr` / `session` (informal sources): the past decision must address the **same dimension** as the finding — architectural ↔ architectural, security ↔ security, perf ↔ perf, behavioral ↔ behavioral, naming ↔ naming. A product/PM decision selecting one functional behavior over another (e.g. "option 1 vs option 2", "feature works this way") **does NOT** validate the implementation structure. When the past decision and the finding's dimension don't match, verdict is **OK** — silence on a dimension is absence, not ambiguity.
+       - For `claude-md` / `adr` (formal sources): a documented MUST / MUST NOT / SHALL / SHALL NOT clause that contradicts the finding.
+     - **UNCERTAIN** — bundle directly addresses the same dimension as the finding but the intent is genuinely ambiguous (e.g. a senior eng PR comment debating SRP without concluding). Do NOT use UNCERTAIN as a fallback for "PM commented on the file" — that's OK.
+
+     **Negative example (do not repeat)**: a PM choosing "option 1" between two functional fixes is a behavioral decision. It does NOT make any specific code structure (SRP, coupling, naming, extraction, simplification) "deliberate". A `solid-*`, `simplify-extract`, or `slop-*` finding on that diff stays **OK**, not CONFLICT, not UNCERTAIN.
   4. **CLAUDE.md and ADR enforcement** — append the prompt blocks from `references/context-sources.md` § "Enforcement (Step 6)" for both F2 (CLAUDE.md) and F3 (ADR). The checker must:
      - For each input finding, additionally check the `## CLAUDE.md` section: if a rule explicitly forbids/permits the pattern, set `verdict: CONFLICT`, `source: "claude-md"`, and cite the rule verbatim (≤240 chars).
      - For each input finding, additionally check the `## ADR` § "Applicable to this diff": if a MUST / MUST NOT / SHALL / SHALL NOT / SHOULD / RECOMMENDED clause matches, set `verdict: CONFLICT`, `source: "adr"`, citation `ADR-<id>: <clause verbatim>`.
