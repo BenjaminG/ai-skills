@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--fix] [--force-fresh]"
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code unless `--fix` is passed.
 
-**Skill version**: `3` — bump this number whenever the reviewer logic, rule enums, or pipeline changes. Cache entries are keyed on it, so bumping invalidates all caches at once.
+**Skill version**: `4` — bump this number whenever the reviewer logic, rule enums, or pipeline changes. Cache entries are keyed on it, so bumping invalidates all caches at once.
 
 ## Arguments
 
@@ -165,7 +165,7 @@ else
 fi
 
 # Cache key — combines SHAs + working tree state + skill version
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v3"  # v3 = SKILL_VERSION from frontmatter
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v4"  # v4 = SKILL_VERSION from frontmatter
 
 # State file path
 STATE_DIR="$HOME/.claude/gate-state/$REPO_SLUG"
@@ -223,7 +223,7 @@ The context bundle (Linear ticket + PR comments + ADR + past devsql sessions) is
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v3",
+  "key": "<BRANCH_SAFE>_v4",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": {
     "linear_ticket_id": "NAB-204" | null,
@@ -420,32 +420,71 @@ TeamCreate  team_name: "<TEAM_NAME>"  description: "Deterministic quality gate r
 
 Create one `TaskCreate` per reviewer. **Skip the React task if the project does not use React/Next.js.**
 
-Each reviewer task `description` MUST be assembled in the order below — **static blocks first, dynamic blocks last**. This ordering is load-bearing for prompt caching: the Anthropic API caches by prefix match, so any reordering or insertion of dynamic content earlier in the prompt invalidates cache hits across passes and across runs. Cf. https://www.anthropic.com/news/prompt-caching.
+**Reviewer role: coordinator, not executor.** Each reviewer teammate does NOT perform the review itself. It spawns **3 independent sub-agents in parallel** (one `Agent` tool call per pass, all in a single message), each running a single pass of the review on the same diff. After all 3 sub-agents return, the teammate consolidates their JSON outputs via the deterministic vote script and writes the final findings file.
+
+This design preserves the i.i.d. assumption that makes self-consistency informative. A serial loop in the teammate's own context window would let pass 2 see pass 1's output and inflate apparent convergence through auto-regressive cohesion bias rather than true sample agreement. Independent sub-agents see only the prompt — never each other's outputs.
+
+Each reviewer task `description` MUST be assembled in the order below — **static blocks first, dynamic blocks last**. This ordering is load-bearing for prompt caching: the Anthropic API caches by prefix match, so any reordering or insertion of dynamic content earlier in the prompt invalidates cache hits across runs. Cf. https://www.anthropic.com/news/prompt-caching.
 
 **Static blocks (order preserved across all reviewers and runs)**:
 
-1. The skill command to invoke (see table below)
-2. **Self-consistency instruction**: invoke the assigned skill **3 times** on the same diff. After each pass, parse the findings into the JSON schema below. After 3 passes, perform fuzzy matching (same `file`, line within ±5, same `rule_id`) to group findings across passes. Matching is **per-occurrence, not per-rule_id**: N occurrences of the same `rule_id` at different `(file, line ±5)` buckets are distinct findings and vote independently (e.g. `slop-defensive-check` at lines 12, 47, 88 are three separate findings). Drop any occurrence present in fewer than 2 passes. Emit only occurrences with `votes >= 2`.
-3. The required JSON output schema (see below)
-4. The rule-ID enum for this reviewer (see below)
-5. Tier classification rules (see below)
-6. Boy Scout location classification (see below)
-7. **Reviewer-specific heuristics** (verbatim block from `references/reviewer-prompts.md` for this reviewer name, when one exists). Examples:
-   - `simplify-reviewer` → the `simplify-missing-test` heuristic (which exports require sibling test files, downgrade rules for trivial cases)
-   - `react-reviewer` → composition heuristics (`react-boolean-prop-bloat`, `react-lifted-state-opportunity`, `react-compound-component-opportunity`)
-   - `a11y-reviewer`, `i18n-reviewer`, `migration-reviewer` → full reviewer prompts including trigger conditions and `auto_fixable` mapping
-8. Instruction: **Do NOT modify any files. Read-only.**
-9. Instruction: write the final JSON to `${TMP_DIR}/findings-<reviewer-name>.json`. **`${TMP_DIR}` is supplied in the dynamic block below — read it from there, do not assume a default.** If the dynamic block is missing it, abort and `SendMessage` an error to `lead`.
-10. Instruction: send a "done" notification to `lead` via `SendMessage` and mark the task `completed`
+1. **Coordinator role**: "You are the `<reviewer-name>` coordinator. You will NOT perform the review yourself. Your job is to (a) spawn 3 sub-agents in parallel via the `Agent` tool — one per pass — using the sub-agent prompt template below, (b) wait for all 3 to finish, (c) consolidate their outputs via the vote script, (d) write the final findings file."
+2. **Sub-agent spawn instructions**:
+   - Send all 3 `Agent` tool calls in a **single assistant message** so they run concurrently.
+   - For each pass `i` in `1..3`, the `Agent` call uses:
+     - `subagent_type`: `general-purpose`
+     - `description`: `<reviewer-name> pass <i>/3`
+     - `prompt`: the sub-agent prompt template (block 4 below) with `<i>` substituted
+   - Each sub-agent writes its raw JSON output to `${TMP_DIR}/findings-<reviewer-name>-pass<i>.json`.
+   - If a sub-agent's file is missing or contains invalid JSON, re-spawn that sub-agent **once**. If the second attempt also fails, mark that pass as failed and continue with the remaining valid passes.
+3. **Sub-agent prompt template** — this is the verbatim text to put inside each `Agent` call's `prompt` field. The first line MUST be `Use Opus 4.7 for this task.` (sub-agents do not inherit the coordinator's model). The template MUST then contain, in order:
+   1. Role: "You are an isolated `<reviewer-name>` worker for pass `<i>`/3. You do NOT have access to other passes. Reason about the diff from scratch and produce your best findings list."
+   2. The skill command to invoke (see reviewer table below)
+   3. The required JSON output schema (block 5 below — but with `votes` field omitted: sub-agents do not vote, the coordinator does)
+   4. The rule-ID enum for this reviewer (see Step 3d)
+   5. Tier classification rules (see Step 3e)
+   6. Boy Scout location classification (see Step 3f)
+   7. Reviewer-specific heuristics (verbatim block from `references/reviewer-prompts.md` for this reviewer name, when one exists)
+   8. Instruction: **Do NOT modify any files. Read-only.**
+   9. Instruction: write the final JSON to `${TMP_DIR}/findings-<reviewer-name>-pass<i>.json`. Output ONLY the JSON to that file — no prose, no markdown fences in the file.
+   10. The list of `+` lines per file (from the diff)
+   11. The full diff (or changed-file list with read instructions if diff > 50KB)
+4. **Vote consolidation instructions**:
+   - After all 3 sub-agent files exist (or fewer if some failed and could not be retried), invoke the vote script. **Run this exact Bash command**, substituting the resolved `${TMP_DIR}` literal value:
+     ```bash
+     python3 ~/.claude/skills/gate/scripts/vote.py \
+       --schema <(cat <<'EOF'
+     template: finding-list
+     vote_key:
+       fields: [file, rule_id, line]
+       numeric_tolerance:
+         line: 5
+     EOF
+     ) \
+       --threshold 2 \
+       --passes ${TMP_DIR}/findings-<reviewer-name>-pass1.json \
+                ${TMP_DIR}/findings-<reviewer-name>-pass2.json \
+                ${TMP_DIR}/findings-<reviewer-name>-pass3.json \
+       --output ${TMP_DIR}/findings-<reviewer-name>-voted.json
+     ```
+     Pass only the files that exist — if pass 2 failed, omit it from the `--passes` list. The script handles missing files gracefully but works on whatever it receives.
+   - The script emits a `consensus` array with `_votes` and `_pass_indices` metadata fields. **Post-process** the script output to produce the final reviewer-output schema:
+     - For each consensus item, copy `_votes` → `votes`, drop `_pass_indices`.
+     - Drop the `divergences` array (sub-threshold findings are dropped, not displayed).
+     - Wrap in the reviewer envelope: `{"reviewer": "<reviewer-name>", "passes_executed": <count of valid passes>, "findings": [...]}`.
+   - Write the final post-processed JSON to `${TMP_DIR}/findings-<reviewer-name>.json`. **The lead reads only this file** — the per-pass files and `-voted.json` intermediate are scratch.
+5. The required JSON output schema for the coordinator's final file (see Step 3c)
+6. Instruction: **Do NOT modify any files. Read-only.** (applies to the coordinator too — vote.py is read-only)
+7. Instruction: send a "done" notification to `lead` via `SendMessage` and mark the task `completed`
 
 **Dynamic blocks (last — different on every run)**:
 
-11. **Session paths** — explicit literal values the teammate must use (do NOT compute them):
-    - `TMP_DIR=<absolute resolved path, e.g. /tmp/gate-abc123def456>`
-    - `SESSION_ID=<the 12-char session id>`
-    The lead substitutes the resolved values from Step 1b before sending. The teammate uses the literal path directly (e.g. `Write` to `/tmp/gate-abc123def456/findings-solid-reviewer.json`).
-12. The list of `+` lines per file (extracted from the diff — these are the **diff-lines** for Boy Scout classification)
-13. The full diff (or changed-file list with read instructions if diff > 50KB)
+8. **Session paths** — explicit literal values the teammate must use (do NOT compute them):
+   - `TMP_DIR=<absolute resolved path, e.g. /tmp/gate-abc123def456>`
+   - `SESSION_ID=<the 12-char session id>`
+   The lead substitutes the resolved values from Step 1b before sending. The teammate uses the literal path directly (e.g. `${TMP_DIR}/findings-solid-reviewer.json` becomes `/tmp/gate-abc123def456/findings-solid-reviewer.json`).
+9. The list of `+` lines per file (extracted from the diff) — passed in **once** by the lead; the teammate forwards it inside each sub-agent prompt.
+10. The full diff (or changed-file list with read instructions if diff > 50KB) — same: passed in once, forwarded by the teammate to each sub-agent.
 
 | Reviewer name | Skill | Rule prefix | Spawn condition |
 |---|---|---|---|
@@ -461,10 +500,12 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
 
 ### 3c. Required JSON output schema (per reviewer)
 
+This is the schema for the **coordinator's final file** (`${TMP_DIR}/findings-<reviewer-name>.json`) — the post-vote, post-processing output that the lead consumes. Sub-agent per-pass files use the same shape **without** `votes` (sub-agents do not vote; the coordinator computes `votes` via the script).
+
 ```json
 {
   "reviewer": "<reviewer-name>",
-  "passes_executed": 3,
+  "passes_executed": <number of valid passes — 1, 2, or 3>,
   "findings": [
     {
       "rule_id": "<from enum>",
@@ -472,7 +513,7 @@ Each reviewer task `description` MUST be assembled in the order below — **stat
       "line": <int>,
       "location": "diff-line | adjacent",
       "tier": "BLOCKER | MAJOR | NIT",
-      "votes": <2 or 3>,
+      "votes": <int — count of passes that produced this finding, ≥ threshold (2)>,
       "message": "<one-line description>",
       "evidence": "<verbatim code excerpt or specific reference>",
       "suggested_fix": "<concrete change>"
@@ -662,7 +703,9 @@ Reviewers run on Opus because review quality is the load-bearing axis of this sk
 Each teammate's prompt must:
 1. Open with the model directive: `Use Opus 4.7 for this task.` (or `Use Haiku 4.5 for this task.` for the context-fetcher) — this is the first line so the team scheduler picks the right model.
 2. Instruct the teammate to: check `TaskList`, claim their task via `TaskUpdate` (`status: in_progress`, `owner: <their-name>`)
-3. Execute their task as specified (3 passes for reviewers, single pass for context-fetcher)
+3. Execute their task as specified:
+   - **Reviewer teammates**: act as coordinator per Step 3b — spawn 3 parallel sub-agents, run the vote script, post-process, write the final findings file
+   - **`context-fetcher`**: single pass per Step 3g
 4. Write output to `${TMP_DIR}/findings-<name>.json` (or `${TMP_DIR}/context-bundle.md`) — `${TMP_DIR}` is the resolved literal path supplied in the dynamic block (e.g. `/tmp/gate-abc123def456`)
 5. Send `SendMessage` to `lead` with `summary: "<name> done — written to <resolved-path>/findings-<name>.json"`
 6. Mark task `completed` via `TaskUpdate`
@@ -921,7 +964,7 @@ Write `$STATE_FILE` (`<branch_safe>.json`). Each finding carries its display `id
 
 ```json
 {
-  "cache_key": "<HEAD_SHA>_<BASE_SHA>_<WT_HASH>_v3",
+  "cache_key": "<HEAD_SHA>_<BASE_SHA>_<WT_HASH>_v4",
   "cached_at": "<ISO timestamp>",
   "cycle": <new cycle number>,
   "verdict": "PASS | PASS WITH NOTES | FAIL",
@@ -936,7 +979,7 @@ Write `$STATE_DIR/${BRANCH_SAFE}.context.json` (separate file from the findings 
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v3",
+  "key": "<BRANCH_SAFE>_v4",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": { ... from $TMP_DIR/freshness-signals.json ... },
   "bundle_sources": {
@@ -974,7 +1017,8 @@ find /tmp -maxdepth 1 -type d -name 'gate-*' -mmin +1440 -print 2>/dev/null \
 - **Requires**: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 - **Coexists** with the legacy `quality-gate` skill (kept as baseline / comparison point)
 - **Parallel-safe across worktrees**: scratch files (`<TMP_DIR>`) and the agent team name are namespaced by `SESSION_ID = sha12(repo_root + branch)`. Multiple gate runs in different worktrees never collide. Two runs in the **same** worktree on the **same** branch DO share state — sequential by design (cache + cycle counter).
-- **Reviewer roster**: up to 8 reviewers + `context-fetcher`, all in parallel. Always-spawned: `solid`, `security`, `simplify`, `slop`. Conditional: `react` (if React/Next.js), `a11y` (if `.tsx`/`.jsx`), `i18n` (if `.tsx`/`.jsx` + i18n lib), `migration` (if migration files or bulk-update APIs in diff, excluding fixtures). Each reviewer self-loops 3× internally and votes — single team output is the post-vote JSON.
+- **Reviewer roster**: up to 8 reviewers + `context-fetcher`, all in parallel. Always-spawned: `solid`, `security`, `simplify`, `slop`. Conditional: `react` (if React/Next.js), `a11y` (if `.tsx`/`.jsx`), `i18n` (if `.tsx`/`.jsx` + i18n lib), `migration` (if migration files or bulk-update APIs in diff, excluding fixtures).
+- **Two-level fan-out for self-consistency**: each reviewer teammate is a **coordinator**, not an executor. It spawns 3 parallel sub-agents (one per pass) via the `Agent` tool, each independent and unaware of the others, then consolidates their JSON outputs via `scripts/vote.py` (deterministic, no LLM judge). This preserves the i.i.d. assumption that makes self-consistency informative — a serial loop in the coordinator's own context would let pass `i+1` see pass `i`'s output and inflate apparent convergence through auto-regressive cohesion bias rather than genuine sample agreement. Cost trade-off: ~3× sub-agent prompt input vs a serial loop (no shared cache between sub-agents), accepted to keep the technique honest. Total fan-out: up to 8 coordinators × 3 sub-agents = 24 parallel sub-agents at peak, plus 1 context-fetcher.
 - **Model assignment** (per role):
   - Reviewers (Opus 4.7) — review quality is the load-bearing axis
   - `context-fetcher` (Haiku 4.5) — mechanical parsing, ~10× cheaper
