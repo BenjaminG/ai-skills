@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-A personal collection of Claude Code skills synced from `~/.claude/skills/`. Each top-level directory is a self-contained skill package.
+A personal collection of skills, distributed as a Claude Code plugin and a Codex plugin. Skills live under `skills/<name>/`; plugin manifests live under `.claude-plugin/` and `.codex-plugin/`.
 
 ## Skill Structure
 
-Every skill follows this layout:
+Every skill lives at `skills/<name>/` and follows this layout:
 
 ```
-skill-name/
+skills/<name>/
 ├── SKILL.md          # Required: YAML frontmatter + instructions
 ├── scripts/          # Executable Python/Bash scripts
 ├── references/       # Documentation loaded into context as needed
@@ -25,19 +25,23 @@ skill-name/
 Use the initializer script:
 
 ```bash
-python skill-creator/scripts/init_skill.py <skill-name> --path .
+python skills/skill-creator/scripts/init_skill.py <skill-name> --path skills/
 ```
 
 To package for distribution:
 
 ```bash
-python skill-creator/scripts/package_skill.py <skill-name>
+python skills/skill-creator/scripts/package_skill.py <skill-name>
 ```
 
-## Syncing to Claude
+## Local plugin testing
 
 ```bash
-cp -r ~/Dev/ai-skills/* ~/.claude/skills/
+# Load this repo as a plugin without installing
+claude --plugin-dir .
+
+# Reload after edits
+/reload-plugins
 ```
 
 ## Key Conventions
@@ -50,8 +54,9 @@ cp -r ~/Dev/ai-skills/* ~/.claude/skills/
 
 ## Skill Categories
 
-- **Daily workflow** (`daily-*`): Standup compilation, task tracking, Jira/Slack integration. Uses `~/.claude/standups/` and `~/.claude/daily-tasks/` for persistence.
-- **Code quality** (`quality-gate`, `code-slop`, `applying-solid-principles`): Review and auto-fix workflows using agent teams.
-- **Developer tools** (`pr`, `hooks`, `commit`): Git/GitHub automation.
-- **CLI integrations** (`acli`, `confluence-cli`, `codex-cli`): Wrappers for external CLI tools.
-- **Specialist agents** (`backend-developer`, `frontend-developer`, `madai-investigator`): Domain-specific subagent definitions.
+- **Daily workflow** (`daily-update`): Standup compilation from Linear/Slack.
+- **Code quality** (`gate`, `quality-gate`, `code-slop`, `applying-solid-principles`, `second-pass`): Review and auto-fix workflows using agent teams.
+- **Review & PR** (`pr`, `pr-feedback`, `qa-plan`, `qa-run`, `consensus`): Git/GitHub and review automation.
+- **CLI integrations** (`acli`, `confluence-cli`, `codex-cli`, `chrome-cdp`): Wrappers for external CLI tools.
+- **Investigation & planning** (`interview`, `investigate`, `elevate`, `innovate`, `retrospective`, `ralph-loop`, `skill-creator`): Structured thinking workflows.
+- **Specialist agents** (`backend-developer`, `frontend-developer`, `swiftui-performance`): Domain-specific subagent definitions.

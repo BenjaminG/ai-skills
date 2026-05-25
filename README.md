@@ -1,47 +1,95 @@
-# Claude Code Skills
+# ai-skills
 
-Personal collection of Claude Code skills from `~/.claude/skills/`.
+Benjamin's collection of skills for Claude Code, Codex, and other AI agents — packaged as a plugin and as a `skills`-installable bundle.
+
+## Install
+
+### Claude Code
+
+```sh
+/plugin marketplace add BenjaminG/ai-skills
+/plugin install ai-skills@bgelis-ai-skills
+```
+
+Skills are namespaced after install: `/ai-skills:gate`, `/ai-skills:interview`, etc.
+
+### Codex
+
+```sh
+codex plugin marketplace add BenjaminG/ai-skills
+codex plugin install ai-skills
+```
+
+### npx skills (any agent)
+
+```sh
+npx skills add BenjaminG/ai-skills
+```
+
+See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` global, `-a <agent>`, etc.).
 
 ## Skills
 
 | Skill | Description |
 |-------|-------------|
-| **Daily workflow** (`daily/`) | |
-| `daily-standup` | Morning standup — compile Jira/Slack priorities into a task list |
-| `daily-next` | Pick up next task and gather full context (Jira, Slack, GitHub) |
-| `daily-done` | Mark current task as done and show progress |
-| `daily-standby` | Park a blocked task with a required reason |
-| `daily-unblock` | Activate a standby task when its blocker is resolved |
-| **Other skills** | |
+| **Daily workflow** | |
+| `daily-update` | Draft a daily Slack update from Linear |
+| **Code quality** | |
 | `applying-solid-principles` | SOLID principles and clean code practices |
-| `acli` | Jira management via acli |
-| `backend-developer` | TypeScript backend specialist (NestJS, APIs, databases) |
-| `codex-cli` | OpenAI Codex CLI for automated code analysis |
-| `confluence-cli` | Confluence content management via CLI |
-| `frontend-design` | Production-grade frontend UI design |
-| `frontend-developer` | React/TypeScript frontend specialist |
-| `hooks` | Create and manage Claude Code hooks |
-| `interview` | Interview users about plan files |
-| `madai-investigator` | MadAI/MadKudu support ticket investigation |
-| `quality` | Quality gate review for React/Next.js |
-| `ralph-loop` | Refactoring patterns and templates |
+| `code-slop` | Detect and fix slop patterns |
+| `gate` | Deterministic branch quality gate with parallel reviewers |
+| `quality-gate` | Quality gate review for React/Next.js |
 | `refactor-instructions` | Code refactoring guidelines |
-| `skill-creator` | Guide for creating Claude Code skills |
+| `second-pass` | Second-pass review of recent work |
+| `ubiquitous-language` | Domain-driven naming review |
+| **Review & PR** | |
+| `consensus` | Run a prompt N times and consolidate by vote |
+| `pr` | Publish a PR with type detection + Linear/Jira linking |
+| `pr-feedback` | Triage and resolve PR review comments |
+| `qa-plan` | Manual QA plan generation |
+| `qa-run` | Execute a manual QA plan |
+| **Developer tools** | |
+| `acli` | Jira management via acli |
+| `chrome-cdp` | Drive a local Chrome session via DevTools Protocol |
+| `codex-cli` | OpenAI Codex CLI for automated code analysis |
+| `commit` | Stage + commit with auto-generated message |
+| `confluence-cli` | Confluence content management via CLI |
+| `hooks` | Create and manage Claude Code hooks |
+| **Investigation & planning** | |
+| `elevate` | Elevate a draft idea into a sharp proposal |
+| `innovate` | Generate divergent solutions for a problem |
+| `interview` | One-question-at-a-time clarification loop |
+| `investigate` | Structured investigation workflow |
+| `ralph-loop` | Run autonomous iterative loops over multi-step tasks |
+| `retrospective` | Reflect on the work done on the current branch vs main |
+| `skill-creator` | Guide for creating skills |
+| **Specialist agents** | |
+| `backend-developer` | TypeScript backend specialist |
+| `frontend-developer` | React/TypeScript frontend specialist |
+| `swiftui-performance` | SwiftUI performance optimization |
 | `ui-skills` | Opinionated constraints for better interfaces |
-| `vercel-react-best-practices` | React/Next.js performance optimization |
 
-## Installation
+## Repo layout
 
-To sync these skills back to `~/.claude/skills/`:
-
-```bash
-cp -r ~/Dev/ai-skills/* ~/.claude/skills/
+```
+.
+├── .claude-plugin/
+│   ├── plugin.json         # Claude Code plugin manifest
+│   └── marketplace.json    # one-plugin marketplace catalog
+├── .codex-plugin/
+│   └── plugin.json         # Codex plugin manifest
+├── skills/                 # all skills live here as <name>/SKILL.md
+└── ...
 ```
 
-## Excluded
+## Develop
 
-The following symlinked skills were **not** included:
-- `find-skills` → `~/.agents/skills/`
-- `prd` → `~/.agents/skills/`
-- `swiftui-expert-skill` → `~/.agents/skills/`
-- `performance-profiling` → Skillbox cache
+```sh
+# Test the Claude Code plugin locally without installing
+claude --plugin-dir .
+
+# Reload after edits
+/reload-plugins
+```
+
+To create a new skill, see `skills/skill-creator/SKILL.md`.

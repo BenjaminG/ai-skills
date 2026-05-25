@@ -1,0 +1,14 @@
+{
+  "name": "bgelis-ai-skills",
+  "owner": {
+    "name": "Benjamin Gelis"
+  },
+  "description": "Benjamin's personal Claude Code skills marketplace.",
+  "plugins": [
+    {
+      "name": "ai-skills",
+      "source": ".",
+      "description": "Daily workflow, code quality, dev tools, and specialist agents."
+    }
+  ]
+}
