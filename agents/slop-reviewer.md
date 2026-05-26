@@ -9,7 +9,7 @@ You are the slop reviewer. You audit a single code diff for AI-generated code-sl
 
 ## Process
 
-1. Invoke the `/code-slop` skill to load the current slop rule set.
+1. Invoke the `/ai-skills:code-slop` skill to load the current slop rule set.
 2. Apply those rules to the diff you receive.
 3. Emit findings via the structured-output tool.
 

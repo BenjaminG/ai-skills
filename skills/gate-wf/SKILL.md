@@ -26,12 +26,25 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 
 ## Step 0: Verify reviewer skill dependencies
 
-The reviewer agents invoke external skills. Verify each is installed at `~/.claude/skills/<name>/SKILL.md`:
+Reviewer agents invoke skills via slash-command. A skill is reachable when found in either the global skills dir (`~/.claude/skills/<name>/SKILL.md`) or any plugin cache (`~/.claude/plugins/cache/**/skills/<name>/SKILL.md`). `code-slop` ships with this plugin; the others are external and must be installed globally.
 
 ```bash
-for s in vercel-react-best-practices solid security-review code-slop simplify; do
-  [ -f ~/.claude/skills/$s/SKILL.md ] && echo "OK  $s" || echo "MISS $s"
+missing=()
+for s in vercel-react-best-practices solid security-review simplify; do
+  [ -f ~/.claude/skills/$s/SKILL.md ] && continue
+  compgen -G "$HOME/.claude/plugins/cache/*/*/*/skills/$s/SKILL.md" >/dev/null && continue
+  missing+=("$s")
 done
+# code-slop ships in this plugin — probe its in-plugin path
+if ! compgen -G "$HOME/.claude/plugins/cache/*/ai-skills/*/skills/code-slop/SKILL.md" >/dev/null \
+   && [ ! -f ~/.claude/skills/code-slop/SKILL.md ]; then
+  missing+=("code-slop")
+fi
+if [ ${#missing[@]} -gt 0 ]; then
+  printf 'MISS %s\n' "${missing[@]}"
+else
+  echo "OK all reviewer skills reachable"
+fi
 ```
 
 If any report `MISS`, stop and tell the user which skills are missing. Do not proceed.
@@ -41,7 +54,7 @@ If any report `MISS`, stop and tell the user which skills are missing. Do not pr
 | `vercel-react-best-practices` | `npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -g` |
 | `solid` | `npx skills add https://github.com/ramziddin/solid-skills --skill solid -g` |
 | `security-review` | `npx skills add https://github.com/getsentry/skills --skill security-review -g` |
-| `code-slop` | `npx skills add https://github.com/BenjaminG/ai-skills --skill code-slop -g` |
+| `code-slop` | Ships with this plugin. If missing, reinstall the `bgelis-ai-skills` plugin (`/plugin reinstall bgelis-ai-skills`). |
 | `simplify` | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g` |
 
 If the project is not React/Next.js, `vercel-react-best-practices` is optional (the react-reviewer is skipped automatically).
