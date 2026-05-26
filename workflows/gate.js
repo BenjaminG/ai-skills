@@ -97,14 +97,14 @@ const CONTEXT_SCHEMA = {
 };
 
 const REVIEWERS = [
-  { key: 'solid', agentType: 'solid-reviewer', condition: () => true },
-  { key: 'security', agentType: 'security-reviewer', condition: () => true },
-  { key: 'simplify', agentType: 'simplify-reviewer', condition: () => true },
-  { key: 'slop', agentType: 'slop-reviewer', condition: () => true },
-  { key: 'react', agentType: 'react-reviewer', condition: f => f.react },
-  { key: 'a11y', agentType: 'a11y-reviewer', condition: f => f.a11y },
-  { key: 'i18n', agentType: 'i18n-reviewer', condition: f => f.i18n },
-  { key: 'migration', agentType: 'migration-reviewer', condition: f => f.migration },
+  { key: 'solid', agentType: 'ai-skills:solid-reviewer', condition: () => true },
+  { key: 'security', agentType: 'ai-skills:security-reviewer', condition: () => true },
+  { key: 'simplify', agentType: 'ai-skills:simplify-reviewer', condition: () => true },
+  { key: 'slop', agentType: 'ai-skills:slop-reviewer', condition: () => true },
+  { key: 'react', agentType: 'ai-skills:react-reviewer', condition: f => f.react },
+  { key: 'a11y', agentType: 'ai-skills:a11y-reviewer', condition: f => f.a11y },
+  { key: 'i18n', agentType: 'ai-skills:i18n-reviewer', condition: f => f.i18n },
+  { key: 'migration', agentType: 'ai-skills:migration-reviewer', condition: f => f.migration },
 ];
 
 function buildReviewPrompt(args) {
@@ -182,7 +182,7 @@ const reviewerResults = await pipeline(
         parallel(
           Array.from({ length: 3 }, (_, si) => () =>
             agent(buildSkepticPrompt(f, args), {
-              agentType: 'skeptic',
+              agentType: 'ai-skills:skeptic',
               schema: SKEPTIC_SCHEMA,
               label: `verify:${r.key}:${fi}:${si}`,
               phase: 'Verify',
@@ -217,7 +217,7 @@ phase('Context');
 let contextResult = { annotations: [], synthesized: [] };
 if (surviving.length > 0 || (args.contextBundle && args.contextBundle.trim().length > 0)) {
   const result = await agent(buildContextPrompt(surviving, args.contextBundle), {
-    agentType: 'context-checker',
+    agentType: 'ai-skills:context-checker',
     schema: CONTEXT_SCHEMA,
     label: 'context-check',
     phase: 'Context',

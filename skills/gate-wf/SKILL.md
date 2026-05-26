@@ -120,10 +120,15 @@ fi
 
 HEAD_SHA=$(git rev-parse HEAD)
 BASE_SHA=$(git merge-base $BASE HEAD)
-CHANGED_FILES=$(git diff $BASE_SHA...HEAD --name-only)
+# Disable globbing while iterating file paths — Next.js segments like [locale] are
+# valid filenames but valid glob patterns too, and unquoted expansion would eat them.
+set -f
+mapfile -t CHANGED_FILES_ARR < <(git diff $BASE_SHA...HEAD --name-only)
+CHANGED_FILES=$(printf '%s\n' "${CHANGED_FILES_ARR[@]}")
 WT_HASH=$( {
-  git diff HEAD -- $CHANGED_FILES
-  git ls-files --others --exclude-standard -- $CHANGED_FILES | xargs -I{} shasum {} 2>/dev/null
+  git diff HEAD -- "${CHANGED_FILES_ARR[@]}"
+  git ls-files --others --exclude-standard -- "${CHANGED_FILES_ARR[@]}" \
+    | while IFS= read -r f; do shasum -- "$f" 2>/dev/null; done
 } | shasum | cut -c1-12)
 
 # CLAUDE.md and ADR roots — see references/context-sources.md
@@ -135,14 +140,15 @@ done
 
 CLAUDE_MD_LIST=$( {
   [ -f "$REPO_ROOT/CLAUDE.md" ] && echo "$REPO_ROOT/CLAUDE.md"
-  for f in $CHANGED_FILES; do
-    dir=$(dirname "$f")
+  for f in "${CHANGED_FILES_ARR[@]}"; do
+    dir=$(dirname -- "$f")
     while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
       [ -f "$REPO_ROOT/$dir/CLAUDE.md" ] && echo "$REPO_ROOT/$dir/CLAUDE.md"
-      dir=$(dirname "$dir")
+      dir=$(dirname -- "$dir")
     done
   done
 } | sort -u)
+set +f
 
 if [ -n "$CLAUDE_MD_LIST" ]; then
   CLAUDE_MD_GIT_SHA=$(git log -1 --format=%H -- $CLAUDE_MD_LIST 2>/dev/null | cut -c1-12)
@@ -258,7 +264,23 @@ Full spec: `references/scope-gate.md`. Hard-stops here `exit 0` directly — the
 
 ## Step 3: Invoke the workflow
 
-Build the args object and invoke. The workflow is registered by the plugin under the canonical name `ai-skills:gate` (auto-discovered from `<plugin-root>/workflows/gate.js`):
+The workflow is registered by the plugin under the canonical name `ai-skills:gate` (auto-discovered from `<plugin-root>/workflows/gate.js`).
+
+### 3a. Decide invocation shape based on payload size
+
+Inline tool-call args have a hard size limit (~256 KB in practice). The diff alone can exceed this on real branches. Compute total args size first, then choose:
+
+```bash
+ARGS_BYTES=$(( $(wc -c < "$TMP_DIR/diff-full.txt") \
+             + $(wc -c < "$TMP_DIR/diff-summary.txt") \
+             + $(wc -c < "$TMP_DIR/plus-lines.txt") \
+             + $(wc -c < "$TMP_DIR/context-bundle.md") ))
+```
+
+- **Small (`ARGS_BYTES` < 200000)**: invoke with `args` inline (3b).
+- **Large (`ARGS_BYTES` ≥ 200000)**: write a bundled script and invoke with `scriptPath` (3c). `plusLines` is dropped from the bundle — reviewers see the full diff anyway.
+
+### 3b. Inline invocation (small diffs)
 
 ```
 Workflow({
@@ -280,7 +302,59 @@ Workflow({
 })
 ```
 
-**Note**: when running locally without installing the plugin (e.g. `claude --plugin-dir .` from this repo), the workflow name resolves the same way. If the resolution fails (workflow not found), it means the plugin's `workflows/` directory isn't being discovered — check that `CLAUDE_CODE_WORKFLOWS=1` is set in `settings.json` and that the plugin is actually loaded.
+### 3c. Bundled-script invocation (large diffs)
+
+Build a script that hardcodes the args at the top, then concatenates the original `workflows/gate.js` body:
+
+```bash
+PLUGIN_ROOT=$(ls -d "$HOME/.claude/plugins/cache/"*/ai-skills/*/ 2>/dev/null | head -1)
+GATE_JS="${PLUGIN_ROOT}workflows/gate.js"
+
+node -e '
+  const fs = require("fs");
+  const args = {
+    diff:          fs.readFileSync(process.env.DIFF, "utf8"),
+    diffSummary:   fs.readFileSync(process.env.DIFFSUM, "utf8"),
+    plusLines:     "",   // dropped intentionally; reviewers use diff
+    contextBundle: fs.readFileSync(process.env.CTX, "utf8"),
+    spawnFlags:    JSON.parse(process.env.FLAGS),
+    sessionId:     process.env.SESSION,
+  };
+  const body = fs.readFileSync(process.env.GATE_JS, "utf8")
+    .replace(/^export const meta\s*=\s*{[\s\S]*?};\s*/m, "");
+  const meta = `export const meta = ${
+    fs.readFileSync(process.env.GATE_JS, "utf8")
+      .match(/export const meta\s*=\s*({[\s\S]*?});/)[1]
+  };\n`;
+  const argsLine = `const args = ${JSON.stringify(args)};\n`;
+  fs.writeFileSync(process.env.OUT, meta + argsLine + body);
+' \
+  DIFF="$TMP_DIR/diff-full.txt" \
+  DIFFSUM="$TMP_DIR/diff-summary.txt" \
+  CTX="$TMP_DIR/context-bundle.md" \
+  FLAGS="{\"react\":$( [ $SPAWN_REACT -eq 1 ] && echo true || echo false ),\"a11y\":$( [ $SPAWN_A11Y -eq 1 ] && echo true || echo false ),\"i18n\":$( [ $SPAWN_I18N -eq 1 ] && echo true || echo false ),\"migration\":$( [ $SPAWN_MIGRATION -eq 1 ] && echo true || echo false )}" \
+  SESSION="$SESSION_ID" \
+  GATE_JS="$GATE_JS" \
+  OUT="$TMP_DIR/gate-bundled.js"
+```
+
+Then:
+
+```
+Workflow({
+  scriptPath: "<TMP_DIR>/gate-bundled.js",
+  resumeFromRunId: RESUME_ID || undefined,
+})
+```
+
+The bundled script reuses the meta + body of the canonical workflow; only the `args` declaration is materialized. Resume keys still work because the bundled script is byte-stable across re-invocations of the same diff.
+
+### 3d. Workflow resolution failures
+
+If the workflow tool returns "workflow not found":
+- Verify `CLAUDE_CODE_WORKFLOWS=1` is set in `settings.json`.
+- Verify the plugin is loaded (`/plugin list` should show `bgelis-ai-skills`).
+- For `claude --plugin-dir .` runs, verify `workflows/gate.js` exists at the plugin root.
 
 The workflow returns `{ findings: [...] }`. Each finding carries:
 
