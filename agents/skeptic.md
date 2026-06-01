@@ -1,7 +1,7 @@
 ---
 name: skeptic
 description: Adversarially refutes a single reviewer finding. Returns refuted=true by default when uncertain. Invoked by the gate-wf workflow during the verify phase.
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 

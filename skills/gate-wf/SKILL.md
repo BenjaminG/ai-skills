@@ -307,7 +307,17 @@ Workflow({
 Build a script that hardcodes the args at the top, then concatenates the original `workflows/gate.js` body:
 
 ```bash
-PLUGIN_ROOT=$(ls -d "$HOME/.claude/plugins/cache/"*/ai-skills/*/ 2>/dev/null | head -1)
+# Multiple plugin cache dirs may exist from prior installs. Older ones can have stale
+# agentType strings that won't resolve — prefer caches whose gate.js uses the namespaced
+# 'ai-skills:' prefix, falling back to most-recently-modified.
+PLUGIN_ROOT=""
+for d in $(ls -td "$HOME/.claude/plugins/cache/"*/ai-skills/*/ 2>/dev/null); do
+  if grep -q "agentType: 'ai-skills:" "${d}workflows/gate.js" 2>/dev/null; then
+    PLUGIN_ROOT="$d"
+    break
+  fi
+done
+[ -z "$PLUGIN_ROOT" ] && PLUGIN_ROOT=$(ls -td "$HOME/.claude/plugins/cache/"*/ai-skills/*/ 2>/dev/null | head -1)
 GATE_JS="${PLUGIN_ROOT}workflows/gate.js"
 
 node -e '
