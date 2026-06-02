@@ -1,2 +1,5 @@
 .claude/hooks/skills-update.log
 .claude/settings.local.json
+
+# humanizer: per-user style customization, created by `humanizer init`
+skills/humanizer/STYLE.md
