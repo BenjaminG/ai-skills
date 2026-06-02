@@ -17,8 +17,10 @@ Skills are namespaced after install: `/ai-skills:gate`, `/ai-skills:interview`, 
 
 ```sh
 codex plugin marketplace add BenjaminG/ai-skills
-codex plugin install ai-skills
+codex plugin add ai-skills@bgelis-ai-skills
 ```
+
+You can also install it from `codex` → `/plugins` → `bgelis-ai-skills`.
 
 ### npx skills (any agent)
 
@@ -73,11 +75,16 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 
 ```
 .
+├── .agents/
+│   └── plugins/
+│       └── marketplace.json # Codex marketplace catalog
 ├── .claude-plugin/
 │   ├── plugin.json         # Claude Code plugin manifest
 │   └── marketplace.json    # one-plugin marketplace catalog
 ├── .codex-plugin/
 │   └── plugin.json         # Codex plugin manifest
+├── plugins/
+│   └── ai-skills -> ..     # Codex marketplace path to root plugin
 ├── skills/                 # all skills live here as <name>/SKILL.md
 └── ...
 ```
