@@ -264,124 +264,112 @@ Full spec: `references/scope-gate.md`. Hard-stops here `exit 0` directly — the
 - Run the Haiku classifier (single Agent call, read-only, model: haiku) — cache its result at `$STATE_DIR/${BRANCH_SAFE}.scope.json` keyed on SHA-12 of `CHANGED_FILES`.
 - Decision: 0 SUSPICIOUS → silent. 1–3 → `SUSPICIOUS_BANNER` (soft-warn). ≥4 → hard-stop unless `--ignore-scope-gate`.
 
-## Step 3: Invoke the workflow
+## Step 3: Run the gate as a dynamic workflow
 
-The workflow is registered by the plugin under the canonical name `ai-skills:gate` (auto-discovered from `<plugin-root>/workflows/gate.js`).
+The skill writes a prompt that describes the orchestration. Claude generates and runs
+the workflow script, then returns `{ findings: [...] }`.
 
-### 3a. Decide invocation shape based on payload size
-
-Inline tool-call args have a hard size limit (~256 KB in practice). The diff alone can exceed this on real branches. Compute total args size first, then choose:
-
-```bash
-ARGS_BYTES=$(( $(wc -c < "$TMP_DIR/diff-full.txt") \
-             + $(wc -c < "$TMP_DIR/diff-summary.txt") \
-             + $(wc -c < "$TMP_DIR/plus-lines.txt") \
-             + $(wc -c < "$TMP_DIR/context-bundle.md") ))
-```
-
-- **Small (`ARGS_BYTES` < 200000)**: invoke with `args` inline (3b).
-- **Large (`ARGS_BYTES` ≥ 200000)**: write a bundled script and invoke with `scriptPath` (3c). `plusLines` is dropped from the bundle — reviewers see the full diff anyway.
-
-### 3b. Inline invocation (small diffs)
-
-```
-Workflow({
-  name: "ai-skills:gate",
-  args: {
-    diff: <contents of $TMP_DIR/diff-full.txt>,
-    diffSummary: <contents of $TMP_DIR/diff-summary.txt>,
-    plusLines: <contents of $TMP_DIR/plus-lines.txt>,
-    contextBundle: <contents of $TMP_DIR/context-bundle.md>,
-    spawnFlags: {
-      react: SPAWN_REACT == 1,
-      a11y: SPAWN_A11Y == 1,
-      i18n: SPAWN_I18N == 1,
-      migration: SPAWN_MIGRATION == 1,
-    },
-    sessionId: SESSION_ID,
-  },
-  resumeFromRunId: RESUME_ID || undefined,
-})
-```
-
-### 3c. Bundled-script invocation (large diffs)
-
-Build a script that hardcodes the args at the top, then concatenates the original `workflows/gate.js` body:
+### 3a. Prepare flag-conditional reviewer list
 
 ```bash
-# Multiple plugin cache dirs may exist from prior installs. Older ones can have stale
-# agentType strings that won't resolve — prefer caches whose gate.js uses the namespaced
-# 'ai-skills:' prefix, falling back to most-recently-modified.
-PLUGIN_ROOT=""
-for d in $(ls -td "$HOME/.claude/plugins/cache/"*/ai-skills/*/ 2>/dev/null); do
-  if grep -q "agentType: 'ai-skills:" "${d}workflows/gate.js" 2>/dev/null; then
-    PLUGIN_ROOT="$d"
-    break
-  fi
-done
-[ -z "$PLUGIN_ROOT" ] && PLUGIN_ROOT=$(ls -td "$HOME/.claude/plugins/cache/"*/ai-skills/*/ 2>/dev/null | head -1)
-GATE_JS="${PLUGIN_ROOT}workflows/gate.js"
+REVIEWERS=(
+  "ai-skills:bug-reviewer"
+  "ai-skills:solid-reviewer"
+  "ai-skills:security-reviewer"
+  "ai-skills:simplify-reviewer"
+  "ai-skills:slop-reviewer"
+)
+[ $SPAWN_REACT -eq 1 ]     && REVIEWERS+=("ai-skills:react-reviewer")
+[ $SPAWN_A11Y -eq 1 ]      && REVIEWERS+=("ai-skills:a11y-reviewer")
+[ $SPAWN_I18N -eq 1 ]      && REVIEWERS+=("ai-skills:i18n-reviewer")
+[ $SPAWN_MIGRATION -eq 1 ] && REVIEWERS+=("ai-skills:migration-reviewer")
 
-node -e '
-  const fs = require("fs");
-  const args = {
-    diff:          fs.readFileSync(process.env.DIFF, "utf8"),
-    diffSummary:   fs.readFileSync(process.env.DIFFSUM, "utf8"),
-    plusLines:     "",   // dropped intentionally; reviewers use diff
-    contextBundle: fs.readFileSync(process.env.CTX, "utf8"),
-    spawnFlags:    JSON.parse(process.env.FLAGS),
-    sessionId:     process.env.SESSION,
-  };
-  const body = fs.readFileSync(process.env.GATE_JS, "utf8")
-    .replace(/^export const meta\s*=\s*{[\s\S]*?};\s*/m, "");
-  const meta = `export const meta = ${
-    fs.readFileSync(process.env.GATE_JS, "utf8")
-      .match(/export const meta\s*=\s*({[\s\S]*?});/)[1]
-  };\n`;
-  const argsLine = `const args = ${JSON.stringify(args)};\n`;
-  fs.writeFileSync(process.env.OUT, meta + argsLine + body);
-' \
-  DIFF="$TMP_DIR/diff-full.txt" \
-  DIFFSUM="$TMP_DIR/diff-summary.txt" \
-  CTX="$TMP_DIR/context-bundle.md" \
-  FLAGS="{\"react\":$( [ $SPAWN_REACT -eq 1 ] && echo true || echo false ),\"a11y\":$( [ $SPAWN_A11Y -eq 1 ] && echo true || echo false ),\"i18n\":$( [ $SPAWN_I18N -eq 1 ] && echo true || echo false ),\"migration\":$( [ $SPAWN_MIGRATION -eq 1 ] && echo true || echo false )}" \
-  SESSION="$SESSION_ID" \
-  GATE_JS="$GATE_JS" \
-  OUT="$TMP_DIR/gate-bundled.js"
+REVIEWERS_LIST=$(printf '  - %s\n' "${REVIEWERS[@]}")
 ```
 
-Then:
+### 3b. Build the orchestration prompt
+
+The prompt is the contract. It tells Claude exactly what workflow shape to generate.
 
 ```
-Workflow({
-  scriptPath: "<TMP_DIR>/gate-bundled.js",
-  resumeFromRunId: RESUME_ID || undefined,
-})
+ultracode: Run a deterministic quality gate on this branch's diff.
+
+ARTIFACTS (read these files inside the workflow):
+- Diff: $TMP_DIR/diff-full.txt
+- Plus-lines (filtered to + lines per file): $TMP_DIR/plus-lines.txt
+- Context bundle (CLAUDE.md + ADRs + Linear + PR + past sessions): $TMP_DIR/context-bundle.md
+- Spawn flags: react=$SPAWN_REACT, a11y=$SPAWN_A11Y, i18n=$SPAWN_I18N, migration=$SPAWN_MIGRATION
+- Session ID: $SESSION_ID
+
+ORCHESTRATION SHAPE (your generated workflow must follow this exactly):
+
+Phase 1 — Parallel Review:
+  Spawn these reviewer agents in parallel, each with the schema below:
+$REVIEWERS_LIST
+  Each reviewer reads diff-full.txt + plus-lines.txt and returns findings.
+
+  Per-finding schema:
+  {
+    rule_id: string,           // stable identifier, e.g. "security-sql-injection"
+    file: string,
+    line: number,
+    location: "diff-line" | "adjacent",  // adjacent = legacy code touched but not changed
+    tier: "BLOCKER" | "MAJOR" | "NIT",
+    message: string,
+    evidence: string,          // 1-3 lines from the file showing the issue
+    suggested_fix: string
+  }
+
+Phase 2 — Adversarial Verify (per-finding, streaming):
+  As each reviewer returns, for every finding it surfaced, spawn 3 independent
+  skeptic agents (agentType: ai-skills:skeptic-reviewer) that try to refute it.
+  Each skeptic reads the finding + the relevant file region.
+  Skeptic schema: { refuted: boolean, reason: string }
+  Drop findings where ≥2 of 3 skeptics return refuted=true.
+  Survivors carry `verifications: [{refuted, reason}, ...]` (length 3).
+
+Phase 3 — Context Check (single agent):
+  Spawn ai-skills:context-checker once with: surviving findings + context bundle.
+  It annotates each finding with:
+    - context_verdict: "OK" | "CONFLICT" | "UNCERTAIN"
+    - context_source:  "linear" | "pr" | "session" | "claude-md" | "adr" | "none"
+    - context_citation: string (when not OK)
+    - context_reason: string (when not OK)
+  It may also SYNTHESIZE new findings for CLAUDE.md or ADR violations not
+  already surfaced by reviewers. Synthesized findings carry:
+    - reviewer: "context-checker"
+    - citation: string (claude-md path or ADR ID)
+    - source: "claude-md" | "adr"
+  Synthesized findings have empty verifications[] and skip Phase 2.
+
+CONSTRAINTS:
+- Boy Scout asymmetry: adjacent (legacy) code may be flagged MAJOR/NIT but never BLOCKER.
+- Reviewers are READ-ONLY. No edits, no shell.
+- Use pipeline() so per-finding verify can start as soon as each reviewer returns
+  (don't wait for all reviewers to finish before starting verify).
+- Workflow must return { findings: [...] } as a single JSON object.
+
+Generate the workflow script and run it.
 ```
 
-The bundled script reuses the meta + body of the canonical workflow; only the `args` declaration is materialized. Resume keys still work because the bundled script is byte-stable across re-invocations of the same diff.
+### 3c. Submit and capture result
 
-### 3d. Workflow resolution failures
+The skill issues this prompt to Claude in the active session. Claude generates the
+workflow script via the dynamic workflows runtime, executes it, and returns
+`{ findings: [...] }`.
 
-If the workflow tool returns "workflow not found":
+After the run completes, capture the `runId` from `/workflows` (shown in the task
+panel). Pass it to Step 5 for caching and to the verdict footer.
 
-- Verify `CLAUDE_CODE_WORKFLOWS=1` is set in `settings.json`.
-- Verify the plugin is loaded (`/plugin list` should show `bgelis-ai-skills`).
-- For `claude --plugin-dir .` runs, verify `workflows/gate.js` exists at the plugin root.
+### 3d. Failure modes
 
-The workflow returns `{ findings: [...] }`. Each finding carries:
+If Claude declines to generate a workflow (e.g., user has workflows disabled):
+- Surface the error to the user and exit.
+- If `disableWorkflows=true` in settings, the skill cannot proceed.
 
-- `rule_id, file, line, location, tier, message, evidence, suggested_fix` (from reviewer)
-- `reviewer` (which reviewer surfaced it; `context-checker` for synthesized)
-- `verifications: [{refuted, reason}, ...]` (3 skeptic verdicts; empty for synthesized)
-- `context_verdict: OK | CONFLICT | UNCERTAIN`
-- `context_source: linear | pr | session | claude-md | adr | none`
-- `context_citation, context_reason` (when context_verdict is not OK)
-- For synthesized findings only: `citation, source` (always claude-md or adr)
-
-If the workflow tool returns an error, surface it to the user and exit. Do NOT retry automatically.
-
-If `--resume` was used, the workflow's `runId` will match the requested ID. Otherwise, capture the new `runId` for the verdict footer.
+If a reviewer agent type is not found:
+- The dynamic workflow will surface this as an error per agent.
+- Verify Step 0 dependencies passed, and that the plugin is loaded.
 
 ## Step 4: Compute verdict
 
