@@ -1,6 +1,6 @@
 ---
 name: gate-wf
-description: Workflow-native quality gate for branch changes — parallel reviewers (SOLID, Security, Simplify, Slop, optionally React/a11y/i18n/migration) with adversarial verify, CLAUDE.md/ADR enforcement, and a stable PASS / PASS WITH NOTES / FAIL verdict. Read-only. Built on Claude Code Workflows.
+description: Workflow-native quality gate for branch changes — parallel reviewers (Bug, SOLID, Security, Simplify, Slop, optionally React/a11y/i18n/migration) with adversarial verify, CLAUDE.md/ADR enforcement, and a stable PASS / PASS WITH NOTES / FAIL verdict. Read-only. Built on Claude Code Workflows.
 argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <runId>]"
 ---
 
@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `1`. Cache entries are keyed on this — bumping invalidates all caches at once.
+**Skill version**: `2`. Cache entries are keyed on this — bumping invalidates all caches at once.
 
 ## Prerequisites
 
@@ -49,13 +49,13 @@ fi
 
 If any report `MISS`, stop and tell the user which skills are missing. Do not proceed.
 
-| Skill | Install |
-|-------|---------|
-| `vercel-react-best-practices` | `npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -g` |
-| `solid` | `npx skills add https://github.com/ramziddin/solid-skills --skill solid -g` |
-| `security-review` | `npx skills add https://github.com/getsentry/skills --skill security-review -g` |
-| `code-slop` | Ships with this plugin. If missing, reinstall the `bgelis-ai-skills` plugin (`/plugin reinstall bgelis-ai-skills`). |
-| `simplify` | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g` |
+| Skill                         | Install                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `vercel-react-best-practices` | `npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -g`                 |
+| `solid`                       | `npx skills add https://github.com/ramziddin/solid-skills --skill solid -g`                                         |
+| `security-review`             | `npx skills add https://github.com/getsentry/skills --skill security-review -g`                                     |
+| `code-slop`                   | Ships with this plugin. If missing, reinstall the `bgelis-ai-skills` plugin (`/plugin reinstall bgelis-ai-skills`). |
+| `simplify`                    | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g`                                    |
 
 If the project is not React/Next.js, `vercel-react-best-practices` is optional (the react-reviewer is skipped automatically).
 
@@ -159,7 +159,7 @@ if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
   [ -n "$ADR_GIT_SHA" ] && WT_HASH=$(echo "${WT_HASH} ${ADR_GIT_SHA}" | shasum | cut -c1-12)
 fi
 
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v1"
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v2"
 STATE_DIR="$HOME/.claude/gate-wf-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
@@ -169,6 +169,7 @@ mkdir -p "$STATE_DIR"
 ### 1c. Findings cache lookup
 
 If `FORCE_FRESH=0` and `RESUME_ID=""`:
+
 1. Read `$STATE_FILE`.
 2. If `cache_key == CACHE_KEY` AND `cached_at` is within 7 days, **cache hit**: print the cached verdict and findings verbatim, then exit. The cached findings carry their original `B1`/`M1`/`N1` IDs so the user can reference them.
 3. Otherwise: cache miss, proceed.
@@ -187,13 +188,13 @@ Skip probes when `FORCE_FRESH=1`. Otherwise, run all 4 probes in parallel:
 
 Compare to cached `freshness_signals` in `$CONTEXT_CACHE_FILE`. For each source:
 
-| Cached vs Fresh | Action |
-|---|---|
-| equal | **reuse** cached portion |
-| different | **re-fetch** |
-| cached null, fresh not null | **fetch** |
+| Cached vs Fresh             | Action                                  |
+| --------------------------- | --------------------------------------- |
+| equal                       | **reuse** cached portion                |
+| different                   | **re-fetch**                            |
+| cached null, fresh not null | **fetch**                               |
 | cached not null, fresh null | **re-fetch** (transient unavailability) |
-| no cache file | **fetch all** |
+| no cache file               | **fetch all**                           |
 
 ### 1e. Assemble context bundle (bash)
 
@@ -257,6 +258,7 @@ Full spec: `references/scope-gate.md`. Hard-stops here `exit 0` directly — the
 **File-count hard-stop** (>200 files): emit the banner from `references/scope-gate.md`, exit unless `--ignore-scope-gate` (in which case, set `FILE_COUNT_BANNER` and continue).
 
 **Suspicious-files classifier**:
+
 - Skip if `FILE_COUNT <= 1`.
 - Determine intent (Linear title/body → PR title/body → last commit → branch name).
 - Run the Haiku classifier (single Agent call, read-only, model: haiku) — cache its result at `$STATE_DIR/${BRANCH_SAFE}.scope.json` keyed on SHA-12 of `CHANGED_FILES`.
@@ -362,6 +364,7 @@ The bundled script reuses the meta + body of the canonical workflow; only the `a
 ### 3d. Workflow resolution failures
 
 If the workflow tool returns "workflow not found":
+
 - Verify `CLAUDE_CODE_WORKFLOWS=1` is set in `settings.json`.
 - Verify the plugin is loaded (`/plugin list` should show `bgelis-ai-skills`).
 - For `claude --plugin-dir .` runs, verify `workflows/gate.js` exists at the plugin root.
@@ -385,6 +388,7 @@ If `--resume` was used, the workflow's `runId` will match the requested ID. Othe
 ### 4a. Banners
 
 Emit any non-empty banner verbatim, in this order:
+
 - `WRONG_BASE_BANNER`
 - `FILE_COUNT_BANNER` (only when `--ignore-scope-gate` bypassed a >200 hard-stop)
 - `SUSPICIOUS_BANNER` (soft-warn or bypassed hard-stop)
@@ -395,15 +399,16 @@ If none fired, skip this sub-step.
 
 Count findings by tier:
 
-| Verdict | Condition |
-|---|---|
-| **PASS** | 0 BLOCKER, 0 MAJOR, 0 NIT |
+| Verdict             | Condition                  |
+| ------------------- | -------------------------- |
+| **PASS**            | 0 BLOCKER, 0 MAJOR, 0 NIT  |
 | **PASS WITH NOTES** | 0 BLOCKER, ≥1 MAJOR or NIT |
-| **FAIL** | ≥1 BLOCKER |
+| **FAIL**            | ≥1 BLOCKER                 |
 
 ### 4c. Assign stable IDs
 
 Sort findings by tier (BLOCKER → MAJOR → NIT), then by reviewer, then by `(file, line)`. Within each tier walk in order:
+
 - BLOCKERs → `B1, B2, ...`
 - MAJORs → `M1, M2, ...`
 - NITs → `N1, N2, ...`
@@ -424,11 +429,13 @@ NIT:     <N>
 ```
 
 For PASS / PASS WITH NOTES:
+
 ```
 → This PR meets the merge bar. MAJOR and NIT items are informational only.
 ```
 
 For FAIL:
+
 ```
 → This PR cannot merge until BLOCKER items are resolved.
 ```
@@ -457,6 +464,7 @@ Then list findings grouped by tier, then by reviewer:
 Display `[refute votes: K/3]` where K is the count of skeptics who refuted (still surviving means K < 2).
 
 For `context_verdict`:
+
 - `OK` → no badge
 - `UNCERTAIN` → `❔ ambiguous historical context` + cite `context_citation`
 - `CONFLICT` → `⚠️ conflicts with past decision` + cite `context_citation`
@@ -464,6 +472,7 @@ For `context_verdict`:
 For synthesized `claude-md-violation` / `adr-violation`, render the citation as the `rule reference:` line.
 
 After the last finding, append:
+
 ```
 Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1 and N1".
 Tip: edit workflows/gate.js or any agents/*.md, then re-run with --resume <runId> to skip cached agent calls.
@@ -491,7 +500,7 @@ Write `$CONTEXT_CACHE_FILE`:
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v1",
+  "key": "<BRANCH_SAFE>_v2",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": { ... from $TMP_DIR/freshness-signals.json ... },
   "bundle_sources": {
