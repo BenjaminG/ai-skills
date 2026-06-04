@@ -8,8 +8,9 @@ description: |
   to customize the skill. Based on Wikipedia's "Signs of AI writing" guide; detects
   inflated symbolism, promotional language, superficial -ing analyses, vague
   attributions, em dash overuse, rule of three, AI vocabulary words, negative
-  parallelisms, and excessive conjunctive phrases. Supports a colocated STYLE.md
-  with personal preferences that override the default rules.
+  parallelisms, and excessive conjunctive phrases. Supports a personal STYLE.md
+  at ~/.config/humanizer/STYLE.md (shared across Claude Code and Codex) that
+  overrides the default rules.
 
   Credits: Original skill by @blader - https://github.com/blader/humanizer
 allowed-tools:
@@ -31,7 +32,8 @@ Look at the user's request before doing anything else:
 
 1. **"humanizer init"** (or "init humanizer", "set up humanizer", first-time setup) → run **Init Mode** (interview to create STYLE.md).
 2. **"humanizer update: <instruction>"** (or "update humanizer with ...", "teach humanizer that ...") → run **Update Mode** (append to STYLE.md).
-3. **Any text to clean up / rewrite / humanize** → run **Humanize Mode** (default).
+3. **"humanizer migrate"** (or "move STYLE.md to the canonical path") → run **Migrate Mode** (move legacy colocated STYLE.md to `~/.config/humanizer/STYLE.md`).
+4. **Any text to clean up / rewrite / humanize** → run **Humanize Mode** (default).
 
 If ambiguous, ask which mode.
 
@@ -39,11 +41,16 @@ If ambiguous, ask which mode.
 
 ## Personal Style — STYLE.md
 
-Before doing anything in any mode, **try to load `STYLE.md`** colocated with this `SKILL.md`:
+Before doing anything in any mode, **try to load `STYLE.md`** in this exact resolution order:
 
-- Resolve the path: same directory as the SKILL.md you are reading.
-- If `STYLE.md` exists, read it and treat it as authoritative.
-- If it does not exist, behave like the base humanizer (no personal layer). When entering Humanize Mode without a STYLE.md, mention once that the user can run "humanizer init" to teach it their style.
+1. **`$HUMANIZER_STYLE_PATH`** — env override, used for tests and project-scoped overrides.
+2. **`$XDG_CONFIG_HOME/humanizer/STYLE.md`** — defaults to `~/.config/humanizer/STYLE.md`. **This is the canonical location** — shared between Claude Code and Codex installs of this skill, and survives plugin updates (the plugin cache directory contains a version hash that changes on every update).
+3. **`<skill-dir>/STYLE.md`** — legacy colocated path. If found, use it but tell the user once: "Found STYLE.md at the legacy colocated path. Run 'humanizer migrate' (or move it to `~/.config/humanizer/STYLE.md`) so it survives plugin updates."
+
+Resolve `<skill-dir>` by reading the absolute path of the SKILL.md you were loaded from.
+
+- If a STYLE.md is found at any level, read it and treat it as authoritative.
+- If none exists, behave like the base humanizer (no personal layer). When entering Humanize Mode without a STYLE.md, mention once that the user can run "humanizer init" to teach it their style.
 
 ### Priority rule
 
@@ -79,17 +86,19 @@ When given text to humanize:
 
 Triggered by phrases like "humanizer init", "set up humanizer", "teach humanizer my style".
 
-**Goal:** create a `STYLE.md` next to `SKILL.md` based on a fixed 6-question interview.
+**Goal:** create `STYLE.md` at the canonical location based on a fixed 6-question interview.
 
 ### Steps
 
-1. Locate `SKILL.md`'s directory and check if `STYLE.md` already exists.
-   - If it exists, ask: "STYLE.md already exists — overwrite, append a new section, or cancel?" Default to cancel.
-2. Read `STYLE.template.md` (colocated). Use it as the structure for the final file.
-3. Run the interview below — **one question at a time**, using `AskUserQuestion` when the answer is open-ended, plain text otherwise. Wait for each answer before moving on.
-4. Fill the template sections with the answers. Quote examples verbatim.
-5. Write the result to `STYLE.md`.
-6. Confirm: "Created STYLE.md with N rules. Run 'humanizer update: ...' anytime to add more."
+1. Compute the target path: `${HUMANIZER_STYLE_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/humanizer/STYLE.md}`.
+2. Check whether a STYLE.md already exists at any of the three resolution paths (env override, XDG, legacy colocated).
+   - If one exists, ask: "STYLE.md already exists at `<path>` — overwrite, append a new section, or cancel?" Default to cancel.
+   - If only the legacy colocated copy exists, offer to migrate it to the canonical path before continuing.
+3. Read `STYLE.template.md` (colocated with this SKILL.md). Use it as the structure for the final file.
+4. Run the interview below — **one question at a time**, using `AskUserQuestion` when the answer is open-ended, plain text otherwise. Wait for each answer before moving on.
+5. Fill the template sections with the answers. Quote examples verbatim.
+6. Create the parent directory if needed (`mkdir -p` on the target's dirname), then write the result to the canonical path.
+7. Confirm: "Created STYLE.md at `<path>` with N rules. Run 'humanizer update: ...' anytime to add more."
 
 ### The 6 questions (fixed order)
 
@@ -112,7 +121,7 @@ Triggered by "humanizer update: <instruction>", "teach humanizer that ...", "rem
 
 ### Steps
 
-1. Locate and read `STYLE.md`. If it does not exist, run Init Mode instead (after confirming with the user).
+1. Resolve and read `STYLE.md` using the priority order in **Personal Style — STYLE.md** above. If none exists, run Init Mode instead (after confirming with the user). All writes go to the same path that was resolved for reading — never split read and write across paths.
 2. Classify the instruction into one of the STYLE.md sections:
    - **Tone** — anything about overall voice/register.
    - **Audience** — who they're writing for.
@@ -129,6 +138,26 @@ Triggered by "humanizer update: <instruction>", "teach humanizer that ...", "rem
 5. Confirm: "Added to STYLE.md → <section>: <one-line summary>."
 
 Keep STYLE.md tidy. Bullet points, no prose blocks except in the Examples section.
+
+---
+
+## Migrate Mode
+
+Triggered by "humanizer migrate", or when Init/Update Mode detects a legacy colocated `STYLE.md` and the user opts in.
+
+**Goal:** move `<skill-dir>/STYLE.md` to `${XDG_CONFIG_HOME:-$HOME/.config}/humanizer/STYLE.md` so it survives plugin updates and is shared between Claude Code and Codex.
+
+### Steps
+
+1. Resolve source: `<skill-dir>/STYLE.md` (the colocated legacy path).
+2. Resolve target: `${HUMANIZER_STYLE_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/humanizer/STYLE.md}`.
+3. If source does not exist → tell the user there is nothing to migrate and stop.
+4. If target already exists → ask: "Target already exists at `<target>`. Overwrite, keep target (delete legacy), or cancel?" Default to cancel.
+5. Otherwise: `mkdir -p` the target's parent dir, then copy source → target. Verify the copy succeeded by reading the target back.
+6. Delete the source file only after the copy is verified.
+7. Confirm: "Migrated STYLE.md to `<target>`. Legacy file removed."
+
+The plugin cache directory may be read-only or recreated on every plugin update — if deleting the source fails, log a warning but treat the migration as successful (the canonical path is now authoritative; the legacy copy will eventually be wiped by a plugin reinstall).
 
 ---
 
