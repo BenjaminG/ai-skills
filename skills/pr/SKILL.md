@@ -151,36 +151,78 @@ git push -u origin HEAD
   - **Without issue ID:** `{type}: description` → `feat: add user auth`
 - **PR body:** Use the appropriate template below based on the PR type
 
+### Description Writing Principles (MANDATORY for `fix` and `feature`)
+
+The description exists to make the *point* understandable — not to recite the code.
+**Always open with the functional story**, in plain language: what a user saw going
+wrong (fix) or what they can now do (feature). Write for someone unfamiliar with the
+code *and* with this part of the product.
+
+**Then judge the nature of the change and calibrate technical detail to it:**
+
+- **Purely functional change** (a user-facing bug, a feature with no notable internal
+  shift): keep implementation detail out entirely — no file lists, no "which service
+  touches which module", no data-flow walkthroughs, no symbol / function / flag
+  names, no migration internals. The reviewer gets all of that from the diff and the
+  commits. Use an everyday analogy for the cause when it helps (e.g. a stale cached
+  "photocopy" of data that wasn't refreshed).
+- **Technically-driven change** (a data-model or schema change, a refactor with
+  structural consequences, an infrastructure or otherwise technical-only
+  modification): after the plain-language framing, include the technical detail a
+  reviewer genuinely needs to evaluate it — a schema, a small diagram, the key
+  concept under its real name, the relevant business logic. Only what's needed to
+  judge the change, never a reflexive dump.
+
+Both cases:
+- **No unexplained jargon or abbreviations** in the functional framing. When the
+  change warrants precise technical terms, signpost them rather than assuming context.
+- **Keep it concise, clear, and simple.** Short paragraphs, one idea each.
+- **End with a one-sentence recap** ("In a nutshell: …").
+
+For the other types (chore, refactor, docs, test, perf, style), fill the templates
+as-is — these principles do not apply.
+
+See `references/pr-description-style.md` for a worked before/after example.
+
 ### Fix PR Template (type = "fix"):
 ```markdown
-### Issue Description
+### What this fixes
 
-<what the user experienced>
+<In plain terms, what someone using the product saw going wrong. Name the
+feature/screen and who hits it. Use the real example if there is one.>
 
-### Root Cause
+### Why it happened
 
-<why it happened>
+<The cause in everyday language — an analogy is welcome. No symbol names, file
+paths, or data-flow walkthroughs.>
+
+### How it's fixed
+
+<What now behaves differently, at the behaviour level — not which functions changed.
+If existing data was repaired, say so in one line.>
 
 ### Screenshots
 
-<before / after>
+<before / after — optional but encouraged for UI bugs>
 
 ### Related Issues
-
-<linked issues or #numbers>
 
 **{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
 
 ### Feature PR Template (type = "feature" or "feat"):
 ```markdown
-### Feature Description
+### What this adds
 
-<what the feature does and why>
+<In plain terms, what the feature lets someone do and why it matters to them. Lead
+with the user-facing outcome, not the architecture.>
 
-### Screenshots
+### How to see it
 
-<UI shots, API examples or GIFs>
+<Where it shows up in the product / how to try it. Screenshots, a short GIF, or an
+API example.>
+
+### Related Issues
 
 **{TRACKER} issue**: {ISSUE_URL}  <!-- Include only if an issue ID was detected in Step 1.6. {TRACKER} is "Linear" or "Jira". -->
 ```
