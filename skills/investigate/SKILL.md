@@ -51,6 +51,10 @@ From the messages:
 - Extract all issue IDs mentioned (pattern: `[A-Z]+-\d+` — matches both Linear and Jira)
 - Note any links to PRs, Linear/Jira issues, Confluence pages, or other resources
 
+**Read shared images.** If the thread includes image attachments (screenshots, error captures), read them — screenshots often carry critical context (on-screen errors, UI state, stack traces). Fold what they show into the context summary (Step 1.2, "Visual evidence").
+
+**Follow relevant links.** For links plausibly relevant to the issue (Confluence runbooks, linked docs, external references), fetch them with `WebFetch` and summarize their contribution in Step 1.2. Do not fetch every link — only those that bear on the issue, to avoid noise. (PR/issue links are handled by the dedicated steps: 1.1b for issues, Phase 2 for PRs.)
+
 If issue IDs were found, proceed to Step 1.1b for each ID. Otherwise, skip to Step 1.2.
 
 ## 1.1b Resolve Tracker and Fetch Issue Details
@@ -73,6 +77,10 @@ Requires the `linear` CLI on PATH (provided by the `linear-cli` skill). If `line
 
 Record the tracker (`Linear` or `Jira`) alongside each ID so later steps and the context summary reference the correct source.
 
+**Read attached images.** Download image attachments (png/jpg/gif) and read them — screenshots often carry critical context (on-screen errors, UI state, stack traces). Fold what they show into the context summary (Step 1.2, "Visual evidence").
+
+**Follow relevant links.** For links in the ticket body/comments that plausibly bear on the issue (Confluence runbooks, linked docs, external references), fetch them with `WebFetch` and summarize their contribution in Step 1.2. Skip links that don't bear on the issue, to avoid noise. Linked PRs are picked up in Phase 2; linked issues are resolved via this step.
+
 ## 1.2 Produce Context Summary
 
 After fetching the ticket(s)/thread, write down a structured summary before proceeding. This summary is the input for Phase 2:
@@ -82,29 +90,42 @@ After fetching the ticket(s)/thread, write down a structured summary before proc
 - **Description:** Key details from the ticket body or thread
 - **Key terms:** Entity names, feature names, error messages, module names, API endpoints mentioned
 - **Relevant systems/modules:** Which parts of the codebase are likely involved
+- **Visual evidence:** What attached screenshots/images show (on-screen errors, UI state, captured stack traces) — omit if none
+- **Linked resources:** Key takeaways from any fetched runbooks/docs, and PR references to investigate in Phase 2 — omit if none
 - **People:** Who reported, who is assigned, who commented
 
 Do NOT proceed to Phase 2 until this summary is written.
 
 ---
 
-# Phase 2 — Investigation (can parallelize, driven by Phase 1 context)
+# Phase 2 — Investigation (parallel subagents, driven by Phase 1 context)
 
 > **CRITICAL:** Every search in this phase MUST use the key terms, entity names, error messages, and module names extracted in Step 1.2. Do not search for generic terms — use the specific context from the ticket/thread.
 
-## 2.1 Fetch Previous Work and Code Investigation
+## 2.1 Delegate Investigation to Subagents
 
-Run these in parallel, using the context summary from Step 1.2:
+Spawn **2 parallel Explore agents** (`Agent` tool, `subagent_type: "Explore"`) in a **single message** so they run concurrently. Give **each** agent the context summary from Step 1.2 (key terms, entities, modules, issue ID + tracker). Each agent returns a **synthesis**, not raw output — keeps the lead's context clean. (Mirrors `skills/qa-plan/SKILL.md` §3.)
 
-**Previous work (devsql):**
-Use devsql skill to query for previous work related to the issue. Search using the issue ID, subject keywords, and entity names from the context summary. Look for past commits, prompts, and related discussions.
+### Agent 1: `prior-work-scout`
+Query previous work via the devsql skill (`history` / `jhistory` tables), using the issue ID, subject keywords, and entity names from the summary. Surface past commits, prompts, and related discussions. Return a synthesis of what was already tried/touched — not the raw rows.
 
-**Code investigation:**
-Search the codebase using the specific terms from the context summary:
+### Agent 2: `code-investigator`
+Search the codebase using the specific terms from the summary (not generic terms):
 - Use entity names, error messages, and feature names as search terms
 - Look for files/modules identified in "Relevant systems/modules"
-- Search for recent changes (`git log`) related to the ticket's area — including the issue ID (both Linear and Jira IDs commonly appear in branch names and commit messages)
-- Review the code to identify potential root causes or areas requiring changes
+- Search recent changes (`git log`) around the ticket's area — including the issue ID (both Linear and Jira IDs commonly appear in branch names and commit messages)
+- **Linked PR:** if the summary or branch references a PR, fetch it as context — `gh pr view <n> --json title,body,comments,reviews` plus `gh pr diff <n>`. If `gh` is unavailable, skip this without failing.
+- Identify candidate root causes or areas requiring changes
+
+Return a synthesis: `file:line` references + hypotheses, not raw diffs or grep dumps.
+
+After both agents return, the lead **synthesizes** their findings into a single picture before planning.
+
+## 2.1b Logs Investigation (bug tickets, opt-in)
+
+Only when **both** hold: (a) the ticket is a bug with an error signature captured in Step 1.2, **and** (b) the Datadog MCP is available in this session. Otherwise **skip silently** — this is an enrichment, not a prerequisite.
+
+Verify root cause against logs before concluding from code alone (per the debugging rule): query Datadog logs filtered by the error message / tenant from Step 1.2. Fold findings into the lead's synthesis alongside the Step 2.1 results. If Datadog is unavailable, skip without error.
 
 ## 2.2 Plan Next Steps
 
