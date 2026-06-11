@@ -15,14 +15,14 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 ## Prerequisites
 
 - Workflows feature enabled: `CLAUDE_CODE_WORKFLOWS=1` in `settings.json` env.
-- Plugin installed (this skill ships with `agents/*.md` and `workflows/gate.js` at the plugin root).
+- Plugin installed (this skill ships the reviewer/skeptic/context-checker `agents/*.md` at the plugin root; the workflow script itself is generated at runtime — see Step 3).
 
 ## Arguments
 
 - `$0` (optional): base branch to diff against. If omitted, auto-detect (`main` → `master` → `develop`).
 - `--force-fresh` (flag): bypass cache and re-fetch context bundle.
 - `--ignore-scope-gate` (flag): downgrade Step 2 hard-stops (file-count, suspicious-files) to top-of-report banners. Soft-warn (1–3 SUSPICIOUS) is unaffected.
-- `--resume <runId>`: resume a previous workflow run by ID (`wf_...`). Useful after editing `workflows/gate.js` or any `agents/*.md` to re-run only changed agent calls.
+- `--resume <runId>`: resume a previous workflow run by ID (`wf_...`). Useful after editing any `agents/*.md` to re-run only the affected agent calls. Resume caches on `(prompt, opts)` pairs — see the resume note in Execution notes for the regeneration caveat.
 
 ## Step 0: Verify reviewer skill dependencies
 
@@ -463,7 +463,7 @@ After the last finding, append:
 
 ```
 Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1 and N1".
-Tip: edit workflows/gate.js or any agents/*.md, then re-run with --resume <runId> to skip cached agent calls.
+Tip: edit any agents/*.md, then re-run with --resume <runId> to skip unchanged agent calls.
 ```
 
 ## Step 5: Persist state
@@ -521,7 +521,7 @@ find /tmp -maxdepth 1 -type d -name 'gate-wf-*' -mmin +1440 -print 2>/dev/null \
 - **Adversarial verify**: 3 independent skeptics per finding, refute-prompted (default refuted=true if uncertain). Findings dropped if ≥2/3 refute.
 - **Concurrency cap**: workflow runtime caps at 16 parallel agents per workflow. With 8 reviewers + 3 skeptics per finding, peak concurrency is queued automatically.
 - **No `Date.now()` in the workflow**: all timestamps are stamped in this skill (bash + post-workflow). The workflow is purely deterministic for resume to work.
-- **Resume**: `--resume <runId>` skips cached `(prompt, opts)` pairs. Edit `workflows/gate.js` or any `agents/*.md` to make targeted re-runs cheap.
+- **Resume**: `--resume <runId>` skips cached `(prompt, opts)` pairs. Because the workflow script is regenerated from the Step 3 prompt on each run, resume hits the cache only when the regenerated `agent()` calls match the prior run's prompts byte-for-byte — keep the orchestration prompt and `agents/*.md` stable to maximize cache hits. Editing an `agents/*.md` invalidates only that agent's calls, so targeted re-runs stay cheap.
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate.
 - **Tier semantics**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
 - **No auto-fix in v1**: v1 is read-only review. `--fix` mode is reserved for v2.
