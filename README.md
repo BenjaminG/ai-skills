@@ -85,6 +85,8 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 │   └── plugin.json         # Codex plugin manifest
 ├── plugins/
 │   └── ai-skills -> ..     # Codex marketplace path to root plugin
+├── scripts/
+│   └── bump-version.sh     # bump version in both manifests + tag a release
 ├── skills/                 # all skills live here as <name>/SKILL.md
 └── ...
 ```
@@ -100,3 +102,26 @@ claude --plugin-dir .
 ```
 
 To create a new skill, see `skills/skill-creator/SKILL.md`.
+
+## Release
+
+Both plugin manifests carry a `version` field (semver). Claude Code's `/plugin update`
+compares it: users only receive an update once the number changes — pushing commits
+without a bump ships nothing. Codex compares it the same way.
+
+Bump both manifests in lockstep and tag the release with the helper:
+
+```sh
+scripts/bump-version.sh patch        # 1.0.0 -> 1.0.1
+scripts/bump-version.sh minor        # 1.0.0 -> 1.1.0
+scripts/bump-version.sh major        # 1.0.0 -> 2.0.0
+scripts/bump-version.sh 1.4.0        # explicit
+scripts/bump-version.sh patch -n     # rewrite manifests only, no commit/tag
+```
+
+It updates `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`, commits as
+`chore(release): vX.Y.Z`, and creates an annotated tag — but does **not** push. Ship it:
+
+```sh
+git push && git push origin vX.Y.Z
+```
