@@ -1,18 +1,21 @@
 ---
 name: humanizer
-version: 3.0.0
+version: 3.1.0
 description: |
   Remove signs of AI-generated writing from text and progressively learn the user's
   personal writing style. Use when editing or reviewing text to make it sound natural
   and human-written, or when the user says "humanizer init" / "humanizer update: ..."
   to customize the skill. Based on Wikipedia's "Signs of AI writing" guide; detects
   inflated symbolism, promotional language, superficial -ing analyses, vague
-  attributions, em dash overuse, rule of three, AI vocabulary words, negative
-  parallelisms, and excessive conjunctive phrases. Supports a personal STYLE.md
+  attributions, em/en dash overuse, rule of three, AI vocabulary words, passive
+  voice, negative parallelisms, hyphenated-pair overuse, authority tropes,
+  signposting, and filler phrases. Supports a personal STYLE.md
   at ~/.config/humanizer/STYLE.md (shared across Claude Code and Codex) that
   overrides the default rules.
 
   Credits: Original skill by @blader - https://github.com/blader/humanizer
+license: MIT
+compatibility: claude-code opencode
 allowed-tools:
   - Read
   - Write
@@ -24,7 +27,7 @@ allowed-tools:
 
 # Humanizer: Remove AI Writing Patterns + Personal Style
 
-Editor that removes signs of AI-generated text and applies the user's personal style preferences when present.
+Editor that removes signs of AI-generated text and applies the user's personal style preferences when present. Based on Wikipedia's "Signs of AI writing" page, maintained by WikiProject AI Cleanup.
 
 ## Routing — Pick the Mode
 
@@ -54,9 +57,9 @@ Resolve `<skill-dir>` by reading the absolute path of the SKILL.md you were load
 
 ### Priority rule
 
-**STYLE.md always wins.** A rule in STYLE.md overrides any default pattern in this file. Examples:
+**STYLE.md always wins.** A rule in STYLE.md overrides any default pattern in this file — including the hard constraints. Examples:
 
-- If STYLE.md says "I use em dashes deliberately", **disable** Pattern 13 (em dash overuse) for this user.
+- If STYLE.md says "I use em dashes deliberately", **disable** Pattern 14 (em/en dashes) for this user, even though §14 is otherwise a hard "cut them all" rule.
 - If STYLE.md lists "delve" as a word the user actually uses, do **not** flag it under Pattern 7.
 - If STYLE.md gives an example sentence and the input matches that voice, prefer keeping it over rewriting.
 
@@ -69,16 +72,42 @@ When STYLE.md and the default rules disagree, follow STYLE.md silently — do no
 When given text to humanize:
 
 1. **Load STYLE.md** (if present) and apply its overrides to the rule set below.
-2. **Identify AI patterns** — scan for the patterns in the catalog below, minus anything STYLE.md disables.
-3. **Rewrite problematic sections** using the user's vocabulary, rhythm, and tone if STYLE.md provides them.
-4. **Preserve meaning** — keep the core message intact.
-5. **Match the intended tone** (formal, casual, technical, etc.).
-6. **Add soul** — don't just remove bad patterns; inject personality consistent with STYLE.md.
+2. **(Optional) Voice Calibration** — if the user supplied a writing sample, analyze it first (see *Voice Calibration*). A persistent STYLE.md still wins over a one-off sample.
+3. **Identify AI patterns** — scan for the patterns in the catalog below, minus anything STYLE.md disables.
+4. **Write a draft rewrite.** Rewrite, don't delete: replace AI-isms with natural alternatives and cover everything the original covers (five paragraphs in → five paragraphs out). Preserve the core meaning. Match the intended tone (formal, casual, technical) and use the user's vocabulary, rhythm, and tone if STYLE.md provides them. Add personality only when the content and voice call for it (see *Personality and Soul*). Check that the draft reads naturally aloud, varies sentence length, and prefers specific details and simple constructions (is/are/has).
+5. **Audit.** Ask: **"What makes the below so obviously AI generated?"** Answer briefly with any remaining tells.
+6. **Final rewrite.** Revise to address those tells. The final rewrite must contain no em or en dashes (see §14) — scan for `—` and `–` before returning; any hit means it isn't done.
 
 ### Output format
 
-1. The rewritten text.
-2. (Optional) A short list of changes if it helps the user understand the edits.
+Deliver, in order:
+
+1. The **draft rewrite**.
+2. The brief **"still-AI" bullets** from the audit step.
+3. The **final rewrite**.
+4. (Optional) A short summary of changes if it helps the user understand the edits.
+
+---
+
+## Voice Calibration (Optional)
+
+If the user provides a writing sample (their own previous writing), analyze it before rewriting. (A persistent STYLE.md is the stronger, always-on version of this; use Voice Calibration for a one-off, non-persistent sample.)
+
+1. **Read the sample first.** Note:
+   - Sentence length patterns (short and punchy? Long and flowing? Mixed?)
+   - Word choice level (casual? academic? somewhere between?)
+   - How they start paragraphs (jump right in? Set context first?)
+   - Punctuation habits (lots of dashes? Parenthetical asides? Semicolons?)
+   - Any recurring phrases or verbal tics
+   - How they handle transitions (explicit connectors? Just start the next point?)
+
+2. **Match their voice in the rewrite.** Don't just remove AI patterns - replace them with patterns from the sample. If they write short sentences, don't produce long ones. If they use "stuff" and "things," don't upgrade to "elements" and "components."
+
+3. **When no sample is provided,** fall back to the default behavior (natural, varied, opinionated voice from the *Personality and Soul* section below).
+
+### How to provide a sample
+- Inline: "Humanize this text. Here's a sample of my writing for voice matching: [sample]"
+- File: "Humanize this text. Use my writing style from [file path] as a reference."
 
 ---
 
@@ -173,6 +202,8 @@ Read `STYLE.md` and summarize it back. Don't paraphrase — quote section header
 
 Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as obvious as slop. Good writing has a human behind it.
 
+**Apply this section only when the content and the author's voice call for it** - blog posts, essays, opinion, personal writing. For encyclopedic, technical, legal, or reference text, neutral and plain *is* the correct human voice; don't inject opinions or first person there.
+
 ### Signs of soulless writing (even if technically "clean"):
 - Every sentence is the same length and structure
 - No opinions, just neutral reporting
@@ -187,13 +218,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 **Vary your rhythm.** Short punchy sentences. Then longer ones that take their time getting where they're going. Mix it up.
 
-**Acknowledge complexity.** Real humans have mixed feelings. "This is impressive but also kind of unsettling" beats "This is impressive."
-
-**Use "I" when it fits.** First person isn't unprofessional - it's honest. "I keep coming back to..." or "Here's what gets me..." signals a real person thinking.
-
 **Let some mess in.** Perfect structure feels algorithmic. Tangents, asides, and half-formed thoughts are human.
-
-**Be specific about feelings.** Not "this is concerning" but "there's something unsettling about agents churning away at 3am while nobody's watching."
 
 ### Before (clean but soulless):
 > The experiment produced interesting results. The agents generated 3 million lines of code. Some developers were impressed while others were skeptical. The implications remain unclear.
@@ -223,6 +248,8 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 **Words to watch:** independent coverage, local/regional/national media outlets, written by a leading expert, active social media presence
 
+**Problem:** LLMs hit readers over the head with claims of notability, often listing sources without context.
+
 **Before:**
 > Her views have been cited in The New York Times, BBC, Financial Times, and The Hindu. She maintains an active social media presence with over 500,000 followers.
 
@@ -234,6 +261,8 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 ### 3. Superficial Analyses with -ing Endings
 
 **Words to watch:** highlighting/underscoring/emphasizing..., ensuring..., reflecting/symbolizing..., contributing to..., cultivating/fostering..., encompassing..., showcasing...
+
+**Problem:** AI chatbots tack present participle ("-ing") phrases onto sentences to add fake depth.
 
 **Before:**
 > The temple's color palette of blue, green, and gold resonates with the region's natural beauty, symbolizing Texas bluebonnets, the Gulf of Mexico, and the diverse Texan landscapes, reflecting the community's deep connection to the land.
@@ -247,6 +276,8 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 **Words to watch:** boasts a, vibrant, rich (figurative), profound, enhancing its, showcasing, exemplifies, commitment to, natural beauty, nestled, in the heart of, groundbreaking (figurative), renowned, breathtaking, must-visit, stunning
 
+**Problem:** LLMs have serious problems keeping a neutral tone, especially for "cultural heritage" topics.
+
 **Before:**
 > Nestled within the breathtaking region of Gonder in Ethiopia, Alamata Raya Kobo stands as a vibrant town with a rich cultural heritage and stunning natural beauty.
 
@@ -258,6 +289,8 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 ### 5. Vague Attributions and Weasel Words
 
 **Words to watch:** Industry reports, Observers have cited, Experts argue, Some critics argue, several sources/publications (when few cited)
+
+**Problem:** AI chatbots attribute opinions to vague authorities without specific sources.
 
 **Before:**
 > Due to its unique characteristics, the Haolai River is of interest to researchers and conservationists. Experts believe it plays a crucial role in the regional ecosystem.
@@ -271,6 +304,8 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 **Words to watch:** Despite its... faces several challenges..., Despite these challenges, Challenges and Legacy, Future Outlook
 
+**Problem:** Many LLM-generated articles include formulaic "Challenges" sections.
+
 **Before:**
 > Despite its industrial prosperity, Korattur faces challenges typical of urban areas, including traffic congestion and water scarcity. Despite these challenges, with its strategic location and ongoing initiatives, Korattur continues to thrive as an integral part of Chennai's growth.
 
@@ -283,7 +318,9 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ### 7. Overused "AI Vocabulary" Words
 
-**High-frequency AI words:** Additionally, align with, crucial, delve, emphasizing, enduring, enhance, fostering, garner, highlight (verb), interplay, intricate/intricacies, key (adjective), landscape (abstract noun), pivotal, showcase, tapestry (abstract noun), testament, underscore (verb), valuable, vibrant
+**High-frequency AI words:** Actually, additionally, align with, crucial, delve, emphasizing, enduring, enhance, fostering, garner, highlight (verb), interplay, intricate/intricacies, key (adjective), landscape (abstract noun), pivotal, showcase, tapestry (abstract noun), testament, underscore (verb), valuable, vibrant
+
+**Problem:** These words appear far more frequently in post-2023 text. They often co-occur.
 
 **Before:**
 > Additionally, a distinctive feature of Somali cuisine is the incorporation of camel meat. An enduring testament to Italian colonial influence is the widespread adoption of pasta in the local culinary landscape, showcasing how these dishes have integrated into the traditional diet.
@@ -297,6 +334,8 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 **Words to watch:** serves as/stands as/marks/represents [a], boasts/features/offers [a]
 
+**Problem:** LLMs substitute elaborate constructions for simple copulas.
+
 **Before:**
 > Gallery 825 serves as LAAA's exhibition space for contemporary art. The gallery features four separate spaces and boasts over 3,000 square feet.
 
@@ -305,9 +344,9 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ---
 
-### 9. Negative Parallelisms
+### 9. Negative Parallelisms and Tailing Negations
 
-Constructions like "Not only...but..." or "It's not just about..., it's..." are overused.
+**Problem:** Constructions like "Not only...but..." or "It's not just about..., it's..." are overused. So are clipped tailing-negation fragments such as "no guessing" or "no wasted motion" tacked onto the end of a sentence instead of written as a real clause.
 
 **Before:**
 > It's not just about the beat riding under the vocals; it's part of the aggression and atmosphere. It's not merely a song, it's a statement.
@@ -315,11 +354,17 @@ Constructions like "Not only...but..." or "It's not just about..., it's..." are 
 **After:**
 > The heavy beat adds to the aggressive tone.
 
+**Before (tailing negation):**
+> The options come from the selected item, no guessing.
+
+**After:**
+> The options come from the selected item without forcing the user to guess.
+
 ---
 
 ### 10. Rule of Three Overuse
 
-LLMs force ideas into groups of three to appear comprehensive.
+**Problem:** LLMs force ideas into groups of three to appear comprehensive.
 
 **Before:**
 > The event features keynote sessions, panel discussions, and networking opportunities. Attendees can expect innovation, inspiration, and industry insights.
@@ -331,7 +376,7 @@ LLMs force ideas into groups of three to appear comprehensive.
 
 ### 11. Elegant Variation (Synonym Cycling)
 
-AI has repetition-penalty code causing excessive synonym substitution.
+**Problem:** AI has repetition-penalty code causing excessive synonym substitution.
 
 **Before:**
 > The protagonist faces many challenges. The main character must overcome obstacles. The central figure eventually triumphs. The hero returns home.
@@ -343,7 +388,7 @@ AI has repetition-penalty code causing excessive synonym substitution.
 
 ### 12. False Ranges
 
-LLMs use "from X to Y" constructions where X and Y aren't on a meaningful scale.
+**Problem:** LLMs use "from X to Y" constructions where X and Y aren't on a meaningful scale.
 
 **Before:**
 > Our journey through the universe has taken us from the singularity of the Big Bang to the grand cosmic web, from the birth and death of stars to the enigmatic dance of dark matter.
@@ -353,11 +398,23 @@ LLMs use "from X to Y" constructions where X and Y aren't on a meaningful scale.
 
 ---
 
+### 13. Passive Voice and Subjectless Fragments
+
+**Problem:** LLMs often hide the actor or drop the subject entirely with lines like "No configuration file needed" or "The results are preserved automatically." Rewrite these when active voice makes the sentence clearer and more direct.
+
+**Before:**
+> No configuration file needed. The results are preserved automatically.
+
+**After:**
+> You do not need a configuration file. The system preserves the results automatically.
+
+---
+
 ## Style Patterns
 
-### 13. Em Dash Overuse
+### 14. Em Dashes (and En Dashes): Cut Them
 
-LLMs use em dashes (—) more than humans, mimicking "punchy" sales writing.
+**Rule:** The final rewrite contains no em dashes (—) or en dashes (–). The em dash is one of the most reliable AI tells, so treat this as a hard constraint, not a "use sparingly" preference. Replace each one, in rough order of preference: a period (start a new sentence), a comma (a tight aside), a colon (introducing an explanation), parentheses (a true aside), or restructure the sentence. Also catch spaced em dashes (` — `) and double hyphens (` -- `) used the same way.
 
 **Before:**
 > The term is primarily promoted by Dutch institutions—not by the people themselves. You don't say "Netherlands, Europe" as an address—yet this mislabeling continues—even in official documents.
@@ -365,11 +422,19 @@ LLMs use em dashes (—) more than humans, mimicking "punchy" sales writing.
 **After:**
 > The term is primarily promoted by Dutch institutions, not by the people themselves. You don't say "Netherlands, Europe" as an address, yet this mislabeling continues in official documents.
 
+**Before:**
+> The new policy — announced without warning — affects thousands of workers. The changes -- long overdue according to critics -- will take effect immediately.
+
+**After:**
+> The new policy, announced without warning, affects thousands of workers. The changes, long overdue according to critics, will take effect immediately.
+
+Before returning the final rewrite, scan it for `—` and `–`. Any hit means the draft isn't done.
+
 ---
 
-### 14. Overuse of Boldface
+### 15. Overuse of Boldface
 
-AI chatbots emphasize phrases in boldface mechanically.
+**Problem:** AI chatbots emphasize phrases in boldface mechanically.
 
 **Before:**
 > It blends **OKRs (Objectives and Key Results)**, **KPIs (Key Performance Indicators)**, and visual strategy tools such as the **Business Model Canvas (BMC)** and **Balanced Scorecard (BSC)**.
@@ -379,9 +444,9 @@ AI chatbots emphasize phrases in boldface mechanically.
 
 ---
 
-### 15. Inline-Header Vertical Lists
+### 16. Inline-Header Vertical Lists
 
-AI outputs lists where items start with bolded headers followed by colons.
+**Problem:** AI outputs lists where items start with bolded headers followed by colons.
 
 **Before:**
 > - **User Experience:** The user experience has been significantly improved with a new interface.
@@ -393,9 +458,9 @@ AI outputs lists where items start with bolded headers followed by colons.
 
 ---
 
-### 16. Title Case in Headings
+### 17. Title Case in Headings
 
-AI chatbots capitalize all main words in headings.
+**Problem:** AI chatbots capitalize all main words in headings.
 
 **Before:**
 > ## Strategic Negotiations And Global Partnerships
@@ -405,9 +470,9 @@ AI chatbots capitalize all main words in headings.
 
 ---
 
-### 17. Emojis
+### 18. Emojis
 
-AI chatbots often decorate headings or bullet points with emojis.
+**Problem:** AI chatbots often decorate headings or bullet points with emojis.
 
 **Before:**
 > 🚀 **Launch Phase:** The product launches in Q3
@@ -419,12 +484,12 @@ AI chatbots often decorate headings or bullet points with emojis.
 
 ---
 
-### 18. Curly Quotation Marks
+### 19. Curly Quotation Marks
 
-ChatGPT uses curly quotes ("...") instead of straight quotes ("...").
+**Problem:** ChatGPT uses curly quotes (“...”) instead of straight quotes ("...").
 
 **Before:**
-> He said "the project is on track" but others disagreed.
+> He said “the project is on track” but others disagreed.
 
 **After:**
 > He said "the project is on track" but others disagreed.
@@ -433,9 +498,11 @@ ChatGPT uses curly quotes ("...") instead of straight quotes ("...").
 
 ## Communication Patterns
 
-### 19. Collaborative Communication Artifacts
+### 20. Collaborative Communication Artifacts
 
-**Words to watch:** I hope this helps, Of course!, Certainly!, You're absolutely right!, Would you like..., let me know, here is a...
+**Words to watch:** I hope this helps, Of course!, Certainly!, You're absolutely right!, Would you like..., Want me to...?, Want me to give examples?, Should I continue?, let me know, here is a...
+
+**Problem:** Text meant as chatbot correspondence gets pasted as content.
 
 **Before:**
 > Here is an overview of the French Revolution. I hope this helps! Let me know if you'd like me to expand on any section.
@@ -445,21 +512,29 @@ ChatGPT uses curly quotes ("...") instead of straight quotes ("...").
 
 ---
 
-### 20. Knowledge-Cutoff Disclaimers
+### 21. Knowledge-Cutoff Disclaimers and Speculative Gap-Filling
 
-**Words to watch:** as of [date], Up to my last training update, While specific details are limited/scarce..., based on available information...
+**Words to watch:** as of [date], Up to my last training update, While specific details are limited/scarce..., based on available information, not publicly available, maintains a low profile, keeps personal details private, prefers to stay out of the spotlight, likely [grew up/studied/began], it is believed that
 
-**Before:**
+**Problem:** Two related tells. (a) Older models leave hard knowledge-cutoff disclaimers in the text. (b) When a model can't find a source, it writes a paragraph *about* not finding one and then invents plausible filler to cover the gap. For a private person the guess almost always lands on the same stock phrases ("maintains a low profile," "keeps personal details private"), none of it sourced. Say what isn't known, or cut the sentence; don't dress a guess up as fact.
+
+**Before (cutoff disclaimer):**
 > While specific details about the company's founding are not extensively documented in readily available sources, it appears to have been established sometime in the 1990s.
 
 **After:**
 > The company was founded in 1994, according to its registration documents.
 
+**Before (speculative gap-fill):**
+> Information about her early life is not publicly available, suggesting she maintains a low profile and keeps personal details private. She likely grew up in a middle-class household, which shaped her later interest in education reform.
+
+**After:**
+> Her early life is not documented in the available sources. (Or omit the section.)
+
 ---
 
-### 21. Sycophantic/Servile Tone
+### 22. Sycophantic/Servile Tone
 
-Overly positive, people-pleasing language.
+**Problem:** Overly positive, people-pleasing language.
 
 **Before:**
 > Great question! You're absolutely right that this is a complex topic. That's an excellent point about the economic factors.
@@ -471,7 +546,7 @@ Overly positive, people-pleasing language.
 
 ## Filler and Hedging
 
-### 22. Filler Phrases
+### 23. Filler Phrases
 
 **Before → After:**
 - "In order to achieve this goal" → "To achieve this"
@@ -483,7 +558,9 @@ Overly positive, people-pleasing language.
 
 ---
 
-### 23. Excessive Hedging
+### 24. Excessive Hedging
+
+**Problem:** Over-qualifying statements.
 
 **Before:**
 > It could potentially possibly be argued that the policy might have some effect on outcomes.
@@ -493,7 +570,9 @@ Overly positive, people-pleasing language.
 
 ---
 
-### 24. Generic Positive Conclusions
+### 25. Generic Positive Conclusions
+
+**Problem:** Vague upbeat endings.
 
 **Before:**
 > The future looks bright for the company. Exciting times lie ahead as they continue their journey toward excellence. This represents a major step in the right direction.
@@ -503,23 +582,200 @@ Overly positive, people-pleasing language.
 
 ---
 
+### 26. Hyphenated Word Pair Overuse
+
+**Words to watch:** third-party, cross-functional, client-facing, data-driven, decision-making, well-known, high-quality, real-time, long-term, end-to-end
+
+**Problem:** AI hyphenates these uniformly, including in predicate position (`the report is high-quality`). Humans hyphenate inconsistently — typically only when the compound is attributive (`a high-quality report`) and often dropping the hyphen otherwise (`the report is high quality`). Keep attributive-position hyphens; drop them when the compound follows the noun.
+
+**Before:**
+> The cross-functional team delivered a high-quality, data-driven report. The team is cross-functional, the report is high-quality, and the methodology is data-driven.
+
+**After:**
+> The cross-functional team delivered a high-quality, data-driven report. The team is cross functional, the report is high quality, and the methodology is data driven.
+
+---
+
+### 27. Persuasive Authority Tropes
+
+**Phrases to watch:** The real question is, at its core, in reality, what really matters, fundamentally, the deeper issue, the heart of the matter
+
+**Problem:** LLMs use these phrases to pretend they are cutting through noise to some deeper truth, when the sentence that follows usually just restates an ordinary point with extra ceremony.
+
+**Before:**
+> The real question is whether teams can adapt. At its core, what really matters is organizational readiness.
+
+**After:**
+> The question is whether teams can adapt. That mostly depends on whether the organization is ready to change its habits.
+
+---
+
+### 28. Signposting and Announcements
+
+**Phrases to watch:** Let's dive in, let's explore, let's break this down, here's what you need to know, now let's look at, without further ado
+
+**Problem:** LLMs announce what they are about to do instead of doing it. This meta-commentary slows the writing down and gives it a tutorial-script feel.
+
+**Before:**
+> Let's dive into how caching works in Next.js. Here's what you need to know.
+
+**After:**
+> Next.js caches data at multiple layers, including request memoization, the data cache, and the router cache.
+
+---
+
+### 29. Fragmented Headers
+
+**Signs to watch:** A heading followed by a one-line paragraph that simply restates the heading before the real content begins.
+
+**Problem:** LLMs often add a generic sentence after a heading as a rhetorical warm-up. It usually adds nothing and makes the prose feel padded.
+
+**Before:**
+> ## Performance
+>
+> Speed matters.
+>
+> When users hit a slow page, they leave.
+
+**After:**
+> ## Performance
+>
+> When users hit a slow page, they leave.
+
+---
+
+### 30. Diff-Anchored Writing
+
+**Problem:** Documentation or comments written as if narrating a change rather than describing the thing as it is. Unless the document is inherently version-scoped (changelogs, release notes, migration guides), it should read coherently without knowing what changed in the last commit.
+
+**Before:**
+> This function was added to replace the previous approach of iterating through all items, which caused O(n²) performance.
+
+**After:**
+> This function uses a hash map for O(1) lookups, avoiding the O(n²) cost of naive iteration.
+
+---
+
+### 31. Manufactured Punchlines and Staccato Drama
+
+**Problem:** LLMs often make every sentence land like a quotable closer, then stack short declarative fragments to manufacture drama. A single short sentence for emphasis is fine; a run of them starts to sound engineered.
+
+**Before:**
+> Then AlphaEvolve arrived. It had no preference for symmetry. No aesthetic prior. No nostalgia for human taste. The old rules were gone.
+
+**After:**
+> AlphaEvolve changed the search because it did not favor symmetry or human-looking designs. That made some of the older assumptions less useful.
+
+---
+
+### 32. Aphorism Formulas
+
+**Words to watch:** X is the Y of Z, X becomes a trap, X is not a tool but a mirror, the language of, the currency of, the architecture of
+
+**Problem:** LLMs turn ordinary claims into reusable aphorisms that sound profound without adding precision. Replace the formula with the concrete claim it is gesturing at.
+
+**Before:**
+> Symmetry is the language of trust. Efficiency becomes a trap when teams forget the human layer.
+
+**After:**
+> Symmetric layouts often feel more predictable to users. Teams can over-optimize workflows and miss how people actually use them.
+
+---
+
+### 33. Conversational Rhetorical Openers
+
+**Phrases to watch:** Honestly?, Look, Here's the thing, The thing is, Let's be honest, Real talk, when used as standalone hooks or fake-candid pauses before an ordinary point.
+
+**Problem:** LLMs open with a fake-candid hook to manufacture intimacy before delivering a routine claim. The tell is the theatrical pause-and-reveal: a one-word question or aside, then the "real" answer. A person being honest usually just says the thing.
+
+**Before:**
+> Is it worth the price? Honestly? It depends on how often you'll use it.
+
+**After:**
+> Whether it's worth the price depends on how often you'll use it.
+
+---
+
+## Detection Guidance
+
+### What NOT to flag (false positives)
+
+A clean human writer can hit several of the patterns above without any AI involvement. Before rewriting, sanity-check that you are not gutting legitimate prose. The following are *not* reliable indicators on their own:
+
+- **Perfect grammar and consistent style.** Many writers are professionals or have been edited. Polish does not equal AI.
+- **Mixed casual and formal registers.** This often signals a person in a technical field, a young writer, or someone with neurodivergent prose habits — not a chatbot.
+- **"Bland" or "robotic" prose.** AI prose has *specific* tells. Generic dryness without those tells is just dry writing.
+- **Formal or academic vocabulary.** AI overuses *specific* fancy words (see §7), not all fancy words. Don't flatten "ostensibly" or "constituent" just because they sound brainy.
+- **Letter-style opening or closing on a comment.** Salutations and sign-offs predate ChatGPT by centuries.
+- **Common transition words in isolation.** *Additionally*, *moreover*, *consequently* are AI-coded only when piled up. One *however* is not a tell.
+- **Curly quotes alone.** macOS, Word, Google Docs, and most CMSes auto-curl by default. Curly quotes only count when stacked with other tells.
+- **Em dashes alone.** Many editors and journalists use them often. Em dashes are evidence only when paired with formulaic sales-y rhythm.
+- **One short emphatic sentence.** Humans use clipped sentences to land a point. Flag staccato drama only when several short fragments appear in a row and inflate the tone.
+- **"Honestly" or "look" mid-sentence.** These are ordinary in casual writing. The tell is the standalone theatrical opener, not the word itself.
+- **Unsourced claims.** Most of the web is unsourced. Lack of citations doesn't prove anything.
+- **Correct, complex formatting.** Visual editors and templates produce clean output without any AI.
+
+When in doubt, look for **clusters** of tells, not isolated ones. A single em dash means nothing; em dashes plus rule-of-three plus *vibrant tapestry* plus a "Conclusion" section is a confession.
+
+### Signs of human writing (preserve these)
+
+When you see these, lean toward leaving the prose alone — they are evidence of a real person writing, and over-editing will destroy what makes the piece sound human:
+
+- **Specific, unusual, hard-to-fabricate detail.** A real address. A weird quote. The phrase "the lawyer who used to work upstairs from my dentist." LLMs round off specifics; humans hoard them.
+- **Mixed feelings and unresolved tension.** "I think this is mostly good, but it bothers me, and I can't fully explain why." LLMs default to clean takes.
+- **Dated, era-bound references.** Slang, memes, or in-jokes that map to a specific year and subculture. Models lag by a year or more.
+- **First-person editorial choices the writer can defend.** If the writer can explain *why* they made a particular cut or used a particular word, that's a strong human signal.
+- **Variety in sentence length.** Real writing alternates short and long. AI writing tends toward an even, mid-length cadence.
+- **Genuine asides, parentheticals, or self-corrections.** "(I keep wanting to say 'almost' here, but it really was certain.)" Models rarely interrupt themselves like this.
+- **Edits made before November 30, 2022.** ChatGPT's public launch. Anything older than that is, with very rare exceptions, not AI-written.
+
+---
+
 ## Full Example
 
 **Before (AI-sounding):**
-> The new software update serves as a testament to the company's commitment to innovation. Moreover, it provides a seamless, intuitive, and powerful user experience—ensuring that users can accomplish their goals efficiently. It's not just an update, it's a revolution in how we think about productivity. Industry experts believe this will have a lasting impact on the entire sector, highlighting the company's pivotal role in the evolving technological landscape.
+> Great question! Here is an essay on this topic. I hope this helps!
+>
+> AI-assisted coding serves as an enduring testament to the transformative potential of large language models, marking a pivotal moment in the evolution of software development. In today's rapidly evolving technological landscape, these groundbreaking tools—nestled at the intersection of research and practice—are reshaping how engineers ideate, iterate, and deliver, underscoring their vital role in modern workflows.
+>
+> At its core, the value proposition is clear: streamlining processes, enhancing collaboration, and fostering alignment. It's not just about autocomplete; it's about unlocking creativity at scale, ensuring that organizations can remain agile while delivering seamless, intuitive, and powerful experiences to users. The tool serves as a catalyst. The assistant functions as a partner. The system stands as a foundation for innovation.
+>
+> Industry observers have noted that adoption has accelerated from hobbyist experiments to enterprise-wide rollouts, from solo developers to cross-functional teams. The technology has been featured in The New York Times, Wired, and The Verge. Additionally, the ability to generate documentation, tests, and refactors showcases how AI can contribute to better outcomes, highlighting the intricate interplay between automation and human judgment.
+>
+> - 💡 **Speed:** Code generation is significantly faster, reducing friction and empowering developers.
+> - 🚀 **Quality:** Output quality has been enhanced through improved training, contributing to higher standards.
+> - ✅ **Adoption:** Usage continues to grow, reflecting broader industry trends.
+>
+> While specific details are limited based on available information, it could potentially be argued that these tools might have some positive effect. Despite challenges typical of emerging technologies—including hallucinations, bias, and accountability—the ecosystem continues to thrive. In order to fully realize this potential, teams must align with best practices.
+>
+> In conclusion, the future looks bright. Exciting times lie ahead as we continue this journey toward excellence. Let me know if you’d like me to expand on any section!
 
-**After (Humanized):**
-> The software update adds batch processing, keyboard shortcuts, and offline mode. Early feedback from beta testers has been positive, with most reporting faster task completion.
+**Draft rewrite:**
+> AI coding assistants speed up some tasks. In a 2024 study by Google, developers using Codex completed simple functions 55% faster than a control group, but showed no improvement on debugging or architectural decisions.
+>
+> The tools are good at boilerplate: config files, test scaffolding, repetitive refactors. They are bad at knowing when they are wrong. I have mass-accepted suggestions that compiled, passed lint, and still did the wrong thing because I stopped paying attention.
+>
+> Mira, an engineer at a fintech startup I interviewed, said she uses Copilot "like autocomplete for boring code" but reviews every line before committing. Jake, a senior dev at a larger company, disabled it after it kept suggesting patterns from a deprecated internal library.
+>
+> The productivity claims are hard to verify. GitHub says Copilot users "accept 30% of suggestions," but acceptance is not correctness, and correctness is not value. The 2024 Uplevel study found no statistically significant difference in pull-request throughput between teams with and without AI assistants.
+>
+> None of this means the tools are useless. It means they are tools. They do not replace judgment, and they do not eliminate the need for tests. If you do not have tests, you cannot tell whether the suggestion is right.
 
-**Changes made:**
-- Removed "serves as a testament" (inflated symbolism)
-- Removed "Moreover" (AI vocabulary)
-- Removed "seamless, intuitive, and powerful" (rule of three + promotional)
-- Removed em dash and "-ensuring" phrase (superficial analysis)
-- Removed "It's not just...it's..." (negative parallelism)
-- Removed "Industry experts believe" (vague attribution)
-- Removed "pivotal role" and "evolving landscape" (AI vocabulary)
-- Added specific features and concrete feedback
+**What makes the below so obviously AI generated?**
+- The rhythm is still a bit too tidy (clean contrasts, evenly paced paragraphs).
+- The named people and study citations can read like plausible-but-made-up placeholders unless they're real and sourced.
+- The closer leans a touch slogan-y ("If you do not have tests...") rather than sounding like a person talking.
+
+**Now make it not obviously AI generated.**
+> AI coding assistants can make you faster at the boring parts. Not everything. Definitely not architecture.
+>
+> They're great at boilerplate: config files, test scaffolding, repetitive refactors. They're also great at sounding right while being wrong. I've accepted suggestions that compiled, passed lint, and still missed the point because I stopped paying attention.
+>
+> People I talk to tend to land in two camps. Some use it like autocomplete for chores and review every line. Others disable it after it keeps suggesting patterns they don't want. Both feel reasonable.
+>
+> The productivity metrics are slippery. GitHub can say Copilot users "accept 30% of suggestions," but acceptance isn't correctness, and correctness isn't value. If you don't have tests, you're basically guessing.
+
+**Changes made:** Stripped the chatbot framing, significance inflation, promotional and -ing padding, rule-of-three and synonym cycling, false ranges, copula avoidance, em dashes/emojis/boldface/curly quotes, the formulaic "challenges" section, cutoff and hedging disclaimers, filler and persuasive framing, and the generic upbeat conclusion - then rebuilt the voice with varied rhythm and concrete detail.
 
 ---
 
