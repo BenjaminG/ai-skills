@@ -1,12 +1,12 @@
 ---
 name: daily-update
 description: Draft Benjamin's daily Slack update for the Naboo team from Linear. Pulls his issues closed since the previous work day (DONE), currently started (IN PROGRESS), and optionally blocked (BLOCKERS), formats them in the team's Slack style, and iterates in chat until approved. Triggers on "daily update", "daily post", "write my daily", "standup post", or "what did I do yesterday".
-allowed-tools: Bash(linear:*), Bash(jq:*), Bash(date:*), AskUserQuestion
+allowed-tools: Bash(linear:*), Bash(jq:*), Bash(date:*), AskUserQuestion, mcp__slack__conversations_add_message
 ---
 
 # Daily Update
 
-Draft Benjamin's `#daily-naboo` Slack post from Linear, in the team's format. Draft-then-confirm — never post.
+Draft Benjamin's `#daily-naboo` Slack post from Linear, in the team's format. Draft-then-confirm by default; post to Slack only when explicitly asked.
 
 ## Output format (target)
 
@@ -59,6 +59,17 @@ linear issue query --assignee benjamin.gelis --all-teams \
 
 Parse with `jq '.nodes[] | {id: .identifier, title, url, state: .state.name, updatedAt}'`.
 
+### Drop sub-issues
+
+`query --json` does **not** expose `parent`, so resolve it per candidate with `view`. Drop any issue that has a parent — only top-level issues belong in the daily (otherwise a single parent fans out into many sub-issue lines).
+
+```bash
+# For each candidate KEY from the queries above:
+linear issue view "$KEY" --json | jq -r '.parent.identifier // "ROOT"'
+```
+
+Keep the issue only if this prints `ROOT`. Run the lookups in parallel (one `view` per candidate). If `view` fails for a key, keep the issue (fail open) and note it.
+
 ### Filtering rules
 
 - **DONE**: union of
@@ -87,9 +98,17 @@ Wait for free-form tweaks. Common ones to support without asking:
 
 Re-render the full block after each change. Never silently drop items.
 
-## Step 5 — Finalize
+## Step 5 — Finalize (and optionally post)
 
-When the user confirms ("ok", "ship it", "lgtm", "copy"), print the final block once more, clean, with no surrounding prose. Do **not** post to Slack — Benjamin copies it himself.
+When the user confirms ("ok", "lgtm", "copy"), print the final block once more, clean, with no surrounding prose. **Do not post** — Benjamin copies it himself. Confirming the draft is not a post instruction.
+
+Post to Slack **only** when the user explicitly asks ("post it", "tu peux le poster", "c'est bon poste-le", "ship to Slack"). Then call `mcp__slack__conversations_add_message` with:
+
+- `channel_id: C0AMGDXRX53` (the `#daily-naboo` channel)
+- `content_type: text/plain` — required, so the `<url|label>` link syntax renders as clickable links instead of being markdown-escaped
+- `text:` the exact finalized block shown in chat
+
+After posting, confirm with the channel name (`#daily-naboo`) and stop.
 
 ## Notes
 
