@@ -2,7 +2,7 @@
 name: build-in-public
 description: This skill should be used when the user wants to write their end-of-day / evening "build-in-public" update for a given Linear project — 3-4 impact-focused bullets plus a Next line synthesized from the project's Linear activity and the repo's git/PR shipping evidence, ready to paste into the pod thread. Invoke as /build-in-public with a Linear project ID. Triggers on "build-in-public post", "evening update", "what did I ship today", "end-of-day update", or any variant of "what did I do today" for a work update — even without the word "skill". Default to drafting; never post anywhere automatically.
 argument-hint: "<linear-project-id>"
-allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(date:*), Bash(jq:*), AskUserQuestion
+allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(devsql:*), Bash(date:*), Bash(jq:*), AskUserQuestion
 ---
 
 # Build in public
@@ -13,7 +13,7 @@ The update is **scoped to one Linear project**, passed as `$ARGUMENTS`. If no pr
 
 ## Step 1 — Resolve the project, then gather today's work
 
-Pull the raw material first. Don't ask the user to type it out if the tools can find it. Linear is the primary source (the project scopes the work); git/PRs are the *shipping evidence*.
+Pull the raw material first. Don't ask the user to type it out if the tools can find it. Linear is the primary source (the project scopes the work); git/PRs are the *shipping evidence*; devsql is *enrichment + a heads-down backstop*.
 
 **Resolve the project ID → name first.** `linear issue query` filters by `--project` *name*, not ID, while `$ARGUMENTS` is a project *ID*. Look up the name (and team) once:
 
@@ -40,7 +40,20 @@ gh pr list --author "@me" --state all --search "updated:>=$(date +%F)"
 git log --author="$(git config user.email)" --since="00:00" --oneline
 ```
 
-If a source isn't reachable (no `linear`/`gh`, auth fails, project ID invalid), fall back to asking the user to paste their issues/PRs — never fabricate activity.
+**devsql — what was actually worked on and decided today (this repo):** local Claude Code/Codex history joined with git. Use it to *recover decisions and their rationale* (the "because Z" in rule 4) and to *substantiate a heads-down day* (rule 7) when git+Linear are thin — NOT to list activity.
+
+```bash
+# Today's session topics for this repo
+devsql "SELECT s.title, s.git_branch, s.user_message_count
+  FROM sessions s
+  WHERE s.cwd = '$(pwd)'
+    AND date(s.last_timestamp) = date('now','localtime')
+  ORDER BY s.last_timestamp DESC"
+```
+
+For prompt-level detail (the actual decisions debated), query `history.display` filtered to today. See the `devsql-querying` skill for schema and query mechanics (note `cwd` can be a worktree path, and `title` may be empty on in-progress sessions — fall back to `git_branch`). devsql reads local history only and may be absent — treat it as optional. It is the weakest of the three signals: never let a raw prompt become a bullet, and never let it inflate the post toward activity-over-impact.
+
+If a source isn't reachable (no `linear`/`gh`/`devsql`, auth fails, project ID invalid), fall back to asking the user to paste their issues/PRs — never fabricate activity.
 
 ## Step 2 — Synthesize (this is the whole point)
 
@@ -49,10 +62,10 @@ Apply these rules, in priority order. They exist because a daily that just lists
 1. **Foundation as headline.** If several items share a piece of infra/groundwork built (a flag, a collection, an abstraction, a schema), lead with that shared foundation and make the features the *evidence it already pays off* ("two consumers ride on it"). Cross-cutting groundwork is the strongest impact signal — never bury it in a parenthetical.
 2. **Report movement, not effort.** Ban "started / began / worked on / spent time on". State what is now *true* (shipped / in review / in flight) and where it sits on the trajectory. "Started the email" → "Email scaffolded from the PRD; data layer done."
 3. **One impact anchor.** At least one bullet ties to the business *why* / what it unlocks (the "so that"). If the why isn't obvious from the work, DO NOT invent it — surface it as a one-line note for the user to confirm or fill in.
-4. **Decisions carry their rationale.** When the day's work was a choice, render it "X over Y because Z" rather than just naming the change.
+4. **Decisions carry their rationale.** When the day's work was a choice, render it "X over Y because Z" rather than just naming the change. The "because Z" usually isn't in git or Linear — mine the devsql session/prompt history to recover it.
 5. **Links beat descriptions.** Every concrete item carries its PR (`#1234`) or issue (`BOF-430`) link. A link the reader can open > a sentence describing it.
 6. **Split the Next line by grain.** Separate in-flight continuations from new big items. Don't flatten a multi-day new workstream to the same level as "finish the thing I'm already on".
-7. **A heads-down day is a legitimate report.** If there's no shippable or visual output, say so honestly and give position + ETA ("Deep in the X schema, no visible output yet, first cut tomorrow"). This sets expectations and kills the "what are they doing?" question. Never pad to look busy.
+7. **A heads-down day is a legitimate report.** If there's no shippable or visual output, say so honestly and give position + ETA ("Deep in the X schema, no visible output yet, first cut tomorrow"). When git+Linear are thin, the devsql session titles/topics are what tell you *where* you got to and what's next. This sets expectations and kills the "what are they doing?" question. Never pad to look busy.
 8. **Stay terse.** 3-4 bullets + one Next line, max. It rides on shared pod context; it does not need to be self-contained like a demo.
 
 ## Output format
