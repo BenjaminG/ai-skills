@@ -1,0 +1,102 @@
+---
+name: build-in-public
+description: This skill should be used when the user wants to write their end-of-day / evening "build-in-public" update for a given Linear project — 3-4 impact-focused bullets plus a Next line synthesized from the project's Linear activity and the repo's git/PR shipping evidence, ready to paste into the pod thread. Invoke as /build-in-public with a Linear project ID. Triggers on "build-in-public post", "evening update", "what did I ship today", "end-of-day update", or any variant of "what did I do today" for a work update — even without the word "skill". Default to drafting; never post anywhere automatically.
+argument-hint: "<linear-project-id>"
+allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(date:*), Bash(jq:*), AskUserQuestion
+---
+
+# Build in public
+
+Turn a day's raw work into a short, high-signal evening update that reads as *impact and direction*, not activity. The reader is the pod: they already share the spec and the standup, so the update can be terse and ride on that context. It is NOT a demo and NOT a status report — its currency is **progress + decisions + what got unblocked**, which is exactly what foundation/groundwork days produce.
+
+The update is **scoped to one Linear project**, passed as `$ARGUMENTS`. If no project ID is given, ask for it before gathering anything — it is the scope anchor and there is no sensible default.
+
+## Step 1 — Resolve the project, then gather today's work
+
+Pull the raw material first. Don't ask the user to type it out if the tools can find it. Linear is the primary source (the project scopes the work); git/PRs are the *shipping evidence*.
+
+**Resolve the project ID → name first.** `linear issue query` filters by `--project` *name*, not ID, while `$ARGUMENTS` is a project *ID*. Look up the name (and team) once:
+
+```bash
+linear project view "$ARGUMENTS" --json | jq -r '{name, team: .teams.nodes[0].key}'
+```
+
+**Linear — issues in that project that moved today** (use the resolved name):
+
+```bash
+linear issue query --project "<name>" --assignee "@me" \
+  --updated-after "$(date +%F)" --all-states --limit 50 --json
+```
+
+Split the results into *shipped* (state type `completed`, or state name matching `/review/i`) vs *in-flight* (`started`). See the `linear-cli` skill for any further CLI mechanics — don't re-document them here.
+
+**git / PRs — shipping evidence from the current repo:**
+
+```bash
+# PRs authored today (opened, updated, or merged)
+gh pr list --author "@me" --state all --search "updated:>=$(date +%F)"
+
+# Commits today (current branch/repo only — no --all)
+git log --author="$(git config user.email)" --since="00:00" --oneline
+```
+
+If a source isn't reachable (no `linear`/`gh`, auth fails, project ID invalid), fall back to asking the user to paste their issues/PRs — never fabricate activity.
+
+## Step 2 — Synthesize (this is the whole point)
+
+Apply these rules, in priority order. They exist because a daily that just lists tasks ("worked on X, worked on Y") signals effort, not impact — and on a foundation day it makes real work look like nothing.
+
+1. **Foundation as headline.** If several items share a piece of infra/groundwork built (a flag, a collection, an abstraction, a schema), lead with that shared foundation and make the features the *evidence it already pays off* ("two consumers ride on it"). Cross-cutting groundwork is the strongest impact signal — never bury it in a parenthetical.
+2. **Report movement, not effort.** Ban "started / began / worked on / spent time on". State what is now *true* (shipped / in review / in flight) and where it sits on the trajectory. "Started the email" → "Email scaffolded from the PRD; data layer done."
+3. **One impact anchor.** At least one bullet ties to the business *why* / what it unlocks (the "so that"). If the why isn't obvious from the work, DO NOT invent it — surface it as a one-line note for the user to confirm or fill in.
+4. **Decisions carry their rationale.** When the day's work was a choice, render it "X over Y because Z" rather than just naming the change.
+5. **Links beat descriptions.** Every concrete item carries its PR (`#1234`) or issue (`BOF-430`) link. A link the reader can open > a sentence describing it.
+6. **Split the Next line by grain.** Separate in-flight continuations from new big items. Don't flatten a multi-day new workstream to the same level as "finish the thing I'm already on".
+7. **A heads-down day is a legitimate report.** If there's no shippable or visual output, say so honestly and give position + ETA ("Deep in the X schema, no visible output yet, first cut tomorrow"). This sets expectations and kills the "what are they doing?" question. Never pad to look busy.
+8. **Stay terse.** 3-4 bullets + one Next line, max. It rides on shared pod context; it does not need to be self-contained like a demo.
+
+## Output format
+
+ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
+
+```
+🛠️ <name> — <date>
+- <foundation or highest-impact item, with link and what it unlocks>
+- <consumer / feature item, with link and status>
+- <other item or honest heads-down line, with link/ETA>
+- Next: <in-flight continuation>. Then <new item, with link>; + <smaller item, with link>.
+```
+
+Use `$(date +%d/%m)` for the date. Keep bullets to one line each where possible. Use the user's real ticket/PR links in markdown form.
+
+## Self-check before delivering
+
+- [ ] No "started / began / worked on" — every line states movement or position.
+- [ ] Shared foundation (if any) is the headline, not buried.
+- [ ] At least one real impact/unlock anchor — and nothing invented.
+- [ ] Every concrete item links its PR/issue.
+- [ ] Next separates in-flight from new.
+- [ ] 4 bullets or fewer + one Next line.
+- [ ] Any inferred "why" flagged for the user to confirm.
+
+## Delivery
+
+Output the block in chat for the user to review and paste. **Never post to Slack (or anywhere) automatically.** Only if the user explicitly asks, create a Slack *draft* (a draft, not a send) so they review it in their client. Always list any assumptions made about the "why" as a short note under the draft.
+
+## Example
+
+**Raw work (input):**
+- Started migrating the auth module to an adapter pattern
+- Worked on the SSO config UI
+- Fixed the cron timeouts
+
+**Update (output):**
+```
+🛠️ Alex — 18/06
+- Laid the shared auth adapter: single provider abstraction replacing the per-IdP branches → unblocks multi-tenant SSO + future IdPs. PR WIP #211.
+- SSO config UI wired onto the adapter (#214, in review).
+- Root-caused the cron timeouts: connection pool, not the query. Fix merged (#209).
+- Next: finish the SSO UI. Then new workstream — SCIM provisioning (PROJ-88).
+```
+
+Note the transform: the adapter (foundation) becomes the headline, the UI becomes proof it pays off, "fixed/worked on" become movement, and every line links out. No visual was needed for any of it.
