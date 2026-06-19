@@ -68,6 +68,17 @@ Apply these rules, in priority order. They exist because a daily that just lists
 7. **A heads-down day is a legitimate report.** If there's no shippable or visual output, say so honestly and give position + ETA ("Deep in the X schema, no visible output yet, first cut tomorrow"). When git+Linear are thin, the devsql session titles/topics are what tell you *where* you got to and what's next. This sets expectations and kills the "what are they doing?" question. Never pad to look busy.
 8. **Stay terse.** 3-4 bullets + one Next line, max. It rides on shared pod context; it does not need to be self-contained like a demo.
 
+## Step 2.5 — Order before you write
+
+Rule 1 is a principle the model reads then ignores, generating in the chronological order it gathered (engine → mail → "oh and the shared path"). This step is the forcing function. Do it explicitly before writing a single bullet:
+
+1. **Name the one cross-cutting item** — the shared infra/groundwork that ties multiple items together (here: the single PO-detection path both consumers ride). There is at most one.
+2. **It appears exactly once.** If a bullet's tail re-describes it (e.g. "…riding on the shared X the cron also uses"), cut the tail. No point is stated twice — least of all the shared-infra one.
+3. **Placement (tiebreak rule 1 vs 3):**
+   - Shared-infra **is** the day's biggest deliverable → headline (bullet 1).
+   - Otherwise → bullet 2, as the spine connecting the consumers. **Never last, never a parenthetical.**
+   - Don't mechanically promote a minor arch note to the top just to satisfy rule 1.
+
 ## Output format
 
 ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
@@ -82,10 +93,13 @@ ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
 
 Use `$(date +%d/%m)` for the date. Keep bullets to one line each where possible. Use the user's real ticket/PR links in markdown form.
 
-## Self-check before delivering
+## Gate before delivering
+
+This is not a decorative checklist — it is a gate. Before emitting, run every item. **If any item fails, rewrite the post and re-run the whole list. Emit nothing until all pass.**
 
 - [ ] No "started / began / worked on" — every line states movement or position.
-- [ ] Shared foundation (if any) is the headline, not buried.
+- [ ] The one cross-cutting item is headline or bullet 2 — never last, never buried (Step 2.5).
+- [ ] No point is stated twice — least of all the shared-infra one.
 - [ ] At least one real impact/unlock anchor — and nothing invented.
 - [ ] Every concrete item links its PR/issue.
 - [ ] Next separates in-flight from new.
