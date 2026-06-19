@@ -79,6 +79,18 @@ Rule 1 is a principle the model reads then ignores, generating in the chronologi
    - Otherwise → bullet 2, as the spine connecting the consumers. **Never last, never a parenthetical.**
    - Don't mechanically promote a minor arch note to the top just to satisfy rule 1.
 
+## Step 2.7 — De-slop with humanizer
+
+Once the bullets are written, pass the draft through the `humanizer` skill to strip AI tells (inflated/promotional words, vague attributions, filler phrases, signposting) and apply the user's personal `STYLE.md` if present.
+
+**The Output format below overrides humanizer** — this post's conventions are intentional, not slop. Humanizer must NOT touch:
+
+- **em-dashes and `→` arrows** — they are structure (foundation → unlock, decision X → Y), not dash overuse.
+- **terse fragments** — bullets are not required to be full sentences; the post rides on shared pod context.
+- **emoji and markdown links** — `🛠️`, `⏭️`, `#1234`, `BOF-430` all stay.
+
+So: keep the shape, remove the tells. If humanizer is unavailable, ship the draft as-is — it's a polish pass, not a gate.
+
 ## Output format
 
 ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
@@ -88,7 +100,7 @@ ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
 - <foundation or highest-impact item, with link and what it unlocks>
 - <consumer / feature item, with link and status>
 - <other item or honest heads-down line, with link/ETA>
-- Next: <in-flight continuation>. Then <new item, with link>; + <smaller item, with link>.
+- ⏭️ Next: <in-flight continuation>. Then <new item, with link>; + <smaller item, with link>.
 ```
 
 Use `$(date +%d/%m)` for the date. Keep bullets to one line each where possible. Use the user's real ticket/PR links in markdown form.
@@ -105,6 +117,7 @@ This is not a decorative checklist — it is a gate. Before emitting, run every 
 - [ ] Next separates in-flight from new.
 - [ ] 4 bullets or fewer + one Next line.
 - [ ] Any inferred "why" flagged for the user to confirm.
+- [ ] Draft passed through humanizer (slop removed; em-dashes/→/fragments/emoji preserved).
 
 ## Delivery
 
@@ -123,7 +136,7 @@ Output the block in chat for the user to review and paste. **Never post to Slack
 - Laid the shared auth adapter: single provider abstraction replacing the per-IdP branches → unblocks multi-tenant SSO + future IdPs. PR WIP #211.
 - SSO config UI wired onto the adapter (#214, in review).
 - Root-caused the cron timeouts: connection pool, not the query. Fix merged (#209).
-- Next: finish the SSO UI. Then new workstream — SCIM provisioning (PROJ-88).
+- ⏭️ Next: finish the SSO UI. Then new workstream — SCIM provisioning (PROJ-88).
 ```
 
 Note the transform: the adapter (foundation) becomes the headline, the UI becomes proof it pays off, "fixed/worked on" become movement, and every line links out. No visual was needed for any of it.
