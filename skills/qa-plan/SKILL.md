@@ -55,6 +55,21 @@ If `gh pr diff` fails (fork PR), fall back to `git diff origin/$BASE...origin/$H
 
 Store the title, body, changed files, and diff.
 
+## Step 2.5: Fetch Linear context (best-effort)
+
+The PR diff shows *what changed in code*; the Linear issue says *what the feature should do* — acceptance criteria, the validated product rule, any scope/matrix table. Pull it in to frame scenarios against intended behavior.
+
+1. Derive the key (same logic as Step 6's `linear` publish):
+   - Regex `[A-Z]+-\d+` against the branch name (e.g. `feat/BOF-218-foo` → `BOF-218`).
+   - If no match, grep the PR body for a Linear URL or `[A-Z]+-\d+`.
+   - Store the result as `LINEAR_KEY` (reused in Step 6).
+2. If a key is found:
+   ```bash
+   linear issue view "$LINEAR_KEY" --json
+   ```
+   Read the description, acceptance criteria, product rule, and any scope table.
+3. **Best-effort:** if no key is found, or `linear` is missing / auth fails, note "no Linear context" and continue. This is enrichment, not a precondition — a PR with no ticket still produces a plan. (Only `--linear` *publishing* hard-requires the key, validated in Step 1.)
+
 ## Step 3: Explore codebase
 
 Spawn **2 parallel Explore agents** (Agent tool, `subagent_type: "Explore"`).
@@ -65,6 +80,7 @@ For each changed file, read it in full and identify:
 - User-facing behaviors that changed
 - Routes / screens / pages affected
 - Which state transitions or side effects are new
+- How the changes map to the Linear acceptance criteria / product rule (from Step 2.5, if available)
 
 ### Agent 2: `tester-surface-scout`
 Map out the **tester-facing surfaces** needed to exercise these changes without dev tooling:
@@ -104,6 +120,8 @@ If the `tester-surface-scout` found automated coverage, exclude it.
 ### For each scenario
 
 Require a **"How to reach this state"** line that names the concrete tester-facing surface (BO route, screen path, Mailpit inbox, env URL). No surface → out of scope.
+
+Ground each scenario's expected results in the Linear acceptance criteria (Step 2.5) when available — test the *intended* behavior, not just the behavior observed in the diff.
 
 **Group by feature area.** Within each area, include only the relevant categories:
 1. User flows & interactions (multi-step)
@@ -212,14 +230,11 @@ rm -f "$TMP"
 ```
 
 ### `linear`
-1. Find the parent Linear ticket key:
-   - Regex `[A-Z]+-\d+` against the branch name (e.g. `feat/BOF-218-foo` → `BOF-218`).
-   - If no match, grep the PR body for a Linear URL or `[A-Z]+-\d+`.
-   - If still nothing, abort: "No Linear ticket key found in branch name or PR body. Pass one explicitly or re-run with `--github`."
+1. Use `LINEAR_KEY` from Step 2.5. If it's unset (no key in branch name or PR body), abort: "No Linear ticket key found in branch name or PR body. Pass one explicitly or re-run with `--github`."
 2. Create the sub-issue (no label — see below):
    ```bash
    linear issue create \
-     --parent <KEY> \
+     --parent "$LINEAR_KEY" \
      --title "QA: <PR title>" \
      --description-file "$TMP"
    rm -f "$TMP"
