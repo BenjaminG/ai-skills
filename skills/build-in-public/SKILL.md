@@ -7,7 +7,9 @@ allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(devsql:*), Bash(dat
 
 # Build in public
 
-Turn a day's raw work into a short, high-signal evening update that reads as *impact and direction*, not activity. The reader is the pod: they already share the spec and the standup, so the update can be terse and ride on that context. It is NOT a demo and NOT a status report — its currency is **progress + decisions + what got unblocked**, which is exactly what foundation/groundwork days produce.
+Turn a day's raw work into a short, high-signal evening update that reads as *impact and direction*, not activity. It is NOT a demo and NOT a status report — its currency is **progress + decisions + what got unblocked**, which is exactly what foundation/groundwork days produce.
+
+**The reader is a PM / project owner, not a teammate dev.** They do NOT know what a `BOF-438` is, what a "walking skeleton" is, or which file a schema lives in. Write in **features and business outcomes**: name the feature ("Host submission form"), say what it unlocks for the product, and keep ticket IDs as trailing links only — never as the subject of a sentence. If a bullet can't be understood by someone who has never opened the repo, it's written wrong. Terse is good; jargon is not.
 
 The update is **scoped to one Linear project**, passed as `$ARGUMENTS`. If no project ID is given, ask for it before gathering anything — it is the scope anchor and there is no sensible default.
 
@@ -29,6 +31,8 @@ linear issue query --project "<name>" --assignee "@me" \
 ```
 
 Split the results into *shipped* (state type `completed`, or state name matching `/review/i`) vs *in-flight* (`started`). See the `linear-cli` skill for any further CLI mechanics — don't re-document them here.
+
+**Linear is the scope authority. git/PRs are evidence only when they map to a Linear issue *in this project*.** A repo holds work for many projects; today's commits and PRs may belong to a different one entirely. Before any PR/commit becomes a bullet, confirm its issue is in the project's `linear issue query` result above. If it isn't — drop it, don't narrate it. Likewise, a CLOSED PR is not "in-flight": don't invent a story to reconcile it. **When in doubt about whether a day produced shippable code at all, ask the user one line ("code today, or spec/planning?") rather than assembling a plausible-looking shipping narrative from loose git activity.** Fabrication is the worst failure mode here.
 
 **git / PRs — shipping evidence from the current repo:**
 
@@ -110,6 +114,8 @@ Use `$(date +%d/%m)` for the date. Keep bullets to one line each where possible.
 This is not a decorative checklist — it is a gate. Before emitting, run every item. **If any item fails, rewrite the post and re-run the whole list. Emit nothing until all pass.**
 
 - [ ] No "started / began / worked on" — every line states movement or position.
+- [ ] Every bullet is readable by a PM who has never opened the repo — feature/business language, no jargon, ticket IDs as trailing links only.
+- [ ] Every PR/commit cited maps to a Linear issue in *this* project — nothing pulled in from other projects, nothing fabricated to explain loose git activity.
 - [ ] The one cross-cutting item is headline or bullet 2 — never last, never buried (Step 2.5).
 - [ ] No point is stated twice — least of all the shared-infra one.
 - [ ] At least one real impact/unlock anchor — and nothing invented.
