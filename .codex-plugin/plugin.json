@@ -1,6 +1,6 @@
 {
   "name": "ai-skills",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Benjamin's collection of skills — daily workflow, code quality, dev tools, and specialist agents.",
   "skills": "./skills/"
 }
