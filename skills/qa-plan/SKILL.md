@@ -69,6 +69,7 @@ The PR diff shows *what changed in code*; the Linear issue says *what the featur
    ```
    Read the description, acceptance criteria, product rule, and any scope table.
 3. **Best-effort:** if no key is found, or `linear` is missing / auth fails, note "no Linear context" and continue. This is enrichment, not a precondition — a PR with no ticket still produces a plan. (Only `--linear` *publishing* hard-requires the key, validated in Step 1.)
+4. Derive the **task slug** used to group artifacts on disk: `TASK = LINEAR_KEY` if known, else `pr-<PR_NUMBER>` (e.g. `BOF-218` or `pr-12363`). The `file` target (Step 6) writes under `tasks/<TASK>/`.
 
 ## Step 3: Explore codebase
 
@@ -217,7 +218,7 @@ TMP=$(mktemp -t qa-plan.XXXXXX.md)
 ```
 
 ### `file`
-Write to `./qa-plan-<timestamp>.md` via the Write tool. Timestamp = `date +%Y%m%d-%H%M%S`. (No temp file needed — this target *is* a file.)
+Write to `tasks/<TASK>/qa-plan.md` via the Write tool (`TASK` from Step 2.5 — `LINEAR_KEY` or `pr-<PR_NUMBER>`). Create `tasks/<TASK>/` if it doesn't exist. (No temp file needed — this target *is* a file.) This keeps QA artifacts grouped per task instead of scattered at the repo root.
 
 ### `github`
 ```bash
@@ -246,7 +247,7 @@ rm -f "$TMP"
 ## Step 7: Confirm
 
 - No publish: "QA plan drafted above — N feature areas, M scenarios. Reply `publish` with a target to send it."
-- `file`: "QA plan written to <absolute path>."
+- `file`: "QA plan written to tasks/<TASK>/qa-plan.md."
 - `github`: "QA issue created: <URL>."
 - `linear`: "Linear sub-issue created: <URL>. Apply the QA label manually to notify the channel."
 

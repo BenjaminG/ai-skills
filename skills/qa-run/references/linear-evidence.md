@@ -20,7 +20,7 @@ To put an image in a cell you need its permanent `assetUrl` *before* composing t
 asset URL to stdout — nothing else — so the caller can capture it:
 
 ```bash
-URL=$(node scripts/upload-image.mjs ./qa-evidence-BOF-218/1.2.png) \
+URL=$(node scripts/upload-image.mjs tasks/BOF-218/evidence/1.2.png) \
   || echo "upload failed — fall back to --attach gallery"
 ```
 

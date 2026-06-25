@@ -38,22 +38,22 @@ Classify it before resolving:
 - Matches `^[A-Z]+-\d+$` → **Linear key** (e.g. `BOF-218`).
 - Contains `linear.app/` → **Linear URL** (extract the key from the path).
 - Anything else → **local path**.
-- No arg → local fallback: most recent `./qa-plan-*.md` by mtime. None found → abort.
+- No arg → local fallback: most recent `tasks/*/qa-plan.md` by mtime (legacy root-level `./qa-plan-*.md` are still accepted if passed explicitly). None found → abort.
 
 ### Local path
-Use the file directly. Derive results path: `qa-plan-X.md` → `qa-results-X.md` in the same directory. `SOURCE=local`.
+Use the file directly. Derive results path: `qa-results.md` (or `qa-results-X.md` for legacy names) in the **same directory** as the plan — e.g. `tasks/BOF-218/qa-plan.md` → `tasks/BOF-218/qa-results.md`. `SOURCE=local`.
 
 ### Linear key or URL
 1. Use the **`linear-cli`** skill to fetch the issue's title and description body. Do not inline CLI flags here — let `linear-cli` handle the mechanics.
 2. If the issue title does **not** start with `QA:` it's likely the parent ticket, not the QA sub-issue. Ask `linear-cli` to list sub-issues and pick the one whose title starts with `QA:`.
    - Zero matches → abort: "No `QA: ...` sub-issue found under <KEY>. Run `/qa-plan --linear` first or pass the sub-issue key directly."
    - Multiple matches → list them and ask the user which to use.
-3. Persist the description body to `./qa-plan-<SUBISSUE_KEY>.md`. If the file already exists with different content, ask before overwriting (the user may have local edits).
-4. Derive results path: `./qa-results-<SUBISSUE_KEY>.md`. Set `SOURCE=linear` and remember `SUBISSUE_KEY` for Step 2/3 mirroring.
+3. Persist the description body to `tasks/<SUBISSUE_KEY>/qa-plan.md` (create `tasks/<SUBISSUE_KEY>/` if missing). If the file already exists with different content, ask before overwriting (the user may have local edits).
+4. Derive results path: `tasks/<SUBISSUE_KEY>/qa-results.md`. Set `SOURCE=linear` and remember `SUBISSUE_KEY` for Step 2/3 mirroring.
 
 ## Step 1: Initialize or resume
 
-If `qa-results-X.md` does not exist:
+If the results file (`tasks/<TASK>/qa-results.md`) does not exist:
 - **If `SOURCE=linear`**, first ask `linear-cli` to list comments on the sub-issue and check whether any look like a prior qa-run mirror — a comment whose body contains `## QA Run Summary` or `### Finding #`. If yes, warn the user: "Linear already has qa-run comments from a previous run, but no local results file exists. Reply `fresh` to start over, or point to an existing `qa-results-*.md` to resume from." Wait for the answer before proceeding.
 - Create it from the template below.
 - Pre-populate § Status with one `[ ]` line per scenario (parsed from plan headings `### N.M`).
@@ -70,7 +70,7 @@ For each scenario in plan order (skip `[x]`, retry `[ ]` and `[!]`):
 
 1. **Announce**: §X.Y title, "How to reach this state", preconditions.
 2. **Run together**: present the steps from the plan's table. The user performs them in the browser/BO/Mailpit, or asks Claude to drive via the `chrome-cdp` skill with `--isolated` (sandboxed Chrome on a dedicated profile — same actions a human would do, no shortcuts via JS console, GraphQL, or DB). **When Claude drives, run the scenario in a fresh sub-agent** so its DOM dumps, screenshots, and any source reads stay out of the main context — one sub-agent per scenario, sequential. It returns only the structured outcome: status (pass/fail/skip), a one-line note, a `proof` screenshot path, and a finding block (title, severity, repro, expected, observed, root-cause `file:line`, `debug` screenshot paths) when it fails. The orchestrator does all the writing.
-   - **Evidence (autonomous mode only).** Tell the sub-agent to save one key-moment screenshot proving the observed outcome to `./qa-evidence-<X>/<scenario-id>.png` (e.g. `qa-evidence-BOF-218/1.2.png`) via the isolated-mode `cdp.mjs shot <target> <path>` (after `chrome-debug.sh`, with `CDP_PORT_FILE` set — see the `chrome-cdp` skill), for passes and fails alike. On failure, also save 1–3 debug shots to `<scenario-id>-debug-N.png` in the same dir. It returns these paths in `proof` / `debug`; surfacing them is the orchestrator's job (Step 2.6, Step 3). See [references/linear-evidence.md](references/linear-evidence.md).
+   - **Evidence (autonomous mode only).** Tell the sub-agent to save one key-moment screenshot proving the observed outcome to `tasks/<TASK>/evidence/<scenario-id>.png` (e.g. `tasks/BOF-218/evidence/1.2.png`) via the isolated-mode `cdp.mjs shot <target> <path>` (after `chrome-debug.sh`, with `CDP_PORT_FILE` set — see the `chrome-cdp` skill), for passes and fails alike. `<TASK>` = `SUBISSUE_KEY` (Linear) or the plan's folder name (local). On failure, also save 1–3 debug shots to `<scenario-id>-debug-N.png` in the same dir. It returns these paths in `proof` / `debug`; surfacing them is the orchestrator's job (Step 2.6, Step 3). See [references/linear-evidence.md](references/linear-evidence.md).
 3. **Decide outcome and append to results**:
    - Pass → `[x] §X.Y — passed (<short note if useful>)`. The pass must rest on something observed in the browser/UI/email — never on a DB/GraphQL peek. In autonomous mode, append `proof: <path>` to the parens.
    - Fail → `[!] §X.Y — failed → Finding #<n>` + new Finding entry. If the runner is the dev, read the source to root-cause and fill the Finding's **Root cause** line with `file:line` evidence. PM/QA runners leave it blank. In autonomous mode, fill the Finding's **Evidence** line with the proof + debug paths.
@@ -97,7 +97,7 @@ In autonomous mode, give the summary's Scenarios table a **Proof** column. For e
 ```markdown
 # QA Results — <plan title>
 
-**Plan:** ./qa-plan-<X>.md
+**Plan:** tasks/<TASK>/qa-plan.md
 **Started:** <date>
 **Last run:** <date>
 
