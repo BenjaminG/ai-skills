@@ -1,6 +1,6 @@
 ---
 name: build-in-public
-description: This skill should be used when the user wants to write their end-of-day / evening "build-in-public" update for a given Linear project — 3-4 impact-focused bullets plus a Next line synthesized from the project's Linear activity and the repo's git/PR shipping evidence, ready to paste into the pod thread. Invoke as /build-in-public with a Linear project ID. Triggers on "build-in-public post", "evening update", "what did I ship today", "end-of-day update", or any variant of "what did I do today" for a work update — even without the word "skill". Default to drafting; never post anywhere automatically.
+description: This skill should be used when the user wants to write their end-of-day / evening "build-in-public" update for a given Linear project — 2-3 impact-focused bullets plus a Next line synthesized from the project's Linear activity and the repo's git/PR shipping evidence, ready to paste into the pod thread. Invoke as /build-in-public with a Linear project ID. Triggers on "build-in-public post", "evening update", "what did I ship today", "end-of-day update", or any variant of "what did I do today" for a work update — even without the word "skill". Default to drafting; never post anywhere automatically.
 argument-hint: "<linear-project-id>"
 allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(devsql:*), Bash(date:*), Bash(jq:*), AskUserQuestion
 ---
@@ -9,7 +9,39 @@ allowed-tools: Bash(linear:*), Bash(git:*), Bash(gh:*), Bash(devsql:*), Bash(dat
 
 Turn a day's raw work into a short, high-signal evening update that reads as *impact and direction*, not activity. It is NOT a demo and NOT a status report — its currency is **progress + decisions + what got unblocked**, which is exactly what foundation/groundwork days produce.
 
-**The reader is a PM / project owner, not a teammate dev.** They do NOT know what a `BOF-438` is, what a "walking skeleton" is, or which file a schema lives in. Write in **features and business outcomes**: name the feature ("Host submission form"), say what it unlocks for the product, and keep ticket IDs as trailing links only — never as the subject of a sentence. If a bullet can't be understood by someone who has never opened the repo, it's written wrong. Terse is good; jargon is not.
+**The reader is a PM / project owner, not a teammate dev.** They do NOT know what a `BOF-438` is, what a "walking skeleton" is, or which file a schema lives in. Write in **features and business outcomes**: name the feature ("Host submission form"), say what it unlocks for the product, and keep ticket IDs as trailing tags only — never as the subject of a sentence. If a bullet can't be understood by someone who has never opened the repo, it's written wrong. Jargon is the enemy, not length.
+
+**Match the pod's house style — this is how the user actually posts:**
+
+- **Bullets are `•`, not `-`.** Each is a complete, readable clause (not a telegraphic fragment): a full thought a PM can parse on its own. Don't compress a real sentence into noun-soup to save words.
+- **Trailing ticket tags, not inline PR links.** Close a bullet with `(BOF-518)` or `[BOF-438]` — the work item, not a `#1234` PR number. The pod tracks tickets; a bare PR number means nothing to the reader. Only surface a PR link when the bullet *is* "ready for review" and the link is the call to action.
+- **First name only**, no surname. The user signs `🛠️ Benjamin — DD/MM`.
+- **2-3 substantive bullets + one `⏭️ Next` line.** Closer to 2 than 4. Cut anything that doesn't carry impact or position.
+
+Here are three real posts (use them as the target shape, not the abstract template):
+
+```
+🛠️ Benjamin — 22/06
+• Spec'd out the Host submission form: locked the last open product questions on the host form + its payment-schedule data in the back-office, so the build can start clean. [BOF-438]
+• Design session this morning with the team to move the payment queue itself forward.
+• ⏭️ Next: kick off phase 1 of the Host submission form — first implementation slice.
+```
+
+```
+🛠️ Benjamin — 23/06
+• Host submission form fully coded: hosts set their payment schedule (deposit → intermediary → balance) directly in the BO on the V2 schema. 4 PRs created, not yet merged (BOF-438).
+• Two reminder features turned on in prod via feature flags: the daily Slack digest flagging signed deals missing a PO or card payment to AM/AEs (BOF-402), and the client-facing PO reminder email, Enterprise-only (BOF-430). Built earlier, activated today.
+• ⏭️ Next: self-review + QA the 4 PRs. Then spin up an ephemeral env to open product QA, and request code review on each PR (BOF-438).
+```
+
+```
+🛠️ Benjamin — 25/06
+• Rebuilt the payment-schedule feature as a clean 5-PR stack. The first pass wasn't up to bar — PRs too big to review, and the UI drifted too far from the mockups. Re-sliced by user story so each piece is small, reviewable, and ships on its own risk: Foundations (BOF-518), Marketplace form (BOF-519), Enterprise €50k gate (BOF-520), BO editing + host lock (BOF-521), rollout + telemetry (BOF-522). (BOF-438)
+• Foundations is the shared base every slice rides on — payment-schedule contracts, schedule builder + validation, and sticky V2 assignment that locks a booking onto staged payments once chosen (BOF-518).
+• ⏭️ Next: get Foundations reviewed (it gates the rest), then walk the stack up — Marketplace form (BOF-519), then Enterprise gate (BOF-520).
+```
+
+These bullets are *complete clauses with a decision baked in*, not one-line fragments — but the decision is stated, not narrated over a paragraph (see rule 4).
 
 The update is **scoped to one Linear project**, passed as `$ARGUMENTS`. If no project ID is given, ask for it before gathering anything — it is the scope anchor and there is no sensible default.
 
@@ -67,10 +99,10 @@ Apply these rules, in priority order. They exist because a daily that just lists
 2. **Report movement, not effort.** Ban "started / began / worked on / spent time on". State what is now *true* (shipped / in review / in flight) and where it sits on the trajectory. "Started the email" → "Email scaffolded from the PRD; data layer done."
 3. **One impact anchor.** At least one bullet ties to the business *why* / what it unlocks (the "so that"). If the why isn't obvious from the work, DO NOT invent it — surface it as a one-line note for the user to confirm or fill in.
 4. **Decisions carry their rationale.** When the day's work was a choice, render it "X over Y because Z" rather than just naming the change. The "because Z" usually isn't in git or Linear — mine the devsql session/prompt history to recover it.
-5. **Links beat descriptions.** Every concrete item carries its PR (`#1234`) or issue (`BOF-430`) link. A link the reader can open > a sentence describing it.
+5. **Tag the work item.** Every concrete item closes with its issue tag — `(BOF-518)` or `[BOF-438]`, the work item the pod tracks. Inline PR numbers (`#1234`) are NOT the default: surface a PR link only when the bullet itself is a review request ("ready for review", "needs a reviewer") and the link is the call to action.
 6. **Split the Next line by grain.** Separate in-flight continuations from new big items. Don't flatten a multi-day new workstream to the same level as "finish the thing I'm already on".
 7. **A heads-down day is a legitimate report.** If there's no shippable or visual output, say so honestly and give position + ETA ("Deep in the X schema, no visible output yet, first cut tomorrow"). When git+Linear are thin, the devsql session titles/topics are what tell you *where* you got to and what's next. This sets expectations and kills the "what are they doing?" question. Never pad to look busy.
-8. **Stay terse.** 3-4 bullets + one Next line, max. It rides on shared pod context; it does not need to be self-contained like a demo.
+8. **Complete clauses, not fragments — 2-3 bullets + one Next.** Each bullet is a full, readable thought (the real posts above are the bar), not a telegraphic noun-phrase. But brevity lives in the *count*: closer to 2 substantive bullets than 4, riding on shared pod context. A bullet may carry a decision and its consequence; it must not sprawl into a paragraph.
 
 ## Step 2.5 — Order before you write
 
@@ -91,7 +123,7 @@ Once the bullets are written, pass the draft through the `humanizer` skill to st
 
 - **em-dashes and `→` arrows** — they are structure (foundation → unlock, decision X → Y), not dash overuse.
 - **terse fragments** — bullets are not required to be full sentences; the post rides on shared pod context.
-- **emoji and markdown links** — `🛠️`, `⏭️`, `#1234`, `BOF-430` all stay.
+- **emoji, `•` bullets, and ticket tags** — `🛠️`, `⏭️`, `•`, `(BOF-518)`, `[BOF-438]` all stay.
 
 So: keep the shape, remove the tells. If humanizer is unavailable, ship the draft as-is — it's a polish pass, not a gate.
 
@@ -100,28 +132,30 @@ So: keep the shape, remove the tells. If humanizer is unavailable, ship the draf
 ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
 
 ```
-🛠️ <name> — <date>
-- <foundation or highest-impact item, with link and what it unlocks>
-- <consumer / feature item, with link and status>
-- <other item or honest heads-down line, with link/ETA>
-- ⏭️ Next: <in-flight continuation>. Then <new item, with link>; + <smaller item, with link>.
+🛠️ <first name> — <date>
+• <foundation or highest-impact item — complete clause, what it unlocks, trailing (TICKET)>
+• <consumer / feature item — status, trailing (TICKET)>
+• ⏭️ Next: <in-flight continuation>. Then <new item (TICKET)>; + <smaller item (TICKET)>.
 ```
 
-Use `$(date +%d/%m)` for the date. Keep bullets to one line each where possible. Use the user's real ticket/PR links in markdown form.
+- Bullets are `•`. First name only in the header. Date via `$(date +%d/%m)`.
+- 2-3 substantive bullets + the Next line. A third bullet only if it carries its own impact — otherwise stop at 2.
+- Close each concrete item with its `(TICKET)` tag. Use a PR link only on a review-request bullet (rule 5).
 
 ## Gate before delivering
 
 This is not a decorative checklist — it is a gate. Before emitting, run every item. **If any item fails, rewrite the post and re-run the whole list. Emit nothing until all pass.**
 
 - [ ] No "started / began / worked on" — every line states movement or position.
-- [ ] Every bullet is readable by a PM who has never opened the repo — feature/business language, no jargon, ticket IDs as trailing links only.
+- [ ] Every bullet is readable by a PM who has never opened the repo — feature/business language, no jargon, ticket IDs as trailing tags only.
+- [ ] Bullets are `•`, header is first-name-only, each bullet is a complete clause (not a telegraphic fragment).
 - [ ] Every PR/commit cited maps to a Linear issue in *this* project — nothing pulled in from other projects, nothing fabricated to explain loose git activity.
 - [ ] The one cross-cutting item is headline or bullet 2 — never last, never buried (Step 2.5).
 - [ ] No point is stated twice — least of all the shared-infra one.
 - [ ] At least one real impact/unlock anchor — and nothing invented.
-- [ ] Every concrete item links its PR/issue.
+- [ ] Every concrete item closes with its `(TICKET)` tag; PR links appear only on review-request bullets.
 - [ ] Next separates in-flight from new.
-- [ ] 4 bullets or fewer + one Next line.
+- [ ] 2-3 bullets + one Next line — closer to 2 than 4.
 - [ ] Any inferred "why" flagged for the user to confirm.
 - [ ] Draft passed through humanizer (slop removed; em-dashes/→/fragments/emoji preserved).
 
@@ -138,11 +172,10 @@ Output the block in chat for the user to review and paste. **Never post to Slack
 
 **Update (output):**
 ```
-🛠️ Alex — 18/06
-- Laid the shared auth adapter: single provider abstraction replacing the per-IdP branches → unblocks multi-tenant SSO + future IdPs. PR WIP #211.
-- SSO config UI wired onto the adapter (#214, in review).
-- Root-caused the cron timeouts: connection pool, not the query. Fix merged (#209).
-- ⏭️ Next: finish the SSO UI. Then new workstream — SCIM provisioning (PROJ-88).
+🛠️ Benjamin — 18/06
+• Laid the shared auth adapter: one provider abstraction replacing the per-IdP branches, so multi-tenant SSO and future IdPs ride on a single path instead of new code each time (PROJ-211).
+• SSO config UI wired onto the adapter — in review (PROJ-214).
+• ⏭️ Next: finish the SSO UI. Then a new workstream — SCIM provisioning (PROJ-88).
 ```
 
-Note the transform: the adapter (foundation) becomes the headline, the UI becomes proof it pays off, "fixed/worked on" become movement, and every line links out. No visual was needed for any of it.
+Note the transform: the adapter (foundation) becomes the headline, the UI becomes proof it pays off, "fixed/worked on" become movement, each bullet is a complete clause closing on its ticket tag, and 3 raw tasks collapse to 2 bullets + Next. Compare against the three real posts up top — same shape.
