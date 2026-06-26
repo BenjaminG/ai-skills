@@ -43,7 +43,7 @@ Follow-up: <the change that stops the recurrence — usually a single source of 
 ```
 
 Rules:
-- Functional and didactic, jargon explained — written for a teammate, not an implementation dump. See `[[feedback_pr_didactic_descriptions]]`.
+- Explain each term on first use; describe behavior and impact, not code internals. See `[[feedback_pr_didactic_descriptions]]`.
 - Link every PR and ticket as markdown links.
 - Cap claims at what you verified; say "unconfirmed" rather than guessing.
 

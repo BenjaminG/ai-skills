@@ -165,7 +165,7 @@ After spawning, assign each task to its teammate via `TaskUpdate` with `owner: "
 - Obvious simplifications that reduce complexity without trade-offs
 
 **NITPICK** (user decides):
-- Style preferences or minor readability tweaks
+- Style preferences or formatting (e.g. unused imports, line wrapping) — not variable renames or block restructuring
 - Debatable architectural choices
 - Low-impact optimizations
 - "Nice to have" improvements
@@ -399,5 +399,5 @@ git push
 - **All review teammates and standalone specialists are read-only** — only the lead edits files
 - **Teammate idle is normal** — teammates go idle after each turn; do not treat idle notifications as errors
 - **Deduplication vs. arbitration vs. historical check** — syntactic duplicates collapse in Step 3c; semantic conflicts between reviewers (different edits on same `file:line`) route to Step 3d; conflicts with prior intent route to Step 3.5
-- **Preserve behavior** — fixes must not change functionality, only improve quality
+- **Preserve behavior** — fixes must leave the existing test suite green; if a test fails after a fix, reject that fix
 - **Be surgical** — only modify code that was part of the original diff, do not refactor unrelated code

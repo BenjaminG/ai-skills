@@ -73,7 +73,7 @@ Refactor monolithic instruction files into a minimal root, scoped `.claude/rules
      - "**/*.test.{ts,tsx}"
    ---
    ```
-   Omit `paths:` for rules that should always load. Use a light touch in the root — conversational references, not all-caps commands.
+   Omit `paths:` for rules that should always load. In the root, use imperative prose ("To X, do Y"); reserve ALL-CAPS for true absolutes.
 
 ## Where each rule belongs
 
@@ -96,7 +96,7 @@ Sub-folder `CLAUDE.md` files load lazily — only when Claude touches a file in 
 
 **Do not create one when** the package follows the same conventions as the rest of the repo, or when the content would just restate what Claude can infer from `package.json`, file extensions, or the code. Adding a file "for symmetry" creates a maintenance surface that rots faster than it helps.
 
-**Keep each sub-folder file under ~100 lines.** 200 is the hard ceiling — beyond that, attention drops and rules start getting ignored. Extract reference material to `docs/` or split cross-cutting rules into `.claude/rules/` with scoped globs.
+**Keep each sub-folder file under ~100 lines; 200 is the hard ceiling.** Past it, extract reference material to `docs/` or split cross-cutting rules into `.claude/rules/` with scoped globs.
 
 **Sub-folder `CLAUDE.md` vs `.claude/rules/` with globs:**
 - Sub-folder wins when a whole package has coherent, team-owned conventions.

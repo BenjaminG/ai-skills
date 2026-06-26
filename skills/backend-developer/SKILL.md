@@ -14,26 +14,21 @@ This skill provides expertise in TypeScript backend development with Node.js, Ne
 ### TypeScript Configuration
 
 **Essential Setup:**
-- Enable TypeScript strict mode for maximum type safety
-- Configure backend-optimized tsconfig.json settings
-- Leverage advanced types for better code safety
+- Enable TypeScript strict mode
 - Use TypeScript utility types for code reuse
 
 ### Architecture Patterns
 
 **Layered Architecture:**
-- Implement proper separation: controllers → services → repositories → models
-- Use dependency injection and inversion of control principles
-- Apply SOLID principles and clean architecture patterns
-- Structure by domain boundaries in clear modules
+- Separate into controllers → services → repositories → models
+- Use dependency injection; inject interfaces, not concrete classes
+- Structure by domain boundaries in modules
 
 ### Async/Await Best Practices
 
 **Consistent Usage:**
-- Use async/await consistently throughout codebase
-- Handle promises properly with try/catch blocks
-- Implement proper error boundaries and graceful degradation
-- Apply error handling at appropriate abstraction levels
+- Use async/await (not raw `.then()` chains)
+- Wrap awaited calls in try/catch; throw typed exceptions from services, convert to HTTP responses in middleware
 
 ## NestJS Development Guidelines
 
@@ -183,8 +178,8 @@ async searchByAccount(account: Account): Promise<ContactData[]> {
 
 ### Performance Monitoring Integration
 
-**Comprehensive Metrics:**
-Always measure and monitor performance improvements with proper metrics.
+**Metrics:**
+Emit latency gauges (p50/p95/p99), throughput, and error rate around optimized paths so improvements are measurable.
 
 ```typescript
 // ✅ Good - Comprehensive timing metrics for parallel operations
@@ -230,40 +225,34 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 ### Database Optimization
 
 **Query Performance:**
-- Implement proper database indexing
-- Optimize database queries with query builders
-- Use connection pooling and manage connections efficiently
-- Apply proper database migrations and seeding strategies
+- Index columns used in WHERE, JOIN, and ORDER BY; verify with `EXPLAIN`
+- Build queries with query builders, not string concatenation
+- Use reversible migrations for schema changes
 
 **Connection Management:**
-- Configure connection pooling appropriately
+- Use a connection pool; acquire on request start, release on request end
 - Monitor connection usage and leaks
-- Implement proper connection lifecycle management
 - Use read replicas for read-heavy operations
 
 ## API Development
 
 ### RESTful API Design
 
-**Best Practices:**
-- Follow REST API design principles
-- Use proper HTTP status codes (200, 201, 400, 401, 404, 500, etc.)
-- Implement proper request validation and sanitization
-- Follow semantic versioning for API endpoints
+**Conventions:**
+- Use semantic HTTP status codes (200, 201, 400, 401, 404, 500, …)
+- Validate and sanitize every request body and query param
+- Version API endpoints semantically
 
 ### Error Handling
 
-**Comprehensive Strategy:**
-- Set up comprehensive error handling with custom error classes
-- Use proper HTTP status codes for different error types
-- Implement proper error boundaries
-- Provide meaningful error messages without exposing sensitive information
+**Strategy:**
+- Define custom error classes per error type, mapped to HTTP status codes
+- Catch at a single middleware boundary; never leak stack traces or internals in responses
 
 ### Request Validation
 
 **Input Sanitization:**
-- Implement proper request validation at controller level
-- Use DTOs (Data Transfer Objects) with class-validator
+- Validate at the controller layer using DTOs with class-validator
 - Sanitize user inputs to prevent injection attacks
 - Validate both structure and content of requests
 
@@ -273,15 +262,15 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 
 **Implementation:**
 - Implement JWT, OAuth, or session-based auth
-- Apply proper security measures for token management
-- Use proper password hashing (bcrypt, argon2)
+- Store tokens with short expiry and rotate refresh tokens; never log them
+- Hash passwords with bcrypt or argon2
 - Implement role-based access control (RBAC)
 
 ### Security Hardening
 
 **Essential Measures:**
 - Apply input validation and sanitization
-- Configure CORS properly
+- Restrict CORS to known origins (no wildcard in production)
 - Use helmet middleware for security headers
 - Implement rate limiting and request throttling
 - Manage environment variables securely
@@ -293,7 +282,7 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 
 **Configuration:**
 - Configure structured logging with Winston or similar
-- Use proper logging levels (error, warn, info, debug)
+- Use logging levels (error, warn, info, debug) consistently
 - Implement request/response logging
 - Include correlation IDs for distributed tracing
 
@@ -320,7 +309,7 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 
 **Best Practices:**
 - Follow AAA pattern (Arrange, Act, Assert)
-- Mock external dependencies properly
+- Mock only external dependencies (network, DB, third-party APIs), not the unit under test
 - Use test fixtures and factories
 - Keep tests isolated and independent
 
@@ -329,8 +318,8 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 ### CI/CD Integration
 
 **Automation:**
-- Implement proper CI/CD pipelines
-- Automate testing and deployment
+- Run tests and build on every push; block merge on failure
+- Automate deployment from the main branch
 - Use environment-based configuration management
 - Implement blue-green or canary deployments
 
@@ -338,8 +327,7 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 
 **API Documentation:**
 - Create API documentation with Swagger/OpenAPI
-- Maintain comprehensive README files
-- Document environment variables and configuration
+- Document environment variables and configuration in the README
 - Provide setup and deployment instructions
 
 ## Implementation Workflow
@@ -347,9 +335,9 @@ this.metricsService.histogram('contact_discovery.latency_reduction', reductionPe
 When applying this skill to backend development tasks:
 
 1. **Project Analysis**: Assess current backend structure, dependencies, and architecture patterns
-2. **Architecture Design**: Plan layered architecture with proper separation of concerns
-3. **Database Integration**: Implement database connections with proper ORM/ODM setup
-4. **API Development**: Create APIs with proper routing, middleware, and validation
+2. **Architecture Design**: Plan the controller/service/repository layering
+3. **Database Integration**: Set up ORM/ODM connections and entities
+4. **API Development**: Create APIs with routing, middleware, and request validation
 5. **Security Implementation**: Apply authentication, authorization, and security hardening
 6. **Performance Optimization**: Implement caching, parallelization, and query optimization
 7. **Testing**: Write comprehensive unit, integration, and E2E tests

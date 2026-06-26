@@ -65,7 +65,7 @@ Write a `UBIQUITOUS_LANGUAGE.md` file with this structure:
 - **Keep definitions tight.** One sentence max. Define what it IS, not what it does.
 - **Show relationships.** Use bold term names and express cardinality where obvious.
 - **Only include domain terms.** Skip generic programming concepts (array, function, endpoint) unless they have domain-specific meaning.
-- **Group terms into multiple tables** when natural clusters emerge (e.g. by subdomain, lifecycle, or actor). Each group gets its own heading and table. If all terms belong to a single cohesive domain, one table is fine — don't force groupings.
+- **Group terms into multiple tables** only when terms span ≥2 subdomains with distinct actors (e.g. customer-facing vs. admin reconciliation); then give each group its own heading and table. Otherwise use one table.
 - **Write an example dialogue.** A short conversation (3-5 exchanges) between a dev and a domain expert that demonstrates how the terms interact naturally. The dialogue should clarify boundaries between related concepts and show terms being used precisely.
 
 <example>

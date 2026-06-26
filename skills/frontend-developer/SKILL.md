@@ -18,7 +18,7 @@ This skill provides expertise in modern frontend development with React, TypeScr
 - Implement single responsibility principle - separate UI from business logic
 - Prefer composition over conditional rendering
 - Extract complex logic into custom hooks prefixed with "use"
-- Implement proper cleanup in useEffect for subscriptions and timers
+- Return a cleanup function from useEffect for subscriptions and timers
 
 **Custom Hooks:**
 - Always prefix custom hooks with "use" (e.g., `useOnlineStatus`)
@@ -53,7 +53,7 @@ function useOnlineStatus() {
 **Core Principles:**
 - **Derive state, don't sync it** - Calculate values during render instead of managing multiple related state variables
 - Implement single sources of truth to prevent synchronization bugs
-- Handle async state properly with loading and error states
+- Model async state with explicit loading and error states
 - Use React Context for shared state across component trees
 
 **When to use useReducer vs useState:**
@@ -142,14 +142,14 @@ function GameBoard() {
 - Define interfaces for object shapes and component props
 - Use Zod schemas for runtime validation and type inference
 - Always use `z.infer<typeof schema>` to derive types from Zod schemas
-- Implement proper error boundaries for type-safe error handling
+- Wrap feature subtrees in error boundaries that render a fallback UI
 
 ### Performance Optimization
 
 **Optimization Strategy:**
 - Implement code splitting and lazy loading for routes and components
 - Use virtualization (react-window, react-virtuoso) for large lists
-- Optimize images with proper sizing and lazy loading
+- Serve images at their displayed size and lazy-load below-the-fold images
 - Minimize bundle size through tree shaking and dead code elimination
 - Profile performance with React DevTools and browser tools
 
@@ -255,8 +255,8 @@ const mutation = useMutation({
 
 **Essential Requirements:**
 - Use semantic HTML elements (button, nav, main, section)
-- Implement proper ARIA labels and roles
-- Ensure keyboard navigation support with proper focus management
+- Add ARIA labels and roles to non-semantic interactive elements
+- Support keyboard navigation; manage focus on route changes and modal open/close
 - Maintain color contrast ratios meeting WCAG AA standards
 - Test with screen readers and accessibility tools
 
@@ -277,11 +277,7 @@ When applying this skill to frontend development tasks:
 
 2. **Review Existing Code**: Use Read/Grep to examine current implementation and identify patterns or issues
 
-3. **Apply Best Practices**: Implement solutions following React best practices, TypeScript strict typing, and performance guidelines outlined above
-
-4. **Ensure Quality**: Verify responsive design, accessibility compliance, and optimal performance
-
-5. **Test Implementation**: Validate the solution works across different scenarios and edge cases
+3. **Implement**: Apply the patterns from the sections above (functional components, TypeScript strict mode, the listed performance and accessibility rules)
 
 ## Common Anti-Patterns to Avoid
 

@@ -249,7 +249,7 @@ Produce a concise report with these sections. Do NOT persist anything yet.
 
 ## 4. Interview — Distill Durable Lessons
 
-For each root cause / "would have helped" item in the report, ask the user via AskUserQuestion whether to keep it, and if so, how to phrase the rule. Keep it tight — 3-5 candidate lessons max. For each kept lesson, collect:
+For each root cause / "would have helped" item in the report, ask the user via AskUserQuestion whether to keep it, and if so, how to phrase the rule. 3-5 candidate lessons max. For each kept lesson, collect:
 
 - **Rule** (imperative, one line)
 - **Why** (what incident it came from — keeps future-you from second-guessing)

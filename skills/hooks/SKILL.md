@@ -29,8 +29,6 @@ WebFetch: https://code.claude.com/docs/en/hooks
 Prompt: "Extract the complete hooks reference documentation including all hook events, input/output formats, configuration structure, and examples."
 ```
 
-This ensures access to the most current hook events, JSON schemas, and best practices.
-
 ## Hook Creation Workflow
 
 ### 1. Understand User Requirements
