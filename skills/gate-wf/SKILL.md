@@ -464,6 +464,7 @@ After the last finding, append:
 ```
 Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1 and N1".
 Tip: edit any agents/*.md, then re-run with --resume <runId> to skip unchanged agent calls.
+Tip: reviewing someone else's PR? Invoke the `pr-comment` skill to post these findings as a review (drafted via humanizer).
 ```
 
 ## Step 5: Persist state

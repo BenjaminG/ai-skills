@@ -903,6 +903,7 @@ After the last finding, append a one-line tip so the IDs are discoverable:
 
 ```
 Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1, M2 and N1".
+Tip: reviewing someone else's PR? Invoke the `pr-comment` skill to post these findings as a review (drafted via humanizer).
 ```
 
 ## Step 8: Apply Fixes (only if `--fix`)

@@ -6,7 +6,7 @@ argument-hint: "[pr-number-or-url]"
 
 # PR Feedback Triage
 
-Retrieve review feedback and status checks for a pull request, classify each item by priority, and propose an ordered action plan. Triage (§1–§5) is read-only — do not edit files, post replies, or re-run CI until the user picks items. Once they do, §6 applies the agreed changes and posts responses (reply + reaction + resolve) after a single confirmation. Never re-run CI.
+Retrieve review feedback and status checks for a pull request, classify each item by priority, and propose an ordered action plan. Triage is read-only — do not edit files, post replies, or re-run CI. Once the user picks which items to act on, hand off to the `pr-respond` skill, which applies the agreed changes and posts responses (reply + reaction + resolve). Never re-run CI.
 
 ## 1. Resolve the PR
 
@@ -19,7 +19,7 @@ Retrieve review feedback and status checks for a pull request, classify each ite
 Run these in parallel (single message, multiple tool calls). Cap any log output aggressively.
 
 - **Inline review comments (threaded):** `gh pr view <n> --json reviewThreads` — keep `isResolved`, `isOutdated`, path, line, comments[].author/body.
-- **Thread IDs (needed only if §6 will resolve threads):** `gh pr view --json reviewThreads` omits the GraphQL node `id` required to resolve a thread. Fetch it (plus each first comment's `databaseId` for reply/reaction endpoints) with:
+- **Thread IDs (needed by the `pr-respond` skill if you'll resolve/reply to threads):** `gh pr view --json reviewThreads` omits the GraphQL node `id` required to resolve a thread. Fetch it (plus each first comment's `databaseId` for reply/reaction endpoints) with:
 
   ```bash
   gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
@@ -52,7 +52,7 @@ Group by priority (P1 → P2 → Nit). One entry per item:
 - **Author** — reviewer / bot
 - **Quote** — ≤2 lines from the comment or check failure
 - **Why** — one sentence on the classification
-- **Proposed action** — fix | reply | defer | dismiss
+- **Disposition** — fix (apply the change) | reply (answer, no change) | decline (won't fix) | defer (track for later)
 
 ## 5. Action plan
 
@@ -62,26 +62,6 @@ After the report, emit an ordered plan:
 2. Then P2, then Nits.
 3. Close with 1–3 sentences summarizing overall health (e.g. "2 P1 CI failures + 1 P1 review comment, 3 P2s, 5 nits").
 
-End with: *"Tell me which items to apply, or say 'all P1' / 'all' to proceed."* Once the user picks items, move to §6.
+End with: *"Tell me which items to act on, or say 'apply all P1' / 'apply all' to proceed."* Once the user picks items, invoke the `pr-respond` skill to act on each per its disposition.
 
-## 6. Apply & respond
-
-Runs only after the user selects items. Process selected comments in priority order (P1 → P2 → Nit), batching edits by file. For each one:
-
-1. **Apply** the agreed code change. Skip the edit when the disposition is decline / won't-fix, or when the item is a question rather than a change request.
-2. **Draft the reply** by invoking the `humanizer` skill on a 1–3 sentence reply that states what was done (applied + how) or why it was declined. Never post a raw draft — always route it through humanizer first.
-3. **Pick the reaction:** applied or agreed → 👍 (`+1`); declined / won't-fix → 👎 (`-1`).
-4. **Show one batch preview** — per thread: the drafted reply, the planned reaction, and whether it will be resolved. Post everything only after a **single** confirmation.
-
-After confirmation, post per comment:
-
-- **Reply — inline review thread:** `gh api repos/{owner}/{repo}/pulls/<n>/comments -f body='…' -F in_reply_to=<databaseId>`
-- **Reply — conversation / issue comment (e.g. some bugbot posts):** `gh api repos/{owner}/{repo}/issues/<n>/comments -f body='…'`
-- **Reaction — review comment:** `gh api repos/{owner}/{repo}/pulls/comments/<databaseId>/reactions -f content=+1` (or `-1`)
-- **Reaction — issue / conversation comment:** `gh api repos/{owner}/{repo}/issues/comments/<databaseId>/reactions -f content=+1` (or `-1`)
-- **Resolve — inline threads only:** `gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -f id=<thread-id>` using the thread `id` from §2.
-
-Notes:
-
-- Issue-level conversation comments have no thread and **cannot be resolved** — reply + react only, and say so in the summary.
-- CI-check items have nothing to reply to; they're fixed by editing code, not by posting.
+Selecting an item means **act on it per its disposition** — `fix` items get the code change, `decline`/`reply` items get a reply only. "apply all" does not force a fix on a `decline` item; `pr-respond` flags any such mismatch for confirmation.

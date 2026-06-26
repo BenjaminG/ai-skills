@@ -47,7 +47,9 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | **Review & PR** | |
 | `consensus` | Run a prompt N times and consolidate by vote |
 | `pr` | Publish a PR with type detection + Linear/Jira linking |
-| `pr-feedback` | Triage and resolve PR review comments |
+| `pr-feedback` | Triage and classify PR review comments + CI |
+| `pr-respond` | Apply picked PR feedback + post replies/reactions/resolve |
+| `pr-comment` | Post gate/gate-wf findings as a humanizer-drafted PR review |
 | `qa-plan` | Manual QA plan generation |
 | `qa-run` | Execute a manual QA plan |
 | **Developer tools** | |
