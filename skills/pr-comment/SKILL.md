@@ -1,12 +1,12 @@
 ---
 name: pr-comment
-description: This skill should be used when reviewing someone else's pull request and you want to turn gate / gate-wf findings into a posted GitHub review — each comment drafted through humanizer, placed inline at its file:line, and submitted as a single COMMENT review after one confirmation. Triggers on "post these as review comments", "comment the gate findings on the PR", "draft and post my review", "leave review comments", after a gate / gate-wf run on a PR you're reviewing.
+description: This skill should be used when reviewing someone else's pull request and you want to turn gate / gate-wf findings into posted GitHub comments — each comment drafted through humanizer and posted as a standalone inline comment at its file:line, after one confirmation. Triggers on "post these as review comments", "comment the gate findings on the PR", "draft and post my review", "leave review comments", after a gate / gate-wf run on a PR you're reviewing.
 argument-hint: "[pr-number-or-url] [tiers — e.g. 'all' | 'B,M' | specific IDs]"
 ---
 
 # PR Comment
 
-Publish a **single** GitHub review on a PR you're reviewing, built from `gate` / `gate-wf` findings. Each comment is drafted through `humanizer`, placed inline where the finding sits on the diff, and submitted only after one confirmation. The review is always submitted as **COMMENT** — this skill never approves or requests changes; that stays a manual call.
+Post `gate` / `gate-wf` findings on a PR you're reviewing as **standalone inline comments** — one independent comment per finding, placed at its `file:line`. Each is drafted through `humanizer` and posted only after one confirmation. There is no review wrapper and no summary comment. Out-of-diff findings (can't be inline) go to the PR conversation. This skill never approves or requests changes — that stays a manual call.
 
 ## Prerequisites
 
@@ -28,32 +28,34 @@ Drafting goes through the `humanizer` skill — that dependency is mandatory, no
 `tier` orders the work (BLOCKER → MAJOR → NIT). For each selected finding:
 
 1. **Draft the comment** — turn `message` + `suggested_fix` into a 1–3 sentence reviewer comment. Route it through the `humanizer` skill. **Never post a raw draft — always route it through humanizer first.** For NIT findings, prefix the body with `nit:`.
-2. **Place it** — `location: diff-line` → inline comment at `file:line`. `location: adjacent` (legacy code outside the diff) **cannot be inline** (GitHub only accepts comments on diff lines) → fold it into the review body under an "Out-of-diff notes" heading, citing `file:line`.
-3. **Add to the batch** — the pending review's `comments[]` (inline) or its body (adjacent / summary).
+2. **Place it** — `location: diff-line` → standalone inline comment at `file:line`. `location: adjacent` (legacy code outside the diff) **cannot be inline** (GitHub only accepts comments on diff lines) → post as a top-level PR conversation comment citing `file:line`.
+3. **Collect it** — add the drafted comment to the pending batch (inline or conversation) for one preview.
 
-Show the **one batch preview** — the review body plus each inline comment with its `file:line` — then submit the review only after a **single** confirmation.
+Show the **one batch preview** — every comment with its placement (`file:line` inline, or "conversation") — then post the whole batch only after a **single** confirmation.
 
-**Done when** one review has been submitted containing every selected finding as either an inline comment (diff-line) or a body note (adjacent), *and* the summary reports the review URL and the counts (inline / body / skipped).
+**Done when** every selected finding has been posted as either an inline comment (diff-line) or a conversation comment (adjacent), *and* the summary reports the counts (inline / conversation / skipped-stale) with comment links.
 
 ## Submit (after confirmation)
 
-Build the whole review in one payload and post it atomically — `event` is always `COMMENT`:
+Post each comment independently — no review object. After the single confirmation:
+
+`diff-line` → one standalone inline comment per finding:
 
 ```bash
-gh api repos/{owner}/{repo}/pulls/<n>/reviews --input - <<'JSON'
-{
-  "commit_id": "<headRefOid>",
-  "event": "COMMENT",
-  "body": "Gate review — <verdict>. <N> findings.\n\n## Out-of-diff notes\n- `src/legacy.ts:88` …",
-  "comments": [
-    { "path": "src/db/users.ts", "line": 42, "body": "User input is concatenated into raw SQL — use a parameterized query." }
-  ]
-}
-JSON
+gh api repos/{owner}/{repo}/pulls/<n>/comments \
+  -f commit_id=<headRefOid> -f path=src/db/users.ts -F line=42 \
+  -f body="User input is concatenated into raw SQL — use a parameterized query."
+```
+
+`adjacent` → one top-level PR conversation comment per finding:
+
+```bash
+gh api repos/{owner}/{repo}/issues/<n>/comments \
+  -f body="\`src/legacy.ts:88\` — …"
 ```
 
 Notes:
 
-- GitHub only accepts inline comments on lines present in the diff; `adjacent` findings live in the body, never as `comments[]`.
-- COMMENT only — this skill never submits APPROVE or REQUEST_CHANGES.
-- A finding whose `file:line` is not on the diff (stale location) drops to a body note rather than failing the whole review.
+- GitHub only accepts inline comments on lines present in the diff; `adjacent` findings go to the conversation, never to `pulls/<n>/comments`.
+- This skill never submits APPROVE or REQUEST_CHANGES — comments only.
+- A finding whose `file:line` is not on the diff (stale location) is skipped and reported, not posted.
