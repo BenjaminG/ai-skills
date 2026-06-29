@@ -306,7 +306,13 @@ ORCHESTRATION SHAPE (your generated workflow must follow this exactly):
 Phase 1 — Parallel Review:
   Spawn these reviewer agents in parallel, each with the schema below:
 $REVIEWERS_LIST
-  Each reviewer reads diff-full.txt + plus-lines.txt and returns findings.
+  Each reviewer reads diff-full.txt + plus-lines.txt to find WHAT CHANGED, but is
+  expected to read whatever else it needs — full versions of changed files, imported
+  modules, schemas, sibling call paths, callers — to reason about correctness. The diff
+  scopes WHERE a finding is anchored (see location rules), NOT what you may read. A bug
+  whose trigger is on a + line but whose evidence lives in a non-diff file (a schema, a
+  parallel code path) is IN SCOPE — anchor it to the diff line and cite the external
+  file in the evidence. Then return findings.
 
   Per-finding schema:
   {
@@ -344,6 +350,8 @@ Phase 3 — Context Check (single agent):
 
 CONSTRAINTS:
 - Boy Scout asymmetry: adjacent (legacy) code may be flagged MAJOR/NIT but never BLOCKER.
+- Read-scope ≠ finding-scope: read any file to reason; only REPORT findings anchored to
+  changed files (per each reviewer's location rules).
 - Reviewers are READ-ONLY. No edits, no shell.
 - Use pipeline() so per-finding verify can start as soon as each reviewer returns
   (don't wait for all reviewers to finish before starting verify).

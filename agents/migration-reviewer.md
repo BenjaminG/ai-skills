@@ -26,7 +26,8 @@ migration-other
    - `$in: [...]` may **under-select** if a document can transition further while the bug persists. Prefer `$ne: <good_value>` when the goal is "everything not yet good."
 5. Verify filter precision (over-selection): does the filter capture rows it shouldn't?
 6. Verify `down()` / rollback restores exactly what `up()` changed.
-7. If you can detect business-rule conflicts from comments or sibling code, flag `migration-business-rule-conflict` and rely on the context-checker to confirm.
+7. **Invariant must live in the filter, not a comment.** If the migration relies on an invariant stated only in a comment or PR body (e.g. "all these rows are `isBillingTransfer: false`"), that invariant MUST be expressed in the query predicate. A comment is not a guarantee — between the audit and the prod run, a violating row can appear and get silently mislabelled. Flag `migration-filter-under-selection` (or `-over-selection`) and give the predicate that enforces it (e.g. add `field: { $ne: badValue }` so a violating row drops out of the count instead of being overwritten).
+8. If you can detect business-rule conflicts from comments or sibling code, flag `migration-business-rule-conflict` and rely on the context-checker to confirm.
 
 ## Tier rules
 

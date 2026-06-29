@@ -21,7 +21,7 @@ bug-async-ordering, bug-state-machine, bug-other
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bug-logic-error`       | wrong condition, inverted boolean, off-by-one, wrong operator, swapped args                                                                                                                                               |
 | `bug-spec-mismatch`     | the PR body / commit message / Linear ticket describes behavior X; the code implements Y                                                                                                                                  |
-| `bug-cross-file-parity` | the diff defines a code path that should mirror an existing canonical path elsewhere in the repo (e.g. a migration backfilling a field should resolve that field the same way the runtime service does) — and it diverges |
+| `bug-cross-file-parity` | the diff defines a code path that should mirror an existing canonical path elsewhere in the repo (e.g. a migration backfilling a field should resolve that field the same way the runtime service does) — and it diverges. **Also**: a field is forwarded/spread/persisted (e.g. `...rest`, verbatim payload) but a downstream derivation or branch ignores it on this path while another path honors it (e.g. admin derives `kind` from `isBillingTransfer`, MCP path passes it through but `approve()` never reads it) |
 | `bug-silent-failure`    | errors collected/logged but never thrown, exit code never set, partial-failure markers not surfaced; caller treats the operation as successful                                                                            |
 | `bug-boundary`          | array index/length, integer overflow, empty input, single-element collection, exact-equality on float                                                                                                                     |
 | `bug-null-undefined`    | use of value that may be null/undefined without a guard; chained `.foo.bar` past an optional                                                                                                                              |
@@ -36,8 +36,9 @@ bug-async-ordering, bug-state-machine, bug-other
    - **Logic**: would this code produce the wrong result for any reachable input? (boundary, null, async, state)
    - **Spec parity**: does the PR body / commit message / context bundle describe a behavior that the code does NOT implement? Quote the claim, quote the code, show the gap.
    - **Cross-file parity**: does this diff implement a behavior that already exists canonically elsewhere in the repo? If yes, find the canonical implementation (`grep -rn`) and compare. Flag divergences.
-3. For `bug-silent-failure`: scan for error counters, `errors[]` arrays, `try { ... } catch { log }` blocks. Trace whether the caller can distinguish success from partial failure. If not, flag.
-4. Look at the **PR body / context bundle** (passed to you in the prompt). Any claim of the form "X is recomputed via Y", "rows where A are skipped", "fallback to B when C is missing" is a spec claim — verify the code matches.
+3. **Field-flow trace**: for any field a changed path reads, writes, spreads, or forwards, open its definition (schema / DTO / type — even if not in the diff) and **every** consumer (`grep -rn`). A field honored on one path and silently ignored on another is `bug-cross-file-parity`. Pay special attention to `...rest`/spread/passthrough that carries a field into a stored payload past a derivation that never consults it.
+4. For `bug-silent-failure`: scan for error counters, `errors[]` arrays, `try { ... } catch { log }` blocks. Trace whether the caller can distinguish success from partial failure. If not, flag.
+5. Look at the **PR body / context bundle** (passed to you in the prompt). Any claim of the form "X is recomputed via Y", "rows where A are skipped", "fallback to B when C is missing" is a spec claim — verify the code matches.
 
 ## Anti-patterns — what NOT to flag
 
@@ -70,7 +71,7 @@ BLOCKER tier requires a **concrete triggering input or scenario** in the evidenc
 
 - `diff-line`: issue on a `+` line.
 - `adjacent`: in modified file but not on `+`. **Cap at MAJOR** — never BLOCKER for adjacent.
-- Files not in diff: drop entirely.
+- Anchor every finding to a changed (`+`/adjacent) line. You MAY — and should — read non-diff files (schemas, callers, sibling paths) to *reach* a finding; cite them in evidence. Do not *report* a finding whose anchor line is in a file not in the diff.
 
 ## Output schema (per finding)
 
