@@ -45,38 +45,47 @@ Echo the window to the user: `"Pulling DONE since <SINCE> and all started issues
 
 ## Step 2 — Fetch issues from Linear
 
-Run both queries in parallel. `benjamin.gelis` is the assignee (confirm once with `linear auth whoami` if unsure).
+Run both queries in parallel via the raw GraphQL endpoint (`linear api`). Use the raw endpoint, **not** `linear issue query`, because the CLI's `--json` output does not expose `completedAt` or `parent` — both of which this skill needs. `Bash(linear:*)` already covers `linear api`. `benjamin.gelis@naboo.app` is the assignee (confirm once with `linear auth whoami` if unsure).
+
+**Why `completedAt`, not `updatedAt`:** DONE must filter on `completedAt` (when the issue moved to a completed state), not `updatedAt`. `updatedAt` is bumped by any mutation — a comment, label change, or relation edit — so a long-done issue re-enters the window the moment someone touches it.
 
 ```bash
-# Completed since SINCE
-linear issue query --assignee benjamin.gelis --all-teams \
-  --state completed --updated-after "$SINCE" --limit 50 --json
+# DONE candidates: completed on/after SINCE (excludes canceled by construction —
+# canceled issues carry canceledAt, not completedAt)
+linear api 'query($since: DateTimeOrDuration) {
+  issues(filter: {
+    assignee: { email: { eq: "benjamin.gelis@naboo.app" } },
+    state: { type: { eq: "completed" } },
+    completedAt: { gte: $since }
+  }, first: 50) {
+    nodes { identifier title url completedAt state { name } parent { identifier } labels { nodes { name } } }
+  }
+}' --variable since="$SINCE"
 
-# Currently started
-linear issue query --assignee benjamin.gelis --all-teams \
-  --state started --limit 50 --json
+# Currently started (IN PROGRESS + "In Review")
+linear api 'query {
+  issues(filter: {
+    assignee: { email: { eq: "benjamin.gelis@naboo.app" } },
+    state: { type: { eq: "started" } }
+  }, first: 50) {
+    nodes { identifier title url state { name } parent { identifier } labels { nodes { name } } }
+  }
+}'
 ```
 
-Parse with `jq '.nodes[] | {id: .identifier, title, url, state: .state.name, updatedAt}'`.
+`$since` accepts `YYYY-MM-DD`. Parse with `jq '.data.issues.nodes[]'`.
 
 ### Drop sub-issues
 
-`query --json` does **not** expose `parent`, so resolve it per candidate with `view`. Drop any issue that has a parent — only top-level issues belong in the daily (otherwise a single parent fans out into many sub-issue lines).
-
-```bash
-# For each candidate KEY from the queries above:
-linear issue view "$KEY" --json | jq -r '.parent.identifier // "ROOT"'
-```
-
-Keep the issue only if this prints `ROOT`. Run the lookups in parallel (one `view` per candidate). If `view` fails for a key, keep the issue (fail open) and note it.
+Both queries return `parent` inline. Drop any node where `parent` is non-null — only top-level issues belong in the daily (otherwise a single parent fans out into many sub-issue lines). If a node is missing the `parent` field entirely, keep it (fail open) and note it.
 
 ### Filtering rules
 
 - **DONE**: union of
-  - completed query results with `state.type == "completed"` and `updatedAt >= SINCE` (exclude `canceled`), and
-  - started query results whose `state.name` matches `/review/i` (team convention: "In Review" items are reported as DONE).
+  - all nodes from the completed query (the `completedAt` filter already scopes the window and excludes canceled), and
+  - started-query results whose `state.name` matches `/review/i` (team convention: "In Review" items are reported as DONE). "In Review" items have no `completedAt`, so they correctly come from the started query, not the completed one.
 - **IN PROGRESS**: started query results **not** matching `/review/i` in `state.name`. Deduplicate against DONE (an issue in both lists stays in DONE only).
-- **BLOCKERS**: issues from the started query that carry a label matching `/blocked/i` OR are linked as "blocked by" another open issue. If none, skip the section.
+- **BLOCKERS**: issues from the started query that carry a `labels` entry matching `/blocked/i` OR are linked as "blocked by" another open issue. If none, skip the section.
 
 If you want to override a bucket (e.g. treat an "In Review" PR that's reverted as still IN PROGRESS), say so in chat — the iteration step handles re-bucketing.
 
