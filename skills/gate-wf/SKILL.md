@@ -23,6 +23,7 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 - `--force-fresh` (flag): bypass cache and re-fetch context bundle.
 - `--ignore-scope-gate` (flag): downgrade Step 2 hard-stops (file-count, suspicious-files) to top-of-report banners. Soft-warn (1–3 SUSPICIOUS) is unaffected.
 - `--resume <runId>`: resume a previous workflow run by ID (`wf_...`). Useful after editing any `agents/*.md` to re-run only the affected agent calls. Resume caches on `(prompt, opts)` pairs — see the resume note in Execution notes for the regeneration caveat.
+- `--dismiss <ids>` / `--undismiss <ids>` / `--show-dismissed`: manage the dismissal registry (false-positive suppression) **without running the gate**. See `references/dismissals.md`. These replay from the last run's `$STATE_FILE`; they require a prior run on the branch.
 
 ## Step 0: Verify reviewer skill dependencies
 
@@ -73,8 +74,11 @@ BASE_ARG=""
 FORCE_FRESH=0
 IGNORE_SCOPE_GATE=0
 RESUME_ID=""
+DISMISS_IDS=""
+UNDISMISS_IDS=""
+SHOW_DISMISSED=0
 
-# Walk tokens. --resume takes the next token as its value.
+# Walk tokens. --resume / --dismiss / --undismiss take the next token as their value.
 SKIP_NEXT=0
 TOKENS=()
 for tok in $ARGS; do TOKENS+=("$tok"); done
@@ -84,9 +88,20 @@ for i in "${!TOKENS[@]}"; do
   case "$tok" in
     --force-fresh)       FORCE_FRESH=1 ;;
     --ignore-scope-gate) IGNORE_SCOPE_GATE=1 ;;
+    --show-dismissed)    SHOW_DISMISSED=1 ;;
     --resume)
       RESUME_ID="${TOKENS[$((i+1))]:-}"
       [ -z "$RESUME_ID" ] && { echo "--resume requires a runId" >&2; exit 2; }
+      SKIP_NEXT=1
+      ;;
+    --dismiss)
+      DISMISS_IDS="${TOKENS[$((i+1))]:-}"
+      [ -z "$DISMISS_IDS" ] && { echo "--dismiss requires ids (e.g. B1,M2)" >&2; exit 2; }
+      SKIP_NEXT=1
+      ;;
+    --undismiss)
+      UNDISMISS_IDS="${TOKENS[$((i+1))]:-}"
+      [ -z "$UNDISMISS_IDS" ] && { echo "--undismiss requires ids (e.g. D1,D2)" >&2; exit 2; }
       SKIP_NEXT=1
       ;;
     --*) echo "unknown flag: $tok" >&2; exit 2 ;;
@@ -96,6 +111,8 @@ for i in "${!TOKENS[@]}"; do
   esac
 done
 ```
+
+If `--dismiss`, `--undismiss`, or `--show-dismissed` is set, **do not run the gate** — after computing identifiers (Step 1b, for `$STATE_DIR` / `$STATE_FILE` / `$DISMISS_FILE`), jump straight to the manual-flag handling in `references/dismissals.md` (Manual flags), then Step 4 render, then exit.
 
 ### 1b. Compute identifiers
 
@@ -163,7 +180,11 @@ CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v2"
 STATE_DIR="$HOME/.claude/gate-wf-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
+# Dismissal registry — false-positive suppression, kept OUTSIDE CACHE_KEY so a
+# rejected finding stays suppressed across diff churn. See references/dismissals.md.
+DISMISS_FILE="$STATE_DIR/${BRANCH_SAFE}.dismissed.json"
 mkdir -p "$STATE_DIR"
+[ -f "$DISMISS_FILE" ] || echo '{"version":1,"dismissals":[]}' > "$DISMISS_FILE"
 ```
 
 ### 1c. Findings cache lookup
@@ -171,7 +192,7 @@ mkdir -p "$STATE_DIR"
 If `FORCE_FRESH=0` and `RESUME_ID=""`:
 
 1. Read `$STATE_FILE`.
-2. If `cache_key == CACHE_KEY` AND `cached_at` is within 7 days, **cache hit**: print the cached verdict and findings verbatim, then exit. The cached findings carry their original `B1`/`M1`/`N1` IDs so the user can reference them.
+2. If `cache_key == CACHE_KEY` AND `cached_at` is within 7 days, **cache hit**: skip the workflow, but **still run the Step 4 render core** over the cached `findings[] + dismissed[]` — the dismissal registry is independent of `CACHE_KEY`, so a dismissal added since the cached run (e.g. via `--dismiss`, or a newly-resolved thread on a prior full run) must apply. Re-partition, recompute IDs, render, then exit.
 3. Otherwise: cache miss, proceed.
 
 `CACHE_KEY` includes `WT_HASH`, so any working-tree change invalidates the cache.
@@ -201,7 +222,17 @@ Compare to cached `freshness_signals` in `$CONTEXT_CACHE_FILE`. For each source:
 For each stale source, fetch:
 
 - **Linear** (if stale + ticket detected): `linear-cli` issue + comments. See `references/context-sources.md`.
-- **GitHub PR** (if stale): `gh pr view --json number,title,body,comments,reviews,updatedAt`.
+- **GitHub PR** (if stale): `gh pr view --json number,title,body,comments,reviews,updatedAt`, **plus inline review threads** — the signal the author uses to reject a finding. `gh pr view --json` omits thread `isResolved`/comments, so fetch them via GraphQL (same query the `pr-feedback` skill uses):
+
+  ```bash
+  gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+      reviewThreads(first:100){ nodes{ isResolved isOutdated
+        comments(first:10){ nodes{ author{login} body path line originalLine } } } } } }
+  }' -F owner=OWNER -F repo=REPO -F pr=<n>
+  ```
+
+  Emit these under a `### Review threads` subsection of the `## PR` bundle section (one entry per thread: `isResolved`, `path`, `line`, and each comment's `author` + `body`). The context-checker reads this to dismiss findings the author rejected (see `references/dismissals.md` and `agents/context-checker.md` Part 3). Resolving a thread bumps the PR `updatedAt`, so this rides the existing PR freshness probe — no new probe needed.
 - **ADR** (if stale): walk `ADR_ROOTS`, determine applicability via frontmatter `paths:` glob, filename keyword match, or body mention. See `references/context-sources.md` § F3.
 - **CLAUDE.md** (if stale): emit each `$CLAUDE_MD_LIST` file verbatim under a `### <path>` heading. See `references/context-sources.md` § F2.
 - **devsql** (if stale): per changed file, last 10 history/jhistory rows. Cap at 80 total.
@@ -337,10 +368,16 @@ Phase 2 — Adversarial Verify (per-finding, streaming):
 Phase 3 — Context Check (single agent):
   Spawn ai-skills:context-checker once with: surviving findings + context bundle.
   It annotates each finding with:
-    - context_verdict: "OK" | "CONFLICT" | "UNCERTAIN"
+    - context_verdict: "OK" | "CONFLICT" | "UNCERTAIN" | "DISMISSED"
     - context_source:  "linear" | "pr" | "session" | "claude-md" | "adr" | "none"
     - context_citation: string (when not OK)
     - context_reason: string (when not OK)
+    - dismiss_confidence: "resolved" | "rebutted"  (only when verdict == DISMISSED)
+  A DISMISSED verdict means a PR review thread rejected this finding as a
+  false-positive (see context-checker Part 3). Carry the verdict + citation +
+  dismiss_confidence through on the finding — the skill upserts these into the
+  dismissal registry after the run (see references/dismissals.md). Do NOT drop
+  DISMISSED findings inside the workflow; the skill partitions at render-time.
   It may also SYNTHESIZE new findings for CLAUDE.md or ADR violations not
   already surfaced by reviewers. Synthesized findings carry:
     - reviewer: "context-checker"
@@ -391,9 +428,15 @@ Emit any non-empty banner verbatim, in this order:
 
 If none fired, skip this sub-step.
 
+### 4a-bis. Apply the dismissal registry (partition active vs dismissed)
+
+Before counting, partition the finding set into **active** and **dismissed** using the dismissal registry. This is the shared render core — it runs on every output path (fresh run, cache-hit replay, manual flag). On a fresh run, first **upsert** any context-checker `DISMISSED` annotations into the registry. Full spec — anchor computation, upsert, and `--dismiss/--undismiss/--show-dismissed` handling — in `references/dismissals.md`.
+
+In short: for each finding compute its content-anchor `gatewf_anchor "$rule_id" "$file" "$line"`; if the anchor is in `$DISMISS_FILE` → **dismissed**, else → **active**. Only **active** findings flow into verdict math and the `B/M/N` lists; dismissed ones get `D1, D2, …` and a separate section.
+
 ### 4b. Verdict math
 
-Count findings by tier:
+Count **active** findings by tier (dismissed findings never count):
 
 | Verdict             | Condition                  |
 | ------------------- | -------------------------- |
@@ -467,12 +510,27 @@ For `context_verdict`:
 
 For synthesized `claude-md-violation` / `adr-violation`, render the citation as the `rule reference:` line.
 
-After the last finding, append:
+After the active findings, render the `Dismissed` section (omit if there are no dismissed findings). Full format in `references/dismissals.md`:
+
+```
+## Dismissed (suppressed — not counted toward the verdict)
+
+### D1 — [security-reviewer] security-sql-injection
+- `src/db/users.ts:42` · resolved · PR thread by @author
+  was: User input concatenated into raw SQL query
+  citation: "id is validated upstream — see middleware/auth.ts:30"
+```
+
+Render `· resolved` for `confidence: resolved`/`manual`, and `· rebutted (thread still open)` for `rebutted`.
+
+After the last finding (active or dismissed), append:
 
 ```
 Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1 and N1".
 Tip: edit any agents/*.md, then re-run with --resume <runId> to skip unchanged agent calls.
 Tip: reviewing someone else's PR? Invoke the `pr-comment` skill to post these findings as a review (drafted via humanizer).
+Tip: a dismissed finding reappears automatically if its code is edited (the dismissal is keyed on the code, not the line).
+Tip: --dismiss <ids> to suppress a false-positive; --undismiss <Dn> to bring one back; --show-dismissed to list them.
 ```
 
 ## Step 5: Persist state
@@ -487,9 +545,12 @@ Write `$STATE_FILE`:
   "cached_at": "<ISO timestamp>",
   "verdict": "PASS | PASS WITH NOTES | FAIL",
   "run_id": "<wf_...>",
-  "findings": [ { "id": "B1", ... }, ... ]
+  "findings": [ { "id": "B1", ... }, ... ],
+  "dismissed": [ { "id": "D1", "anchor": "<sha>", "source": "pr-thread|manual", "confidence": "resolved|rebutted|manual", "citation": "...", ... full finding payload ... }, ... ]
 }
 ```
+
+`dismissed[]` carries each suppressed finding's full payload plus its `anchor`/`source`/`confidence`/`citation`, so `--undismiss` can promote it back and a cache-hit replay can re-partition without re-running the gate. The registry itself (`$DISMISS_FILE`) is the source of truth for *what* is dismissed; `dismissed[]` is the last-rendered snapshot.
 
 ### 5b. Context bundle cache
 
@@ -521,6 +582,17 @@ find /tmp -maxdepth 1 -type d -name 'gate-wf-*' -mmin +1440 -print 2>/dev/null \
   | while read -r d; do
       [ "$d" != "$TMP_DIR" ] && rm -rf "$d"
     done
+
+# GC orphan dismissal registries: a <branch>.dismissed.json whose branch no longer
+# exists AND has no sibling <branch>.json is dead — remove it.
+# ponytail: branch reconstruction (tr '_' '/') is lossy for branches with literal
+# underscores; the sibling-.json guard keeps any still-active registry safe.
+for f in "$STATE_DIR"/*.dismissed.json; do
+  [ -e "$f" ] || continue
+  b=$(basename "$f" .dismissed.json)
+  [ -f "$STATE_DIR/$b.json" ] && continue
+  git show-ref --verify --quiet "refs/heads/$(echo "$b" | tr '_' '/')" || rm -f "$f"
+done
 ```
 
 ## Execution notes
@@ -533,6 +605,7 @@ find /tmp -maxdepth 1 -type d -name 'gate-wf-*' -mmin +1440 -print 2>/dev/null \
 - **Resume**: `--resume <runId>` skips cached `(prompt, opts)` pairs. Because the workflow script is regenerated from the Step 3 prompt on each run, resume hits the cache only when the regenerated `agent()` calls match the prior run's prompts byte-for-byte — keep the orchestration prompt and `agents/*.md` stable to maximize cache hits. Editing an `agents/*.md` invalidates only that agent's calls, so targeted re-runs stay cheap.
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate.
 - **Tier semantics**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
+- **Dismissals**: false-positives are suppressed via a per-branch registry kept *outside* `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
 - **No auto-fix in v1**: v1 is read-only review. `--fix` mode is reserved for v2.
 - **Coexists** with the legacy `gate` skill during migration.
 
@@ -540,3 +613,4 @@ find /tmp -maxdepth 1 -type d -name 'gate-wf-*' -mmin +1440 -print 2>/dev/null \
 
 - `references/context-sources.md` — CLAUDE.md (F2) + ADR (F3) discovery and enforcement
 - `references/scope-gate.md` — file-count + suspicious-files classifier (Step 2c)
+- `references/dismissals.md` — dismissal registry: content-anchor identity, PR-thread + manual populators, render core, `--dismiss`/`--undismiss`/`--show-dismissed`

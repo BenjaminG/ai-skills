@@ -62,14 +62,46 @@ Synthesized findings carry the same shape as reviewer findings, plus `citation` 
 }
 ```
 
+## Part 3 — Dismiss findings rejected on PR review threads
+
+The context bundle's `## PR` section may include a `### Review threads` subsection: inline review threads with `isResolved`, `path`, `line`, and each thread's comments (author + body). These are where the PR author rejects a finding as a false-positive.
+
+For each input finding, check whether a review thread **on the same `file` and at or near its `line` (±5 lines)** rejects it:
+
+- The thread's comments must address the **same issue** as the finding (same code, same concern) — not merely touch the same line. A thread about naming does not dismiss a security finding on the same line.
+- A thread is a rejection when an author comment argues the finding is wrong, intentional, or already handled ("false positive", "intentional", "validated upstream", "by design", "won't fix", "not a bug").
+
+When a finding is rejected this way, set `verdict: "DISMISSED"` (this is a fourth verdict, distinct from OK/CONFLICT/UNCERTAIN) and add:
+
+- `dismiss_confidence`: `"resolved"` if the matching thread `isResolved == true` (settled), else `"rebutted"` (author contested but the thread is still open — weaker signal).
+- `citation`: the rejecting comment verbatim (≤240 chars), prefixed with the author login.
+- `source`: `"pr"`.
+
+Do **not** dismiss on your own judgment — `DISMISSED` requires an explicit author rejection in a thread. Absent a matching thread, use OK/CONFLICT/UNCERTAIN as in Part 1. `DISMISSED` is not the same as CONFLICT: CONFLICT flags a clash with a past *decision* (and still counts toward the verdict); DISMISSED records that the author rejected *this finding* (and suppresses it).
+
 ## Output
 
 Return a single object via the structured-output tool:
 
 ```json
 {
-  "annotations": [ ...verdicts for input findings... ],
+  "annotations": [ ...verdicts for input findings (verdict ∈ OK|CONFLICT|UNCERTAIN|DISMISSED)... ],
   "synthesized": [ ...new findings for documented-rule violations... ]
+}
+```
+
+A `DISMISSED` annotation has the Part 1 shape plus `dismiss_confidence`:
+
+```json
+{
+  "file": "src/db/users.ts",
+  "line": 42,
+  "rule_id": "security-sql-injection",
+  "verdict": "DISMISSED",
+  "source": "pr",
+  "dismiss_confidence": "resolved",
+  "citation": "@author: id is validated upstream in middleware/auth.ts",
+  "reason": "PR review thread resolved — author rejected as false-positive"
 }
 ```
 
