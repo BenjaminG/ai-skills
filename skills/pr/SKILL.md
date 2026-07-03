@@ -145,11 +145,18 @@ git push -u origin HEAD
 ## 5. Open a Pull Request
 
 **Configuration:**
+- **Draft:** always create the PR as draft (`gh pr create --draft`). The PR is born draft whatever the path afterwards; it goes ready later, by hand or via `/ci-watch`.
 - **Base branch:** `develop` for **mk-copilot** projects, `master` for all other repos
 - **PR title format:**
   - **With issue ID:** `{type}({ID}): description` → `feat(ENG-1234): add user auth` or `feat(MITB-565): add user auth`
   - **Without issue ID:** `{type}: description` → `feat: add user auth`
 - **PR body:** Use the appropriate template below based on the PR type
+
+**After creating**, apply the merge-queue label (skips silently in repos that don't define it — this skill is multi-repo):
+
+```bash
+gh pr edit <pr-url> --add-label merge-queue-validation-gate 2>/dev/null || true
+```
 
 ### Description Writing Principles (MANDATORY for `fix` and `feature`)
 
@@ -339,6 +346,8 @@ API example.>
 
 ## 6. Request Review on Slack (MANDATORY)
 
+**The PR is draft, so this message is held, not sent now** — soliciting review on a draft is premature. Generate it, prefix it with `⏸ Send when you mark the PR ready:`, and output it for the user to keep. The user solicits the team once the PR goes ready; this skill never posts to Slack itself.
+
 Generate a brief, friendly message that includes the PR link using the template below based on the PR type:
 
 **Message Templates by Type:**
@@ -357,7 +366,7 @@ Generate a brief, friendly message that includes the PR link using the template 
 **Action:**
 1. Select the appropriate template based on the PR type from the table
 2. Fill in the bracketed sections with actual details from the PR
-3. **Output the complete Slack message** for the user to copy and paste into Slack
+3. **Output the complete Slack message**, prefixed `⏸ Send when you mark the PR ready:`, for the user to keep and send once the PR is no longer draft
 
 ## Execution Notes
 
@@ -365,7 +374,7 @@ Generate a brief, friendly message that includes the PR link using the template 
 - Execute each step sequentially in order (1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6)
 - **Do not skip Step 1.5** unless PR type was explicitly provided via arguments
 - **Step 1.6 is optional** — proceed without a tracker reference if no ID is detected
-- **Do not skip Step 6** — Slack message is mandatory before considering PR complete
+- **Do not skip Step 6** — the Slack message must still be generated (and held, since the PR is draft) before considering the PR complete
 - Wait for user confirmation before proceeding if any diff looks unexpected
 
 **Type Argument Behavior:**
@@ -378,7 +387,7 @@ Generate a brief, friendly message that includes the PR link using the template 
 3. Execute Step 1.6 (issue tracker detection — Linear or Jira) — optional, use if found
 4. Execute Steps 2-5 (branch, commit, push, create PR)
 5. **MANDATORY:** Complete Step 6 (generate and output Slack message)
-6. Confirm PR is ready: all steps completed, Slack message generated
+6. Confirm the draft PR is published: all steps completed, label applied, held Slack message generated
 
 **Optional Arguments:** `/pr [type] [ISSUE-ID]`
 - `/pr` — Auto-detect PR type, no issue
