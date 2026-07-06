@@ -14,11 +14,11 @@ Turn a day's raw work into a short, high-signal evening update that reads as *im
 **Match the pod's house style — this is how the user actually posts:**
 
 - **Bullets are `•`, not `-`.** Each is a complete, readable clause (not a telegraphic fragment): a full thought a PM can parse on its own. Don't compress a real sentence into noun-soup to save words.
-- **Trailing ticket tags, not inline PR links.** Close a bullet with `(BOF-518)` or `[BOF-438]` — the work item, not a `#1234` PR number. The pod tracks tickets; a bare PR number means nothing to the reader. Only surface a PR link when the bullet *is* "ready for review" and the link is the call to action.
+- **Trailing ticket tags, not inline PR links.** Close a bullet with `(BOF-518)` or `[BOF-438]` — the work item, not a `#1234` PR number (a bullet may carry several tags). The pod tracks tickets; a bare PR number means nothing to the reader. Surface a PR link only when the link *is* the point: the bullet is "ready for review", or a just-merged foundation whose merge unblocks the rest of a stack.
 - **First name only**, no surname. The user signs `🛠️ Benjamin — DD/MM`.
-- **2-3 substantive bullets + one `⏭️ Next` line.** Closer to 2 than 4. Cut anything that doesn't carry impact or position.
+- **2-3 substantive bullets + a `⏭️ Next`.** Closer to 2 than 4. Cut anything that doesn't carry impact or position. **The Next is adaptive** (see below): a single `• ⏭️ Next: …` line when there's one continuation, or a `⏭️ Next` header with `◦` sub-bullets when several distinct next items, a handoff, or a blocker need to surface.
 
-Here are three real posts (use them as the target shape, not the abstract template):
+Here are four real posts (use them as the target shape, not the abstract template):
 
 ```
 🛠️ Benjamin — 22/06
@@ -28,22 +28,37 @@ Here are three real posts (use them as the target shape, not the abstract templa
 ```
 
 ```
-🛠️ Benjamin — 23/06
-• Host submission form fully coded: hosts set their payment schedule (deposit → intermediary → balance) directly in the BO on the V2 schema. 4 PRs created, not yet merged (BOF-438).
-• Two reminder features turned on in prod via feature flags: the daily Slack digest flagging signed deals missing a PO or card payment to AM/AEs (BOF-402), and the client-facing PO reminder email, Enterprise-only (BOF-430). Built earlier, activated today.
-• ⏭️ Next: self-review + QA the 4 PRs. Then spin up an ephemeral env to open product QA, and request code review on each PR (BOF-438).
-```
-
-```
 🛠️ Benjamin — 25/06
 • Rebuilt the payment-schedule feature as a clean 5-PR stack. The first pass wasn't up to bar — PRs too big to review, and the UI drifted too far from the mockups. Re-sliced by user story so each piece is small, reviewable, and ships on its own risk: Foundations (BOF-518), Marketplace form (BOF-519), Enterprise €50k gate (BOF-520), BO editing + host lock (BOF-521), rollout + telemetry (BOF-522). (BOF-438)
 • Foundations is the shared base every slice rides on — payment-schedule contracts, schedule builder + validation, and sticky V2 assignment that locks a booking onto staged payments once chosen (BOF-518).
 • ⏭️ Next: get Foundations reviewed (it gates the rest), then walk the stack up — Marketplace form (BOF-519), then Enterprise gate (BOF-520).
 ```
 
-These bullets are *complete clauses with a decision baked in*, not one-line fragments — but the decision is stated, not narrated over a paragraph (see rule 4).
+```
+🛠️ Benjamin — 26/06
+• Foundations (PR1) merged — it's the shared base the other 4 slices in the stack ride on, so the whole sequence is now unblocked: <PR link> (BOF-518).
+• Marketplace payment form fully coded: the host sets their payment schedule (deposit → intermediary → balance) right in the booking flow — editor modal, schedule summary, and rollout. Still in draft, rides on Foundations (BOF-519).
+• ⏭️ Next:
+ ◦ Review + un-draft the Marketplace form (BOF-519)
+ ◦ Decision on how to display the percentages (cumulative 60 / 80 / 100 vs fixed slices)
+ ◦ Open the payment schedule form to all countries, NA included
+ ◦ Define per-currency value thresholds (replacing the flat €50k limit) (BOF-520)
+```
+
+```
+🛠️ Benjamin — 02/07
+• Host submission form (V1) merged and deployed — hosts set their full payment schedule (deposit → intermediary → balance) in the BO. Live behind a feature flag, off until QA clears it (BOF-438).
+• Kicked off milestone 2 in parallel, starting with multi-currency: the host-vs-Naboo routing now judges each deal at its own currency instead of a flat €50k applied everywhere — the piece that has to land before we open the form to non-euro markets (BOF-540).
+• ⏭️ Next:
+ ◦ Tomorrow I flip the flag on the preview env so that @Lucien can run QA on V1 (BOF-438).
+ ◦ 🚧 Blocker: need a product call on North America — where/how do we display the form for this region? (BOF-541)
+```
+
+Note the range: the 22/06 and 25/06 posts close on a **single-line Next**; 26/06 and 02/07 open the Next into a **`◦` block** because there are several distinct next items (26/06) or a handoff + blocker to surface (02/07). The 26/06 headline carries an **inline PR link on a just-merged foundation** (it's the unblock, not a review request), and 30/06's cleanup bullet closed on **multiple tickets** `(BOF-520, BOF-521, BOF-522)`. These bullets are *complete clauses with a decision baked in*, not one-line fragments — but the decision is stated, not narrated over a paragraph (see rule 4).
 
 The update is **scoped to one Linear project**, passed as `$ARGUMENTS`. If no project ID is given, ask for it before gathering anything — it is the scope anchor and there is no sensible default.
+
+**Pod context (current default).** Benjamin posts these in Slack **`#pod-payouts`**. The PM to @-mention for QA handoffs and product decisions is **Lucien Thibert** (`@Lucien`) — so when a Next sub-bullet hands off QA or raises a product call, address it to him by default. This is the current pod's convention, not hardcoded logic: for another project/pod, substitute the right channel and owner.
 
 ## Step 1 — Resolve the project, then gather today's work
 
@@ -99,8 +114,8 @@ Apply these rules, in priority order. They exist because a daily that just lists
 2. **Report movement, not effort.** Ban "started / began / worked on / spent time on". State what is now *true* (shipped / in review / in flight) and where it sits on the trajectory. "Started the email" → "Email scaffolded from the PRD; data layer done."
 3. **One impact anchor.** At least one bullet ties to the business *why* / what it unlocks (the "so that"). If the why isn't obvious from the work, DO NOT invent it — surface it as a one-line note for the user to confirm or fill in.
 4. **Decisions carry their rationale.** When the day's work was a choice, render it "X over Y because Z" rather than just naming the change. The "because Z" usually isn't in git or Linear — mine the devsql session/prompt history to recover it.
-5. **Tag the work item.** Every concrete item closes with its issue tag — `(BOF-518)` or `[BOF-438]`, the work item the pod tracks. Inline PR numbers (`#1234`) are NOT the default: surface a PR link only when the bullet itself is a review request ("ready for review", "needs a reviewer") and the link is the call to action.
-6. **Split the Next line by grain.** Separate in-flight continuations from new big items. Don't flatten a multi-day new workstream to the same level as "finish the thing I'm already on".
+5. **Tag the work item.** Every concrete item closes with its issue tag — `(BOF-518)` or `[BOF-438]`, the work item the pod tracks. A bullet may close on **multiple tickets** when it genuinely spans them — `(BOF-520, BOF-521, BOF-522)` for a cleanup pass across a stack. Inline PR numbers (`#1234`) are NOT the default, but surface a PR link when the link *is* the point: a review request ("ready for review", "needs a reviewer"), **or** a just-merged foundation whose merge unblocks the rest of a stack (the link is the proof it landed).
+6. **Shape the Next by grain.** One continuation → a single `⏭️ Next:` line. Several distinct next items, or a handoff, or a blocker → break `⏭️ Next` into `◦` sub-bullets. Separate in-flight continuations from new big items; don't flatten a multi-day new workstream to the same level as "finish the thing I'm already on". A **handoff or blocker is its own `◦` sub-bullet, prefixed `🚧` and addressed to its owner** (`@Lucien` for QA/product calls) — e.g. `◦ 🚧 Blocker: need a product call on North America … (BOF-541)`. Don't force a `◦` block when one line says it all.
 7. **A heads-down day is a legitimate report.** If there's no shippable or visual output, say so honestly and give position + ETA ("Deep in the X schema, no visible output yet, first cut tomorrow"). When git+Linear are thin, the devsql session titles/topics are what tell you *where* you got to and what's next. This sets expectations and kills the "what are they doing?" question. Never pad to look busy.
 8. **Complete clauses, not fragments — 2-3 bullets + one Next.** Each bullet is a full, readable thought (the real posts above are the bar), not a telegraphic noun-phrase. But brevity lives in the *count*: closer to 2 substantive bullets than 4, riding on shared pod context. A bullet may carry a decision and its consequence; it must not sprawl into a paragraph.
 
@@ -123,24 +138,37 @@ Once the bullets are written, pass the draft through the `humanizer` skill to st
 
 - **em-dashes and `→` arrows** — they are structure (foundation → unlock, decision X → Y), not dash overuse.
 - **terse fragments** — bullets are not required to be full sentences; the post rides on shared pod context.
-- **emoji, `•` bullets, and ticket tags** — `🛠️`, `⏭️`, `•`, `(BOF-518)`, `[BOF-438]` all stay.
+- **emoji, `•`/`◦` bullets, and ticket tags** — `🛠️`, `⏭️`, `🚧`, `•`, `◦`, `(BOF-518)`, `[BOF-438]`, and `@mention` handoffs all stay.
 
 So: keep the shape, remove the tells. If humanizer is unavailable, ship the draft as-is — it's a polish pass, not a gate.
 
 ## Output format
 
-ALWAYS produce exactly this shape, as a fenced markdown block ready to paste:
+ALWAYS produce a fenced markdown block ready to paste, in one of these two shapes. Pick by grain — **single-line Next when there's one continuation, `◦` block when several items / a handoff / a blocker need to surface** (rule 6).
+
+Single-line Next (one continuation):
 
 ```
 🛠️ <first name> — <date>
 • <foundation or highest-impact item — complete clause, what it unlocks, trailing (TICKET)>
 • <consumer / feature item — status, trailing (TICKET)>
-• ⏭️ Next: <in-flight continuation>. Then <new item (TICKET)>; + <smaller item (TICKET)>.
+• ⏭️ Next: <in-flight continuation>. Then <new item (TICKET)>.
 ```
 
-- Bullets are `•`. First name only in the header. Date via `$(date +%d/%m)`.
-- 2-3 substantive bullets + the Next line. A third bullet only if it carries its own impact — otherwise stop at 2.
-- Close each concrete item with its `(TICKET)` tag. Use a PR link only on a review-request bullet (rule 5).
+`◦` block Next (several items / handoff / blocker):
+
+```
+🛠️ <first name> — <date>
+• <foundation or highest-impact item — complete clause, what it unlocks, trailing (TICKET)>
+• <consumer / feature item — status, trailing (TICKET)>
+• ⏭️ Next:
+ ◦ <in-flight continuation (TICKET)>
+ ◦ 🚧 Blocker: <decision needed, addressed to owner e.g. @Lucien> (TICKET)
+```
+
+- Bullets are `•`, Next sub-bullets are ` ◦` (leading space). First name only in the header. Date via `$(date +%d/%m)`.
+- 2-3 substantive bullets + the Next. A third bullet only if it carries its own impact — otherwise stop at 2.
+- Close each concrete item with its `(TICKET)` tag; a bullet may carry multiple tags when it spans them. Use a PR link on a review-request bullet or a just-merged foundation that unblocks a stack (rule 5).
 
 ## Gate before delivering
 
@@ -153,9 +181,9 @@ This is not a decorative checklist — it is a gate. Before emitting, run every 
 - [ ] The one cross-cutting item is headline or bullet 2 — never last, never buried (Step 2.5).
 - [ ] No point is stated twice — least of all the shared-infra one.
 - [ ] At least one real impact/unlock anchor — and nothing invented.
-- [ ] Every concrete item closes with its `(TICKET)` tag; PR links appear only on review-request bullets.
-- [ ] Next separates in-flight from new.
-- [ ] 2-3 bullets + one Next line — closer to 2 than 4.
+- [ ] Every concrete item closes with its `(TICKET)` tag (one or several); PR links appear only on review-request bullets or a just-merged foundation that unblocks a stack.
+- [ ] Next is single-line when one item, a ` ◦` block when several / a handoff / a blocker; it separates in-flight from new, and any blocker is prefixed `🚧` and addressed to its owner (`@Lucien` for QA/product).
+- [ ] 2-3 bullets + one Next (single-line or `◦` block) — closer to 2 than 4.
 - [ ] Any inferred "why" flagged for the user to confirm.
 - [ ] Draft passed through humanizer (slop removed; em-dashes/→/fragments/emoji preserved).
 
