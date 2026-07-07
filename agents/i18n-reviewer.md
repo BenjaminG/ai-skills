@@ -1,7 +1,7 @@
 ---
 name: i18n-reviewer
 description: Reviews JSX/TSX in a code diff for i18n/l10n regressions. Invoked by the gate-wf workflow when .tsx/.jsx files plus an i18n library are present.
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -62,9 +62,9 @@ Why this works:
 
 ## Auto-populate from PR review threads (cache-miss path only)
 
-The context-checker (see `agents/context-checker.md`) emits, for any input finding that a resolved/rebutted PR review thread rejects, an annotation with `verdict: "DISMISSED"`, `dismiss_confidence: "resolved" | "rebutted"`, and `citation` (the thread text verbatim). This only happens on a full run (cache miss), when the bundle's `### Review threads` is fresh.
+The context-checker (see `agents/context-checker.md`) emits, for any input finding that a resolved/rebutted PR review thread rejects, an annotation with `verdict: "DISMISSED"`, `dismiss_confidence: "resolved" | "rebutted"`, and `citation` (the thread text verbatim). The workflow merges that annotation back onto the finding, so it returns in `findings[]` carrying `context_verdict: "DISMISSED"`, `dismiss_confidence`, and `context_citation`. This only happens on a full run (cache miss), when the bundle's `### Review threads` is fresh.
 
-After the workflow returns, for each annotation with `verdict == "DISMISSED"`, find its finding (match on `rule_id + file + line`), compute its anchor, and **upsert** into the registry:
+After the workflow returns, for each finding with `context_verdict == "DISMISSED"` (e.g. `jq '.findings[] | select(.context_verdict=="DISMISSED")'`), compute its anchor and **upsert** into the registry:
 
 ```bash
 # Upsert one dismissal (dedupe by anchor). NEW=<one dismissal JSON object>

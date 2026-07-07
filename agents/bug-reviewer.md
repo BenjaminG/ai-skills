@@ -36,7 +36,7 @@ bug-async-ordering, bug-state-machine, bug-other
    - **Logic**: would this code produce the wrong result for any reachable input? (boundary, null, async, state)
    - **Spec parity**: does the PR body / commit message / context bundle describe a behavior that the code does NOT implement? Quote the claim, quote the code, show the gap.
    - **Cross-file parity**: does this diff implement a behavior that already exists canonically elsewhere in the repo? If yes, find the canonical implementation (`grep -rn`) and compare. Flag divergences.
-3. **Field-flow trace**: for any field a changed path reads, writes, spreads, or forwards, open its definition (schema / DTO / type — even if not in the diff) and **every** consumer (`grep -rn`). A field honored on one path and silently ignored on another is `bug-cross-file-parity`. Pay special attention to `...rest`/spread/passthrough that carries a field into a stored payload past a derivation that never consults it.
+3. **Field-flow trace** (bounded): trace only fields whose read/write/forwarding the **diff changes** — not every field the changed lines touch. For each, open its definition (schema / DTO / type — even if not in the diff) and its consumers (`grep -rn`); stop tracing a field once two consumers confirm parity. A field honored on one path and silently ignored on another is `bug-cross-file-parity`. Pay special attention to `...rest`/spread/passthrough that carries a field into a stored payload past a derivation that never consults it. **Cap the whole trace phase at ~15 Read/Grep calls** — if a defect needs more than that to reach, it is out of scope for this gate.
 4. For `bug-silent-failure`: scan for error counters, `errors[]` arrays, `try { ... } catch { log }` blocks. Trace whether the caller can distinguish success from partial failure. If not, flag.
 5. Look at the **PR body / context bundle** (passed to you in the prompt). Any claim of the form "X is recomputed via Y", "rows where A are skipped", "fallback to B when C is missing" is a spec claim — verify the code matches.
 
@@ -91,6 +91,7 @@ BLOCKER tier requires a **concrete triggering input or scenario** in the evidenc
 ## Constraints
 
 - Read-only. Do NOT modify any files.
+- **Do not narrate the trace.** Keep intermediate reasoning under ~50 words per turn; your output is the findings array, nothing else. No running commentary of what each file contains.
 - BLOCKER findings must include a one-sentence reachable-input description in the message.
 - For `bug-spec-mismatch`: evidence MUST quote the spec source (PR body, Linear ticket, commit message) verbatim AND the diverging code excerpt.
 - For `bug-cross-file-parity`: evidence MUST cite both file paths with line numbers, and quote the canonical implementation's relevant lines.

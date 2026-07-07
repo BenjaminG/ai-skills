@@ -1,7 +1,7 @@
 ---
 name: react-reviewer
 description: Reviews a code diff for React/Next.js best-practice violations and component-composition smells. Invoked by the gate-wf workflow.
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: gate-wf
-description: Workflow-native quality gate for branch changes — parallel reviewers (Bug, SOLID, Security, Simplify, Slop, optionally React/a11y/i18n/migration) with adversarial verify, CLAUDE.md/ADR enforcement, and a stable PASS / PASS WITH NOTES / FAIL verdict. Read-only. Built on Claude Code Workflows.
+description: Workflow-native quality gate for branch changes — parallel reviewers (Bug, SOLID, Security, Simplify+Slop, optionally React/a11y/i18n/migration) with tier-scaled adversarial verify, CLAUDE.md/ADR enforcement, and a stable PASS / PASS WITH NOTES / FAIL verdict. Read-only. Runs from a static shipped workflow script.
 argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <runId>]"
 ---
 
@@ -10,12 +10,12 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `2`. Cache entries are keyed on this — bumping invalidates all caches at once.
+**Skill version**: `3`. Cache entries are keyed on this — bumping invalidates all caches at once. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
 
 ## Prerequisites
 
 - Workflows feature enabled: `CLAUDE_CODE_WORKFLOWS=1` in `settings.json` env.
-- Plugin installed (this skill ships the reviewer/skeptic/context-checker `agents/*.md` at the plugin root; the workflow script itself is generated at runtime — see Step 3).
+- Plugin installed (this skill ships the reviewer/skeptic/context-checker `agents/*.md` at the plugin root and the orchestration script at `skills/gate-wf/scripts/workflow.js` — see Step 3).
 
 ## Arguments
 
@@ -176,7 +176,7 @@ if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
   [ -n "$ADR_GIT_SHA" ] && WT_HASH=$(echo "${WT_HASH} ${ADR_GIT_SHA}" | shasum | cut -c1-12)
 fi
 
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v2"
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v3"
 STATE_DIR="$HOME/.claude/gate-wf-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
@@ -295,126 +295,88 @@ Full spec: `references/scope-gate.md`. Hard-stops here `exit 0` directly — the
 - Run the Haiku classifier (single Agent call, read-only, model: haiku) — cache its result at `$STATE_DIR/${BRANCH_SAFE}.scope.json` keyed on SHA-12 of `CHANGED_FILES`.
 - Decision: 0 SUSPICIOUS → silent. 1–3 → `SUSPICIOUS_BANNER` (soft-warn). ≥4 → hard-stop unless `--ignore-scope-gate`.
 
-## Step 3: Run the gate as a dynamic workflow
+## Step 3: Run the gate workflow
 
-The skill writes a prompt that describes the orchestration. Claude generates and runs
-the workflow script, then returns `{ findings: [...] }`.
+The orchestration lives in a static script shipped with the plugin
+(`skills/gate-wf/scripts/workflow.js`). The skill resolves its path, invokes it via the
+`Workflow` tool, and gets back `{ findings: [...] }`. The shape is fixed in code —
+parallel reviewers → tier-scaled adversarial verify (BLOCKER→3 skeptics, MAJOR→1, NIT→0)
+with per-`(file,line)` dedup → single context annotation, with CLAUDE.md/ADR synthesis
+running alongside the reviewers. No model-generated script, so the shape can't drift and
+`--resume` caches reliably.
 
 ### 3a. Prepare flag-conditional reviewer list
 
 ```bash
+# simplify-reviewer covers slop too (merged in v3 — loads /simplify + /ai-skills:code-slop).
 REVIEWERS=(
   "ai-skills:bug-reviewer"
   "ai-skills:solid-reviewer"
   "ai-skills:security-reviewer"
   "ai-skills:simplify-reviewer"
-  "ai-skills:slop-reviewer"
 )
 [ $SPAWN_REACT -eq 1 ]     && REVIEWERS+=("ai-skills:react-reviewer")
 [ $SPAWN_A11Y -eq 1 ]      && REVIEWERS+=("ai-skills:a11y-reviewer")
 [ $SPAWN_I18N -eq 1 ]      && REVIEWERS+=("ai-skills:i18n-reviewer")
 [ $SPAWN_MIGRATION -eq 1 ] && REVIEWERS+=("ai-skills:migration-reviewer")
 
-REVIEWERS_LIST=$(printf '  - %s\n' "${REVIEWERS[@]}")
+# JSON array for the workflow's args.reviewers
+REVIEWERS_JSON=$(printf '%s\n' "${REVIEWERS[@]}" | jq -R . | jq -sc .)
 ```
 
-### 3b. Build the orchestration prompt
+### 3b. Resolve the workflow script
 
-The prompt is the contract. It tells Claude exactly what workflow shape to generate.
+The script ships with the plugin. Resolve its path (plugin-root env → newest plugin
+cache → global-skills fallback):
+
+```bash
+WF_SCRIPT=""
+for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/gate-wf/scripts/workflow.js}" \
+         $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/gate-wf/scripts/workflow.js 2>/dev/null | sort -V | tail -1) \
+         "$HOME/.claude/skills/gate-wf/scripts/workflow.js"; do
+  [ -n "$c" ] && [ -f "$c" ] && WF_SCRIPT="$c" && break
+done
+[ -z "$WF_SCRIPT" ] && { echo "gate-wf: workflow.js not found — reinstall the plugin" >&2; exit 2; }
+```
+
+### 3c. Invoke and capture result
+
+Invoke the `Workflow` tool with the resolved script and the run args:
 
 ```
-ultracode: Run a deterministic quality gate on this branch's diff.
-
-ARTIFACTS (read these files inside the workflow):
-- Diff: $TMP_DIR/diff-full.txt
-- Plus-lines (filtered to + lines per file): $TMP_DIR/plus-lines.txt
-- Context bundle (CLAUDE.md + ADRs + Linear + PR + past sessions): $TMP_DIR/context-bundle.md
-- Spawn flags: react=$SPAWN_REACT, a11y=$SPAWN_A11Y, i18n=$SPAWN_I18N, migration=$SPAWN_MIGRATION
-- Session ID: $SESSION_ID
-
-ORCHESTRATION SHAPE (your generated workflow must follow this exactly):
-
-Phase 1 — Parallel Review:
-  Spawn these reviewer agents in parallel, each with the schema below:
-$REVIEWERS_LIST
-  Each reviewer reads diff-full.txt + plus-lines.txt to find WHAT CHANGED, but is
-  expected to read whatever else it needs — full versions of changed files, imported
-  modules, schemas, sibling call paths, callers — to reason about correctness. The diff
-  scopes WHERE a finding is anchored (see location rules), NOT what you may read. A bug
-  whose trigger is on a + line but whose evidence lives in a non-diff file (a schema, a
-  parallel code path) is IN SCOPE — anchor it to the diff line and cite the external
-  file in the evidence. Then return findings.
-
-  Per-finding schema:
-  {
-    rule_id: string,           // stable identifier, e.g. "security-sql-injection"
-    file: string,
-    line: number,
-    location: "diff-line" | "adjacent",  // adjacent = legacy code touched but not changed
-    tier: "BLOCKER" | "MAJOR" | "NIT",
-    message: string,
-    evidence: string,          // 1-3 lines from the file showing the issue
-    suggested_fix: string
+Workflow({
+  scriptPath: <WF_SCRIPT>,
+  args: {
+    tmpDir:   "<TMP_DIR>",
+    reviewers: <REVIEWERS_JSON>,   // e.g. ["ai-skills:bug-reviewer", ...]
+    prNumber:  <PR number or null>
   }
-
-Phase 2 — Adversarial Verify (per-finding, streaming):
-  As each reviewer returns, for every finding it surfaced, spawn 3 independent
-  skeptic agents (agentType: ai-skills:skeptic-reviewer) that try to refute it.
-  Each skeptic reads the finding + the relevant file region.
-  Skeptic schema: { refuted: boolean, reason: string }
-  Drop findings where ≥2 of 3 skeptics return refuted=true.
-  Survivors carry `verifications: [{refuted, reason}, ...]` (length 3).
-
-Phase 3 — Context Check (single agent):
-  Spawn ai-skills:context-checker once with: surviving findings + context bundle.
-  It annotates each finding with:
-    - context_verdict: "OK" | "CONFLICT" | "UNCERTAIN" | "DISMISSED"
-    - context_source:  "linear" | "pr" | "session" | "claude-md" | "adr" | "none"
-    - context_citation: string (when not OK)
-    - context_reason: string (when not OK)
-    - dismiss_confidence: "resolved" | "rebutted"  (only when verdict == DISMISSED)
-  A DISMISSED verdict means a PR review thread rejected this finding as a
-  false-positive (see context-checker Part 3). Carry the verdict + citation +
-  dismiss_confidence through on the finding — the skill upserts these into the
-  dismissal registry after the run (see references/dismissals.md). Do NOT drop
-  DISMISSED findings inside the workflow; the skill partitions at render-time.
-  It may also SYNTHESIZE new findings for CLAUDE.md or ADR violations not
-  already surfaced by reviewers. Synthesized findings carry:
-    - reviewer: "context-checker"
-    - citation: string (claude-md path or ADR ID)
-    - source: "claude-md" | "adr"
-  Synthesized findings have empty verifications[] and skip Phase 2.
-
-CONSTRAINTS:
-- Boy Scout asymmetry: adjacent (legacy) code may be flagged MAJOR/NIT but never BLOCKER.
-- Read-scope ≠ finding-scope: read any file to reason; only REPORT findings anchored to
-  changed files (per each reviewer's location rules).
-- Reviewers are READ-ONLY. No edits, no shell.
-- Use pipeline() so per-finding verify can start as soon as each reviewer returns
-  (don't wait for all reviewers to finish before starting verify).
-- Workflow must return { findings: [...] } as a single JSON object.
-
-Generate the workflow script and run it.
+})
 ```
 
-### 3c. Submit and capture result
+The script assembles its own agent prompts from `args` (the per-finding schema, the
+read-scope/finding-scope and Boy-Scout constraints, the skeptic and context-checker
+modes all live in `scripts/workflow.js` and the `agents/*.md` system prompts). It returns
+`{ findings: [...] }` where each finding already carries `verifications[]`,
+`context_verdict`/`context_source`/`context_citation`/`context_reason` (and
+`dismiss_confidence` when DISMISSED), `reviewer`, and `also_flagged_by` for deduped
+duplicates. Synthesized `claude-md-violation`/`adr-violation` findings carry
+`reviewer: "context-checker"` with empty `verifications[]`.
 
-The skill issues this prompt to Claude in the active session. Claude generates the
-workflow script via the dynamic workflows runtime, executes it, and returns
-`{ findings: [...] }`.
+After the run, capture the `runId` from `/workflows` (task panel). Pass it to Step 5 for
+caching and to the verdict footer.
 
-After the run completes, capture the `runId` from `/workflows` (shown in the task
-panel). Pass it to Step 5 for caching and to the verdict footer.
+To re-run after editing an `agents/*.md`, invoke `Workflow({scriptPath: <WF_SCRIPT>,
+resumeFromRunId: <runId>})` (same session) — unchanged agent calls return cached results;
+only the edited agent's calls re-run.
 
 ### 3d. Failure modes
 
-If Claude declines to generate a workflow (e.g., user has workflows disabled):
-- Surface the error to the user and exit.
-- If `disableWorkflows=true` in settings, the skill cannot proceed.
-
-If a reviewer agent type is not found:
-- The dynamic workflow will surface this as an error per agent.
-- Verify Step 0 dependencies passed, and that the plugin is loaded.
+- **Workflows disabled** (`disableWorkflows=true`, or `CLAUDE_CODE_WORKFLOWS` unset): the
+  `Workflow` tool errors. Surface it and exit — the skill cannot proceed.
+- **Reviewer agent type not found**: the workflow surfaces a per-agent error. Verify
+  Step 0 dependencies passed and the plugin is loaded.
+- **`workflow.js` not found**: Step 3b exits — reinstall the plugin.
 
 ## Step 4: Compute verdict
 
@@ -493,14 +455,14 @@ Then list findings grouped by tier, then by reviewer:
 ## MAJOR
 
 ### M1 — [solid-reviewer] solid-srp
-- `src/services/booking.ts:120` (diff-line) [refute votes: 1/3] ❔ ambiguous historical context
+- `src/services/booking.ts:120` (diff-line) [refute votes: 0/1] ❔ ambiguous historical context
   message: BookingService now handles 4 unrelated responsibilities
   evidence: …
   fix: Extract pricing logic into PricingCalculator
   context: Linear NAB-204 mentions "BookingService is the gateway, by design"
 ```
 
-Display `[refute votes: K/3]` where K is the count of skeptics who refuted (still surviving means K < 2).
+Display `[refute votes: K/N]` where N = `verifications.length` and K is the count of skeptics who refuted. Verify is tier-scaled: BLOCKER runs 3 skeptics (`K/3`, survives iff K < 2), MAJOR runs 1 (`K/1`, survives iff K = 0), NIT runs 0 — render `[unverified]` instead of a vote count (NITs never affect the verdict, so they are shown but not adversarially checked). A deduped duplicate (`also_flagged_by` present) appends `(also: <reviewer>)`.
 
 For `context_verdict`:
 
@@ -598,11 +560,13 @@ done
 ## Execution notes
 
 - **Requires**: `CLAUDE_CODE_WORKFLOWS=1` in `settings.json`.
-- **Pipeline shape**: workflow uses `pipeline()` over reviewers — each reviewer's findings stream into per-finding adversarial verify the moment its review returns. No barrier between review and verify.
-- **Adversarial verify**: 3 independent skeptics per finding, refute-prompted (default refuted=true if uncertain). Findings dropped if ≥2/3 refute.
-- **Concurrency cap**: workflow runtime caps at 16 parallel agents per workflow. With 8 reviewers + 3 skeptics per finding, peak concurrency is queued automatically.
-- **No `Date.now()` in the workflow**: all timestamps are stamped in this skill (bash + post-workflow). The workflow is purely deterministic for resume to work.
-- **Resume**: `--resume <runId>` skips cached `(prompt, opts)` pairs. Because the workflow script is regenerated from the Step 3 prompt on each run, resume hits the cache only when the regenerated `agent()` calls match the prior run's prompts byte-for-byte — keep the orchestration prompt and `agents/*.md` stable to maximize cache hits. Editing an `agents/*.md` invalidates only that agent's calls, so targeted re-runs stay cheap.
+- **Static script**: the orchestration is `scripts/workflow.js` (shipped with the plugin), invoked via `Workflow({scriptPath, args})`. It is NOT model-generated, so the shape is fixed run-to-run — no drift (double context-checker, stray extra reviewers), and `--resume` caches reliably.
+- **Pipeline shape**: the script uses `pipeline()` over reviewers — each reviewer's findings stream into per-finding verify the moment its review returns. No barrier between review and verify. CLAUDE.md/ADR synthesis (`context-checker` in `MODE: synthesize`) runs alongside the reviewers; the single annotation pass (`MODE: annotate`) runs once at the end over survivors.
+- **Tier-scaled verify**: BLOCKER → 3 independent skeptics (drop if ≥2 refute), MAJOR → 1 skeptic (drop if it refutes), NIT → 0 (shown, unverified — NITs never affect the verdict, so verifying them was pure cost). Skeptics are refute-prompted (default refuted=true if uncertain) with a ≤6 tool-call budget.
+- **Dedup**: findings are claimed per `(file,line)`; the first reviewer to claim a line owns it, later duplicates merge in as `also_flagged_by` without spawning their own skeptics.
+- **Concurrency cap**: workflow runtime caps at 16 parallel agents. Reviewers + skeptics beyond that queue automatically.
+- **No `Date.now()`/`Math.random()` in the workflow**: all timestamps are stamped in this skill (bash + post-workflow). The script is deterministic so resume works.
+- **Resume**: `--resume <runId>` → `Workflow({scriptPath, resumeFromRunId})`. Same session, same args → unchanged `agent()` calls return cached results; editing one `agents/*.md` re-runs only that agent's calls.
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate.
 - **Tier semantics**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
 - **Dismissals**: false-positives are suppressed via a per-branch registry kept *outside* `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
