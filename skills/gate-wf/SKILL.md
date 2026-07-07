@@ -354,6 +354,9 @@ Workflow({
 })
 ```
 
+Pass `args` as a real JSON object (not a stringified blob). The script defensively
+normalizes a JSON-stringified `args` too, but the object form is canonical.
+
 The script assembles its own agent prompts from `args` (the per-finding schema, the
 read-scope/finding-scope and Boy-Scout constraints, the skeptic and context-checker
 modes all live in `scripts/workflow.js` and the `agents/*.md` system prompts). It returns

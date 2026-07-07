@@ -9,6 +9,11 @@ export const meta = {
 }
 
 // args: { tmpDir, reviewers: string[], prNumber: number|null }
+// args may arrive as an object or a JSON string depending on harness path; normalize.
+const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
+if (!Array.isArray(A.reviewers) || !A.reviewers.length) {
+  throw new Error('gate-wf: expected args {tmpDir, reviewers:[...], prNumber} — got ' + JSON.stringify(args).slice(0, 200))
+}
 
 const FINDING_PROPS = {
   rule_id: { type: 'string' },
@@ -54,9 +59,9 @@ const CONTEXT_SCHEMA = {
 const reviewPrompt = (reviewer) => `Review this branch's diff. You are ${reviewer}.
 
 Artifacts:
-- Diff: ${args.tmpDir}/diff-full.txt
-- Plus-lines (+ lines per file): ${args.tmpDir}/plus-lines.txt
-- Context bundle (CLAUDE.md + ADRs + Linear + PR + sessions): ${args.tmpDir}/context-bundle.md
+- Diff: ${A.tmpDir}/diff-full.txt
+- Plus-lines (+ lines per file): ${A.tmpDir}/plus-lines.txt
+- Context bundle (CLAUDE.md + ADRs + Linear + PR + sessions): ${A.tmpDir}/context-bundle.md
 
 Read whatever else you need — full versions of changed files, imported modules, schemas, callers — to reason. The diff scopes WHERE a finding is anchored, NOT what you may read. A defect whose trigger is on a + line but whose evidence lives in a non-diff file IS in scope: anchor it to the diff line, cite the external file in evidence.
 
@@ -67,7 +72,7 @@ Constraints:
 
 Return { findings: [...] }. Empty is valid — most diffs have few or none.`
 
-const skepticPrompt = (f, i) => `You are an adversarial skeptic (independent instance ${i + 1}). A ${f.reviewer} flagged this finding${args.prNumber ? ` on PR #${args.prNumber}` : ''}. Try hard to REFUTE it. Default to refuted=true when uncertain — refuted=false ONLY if it is clearly a real defect after investigation.
+const skepticPrompt = (f, i) => `You are an adversarial skeptic (independent instance ${i + 1}). A ${f.reviewer} flagged this finding${A.prNumber ? ` on PR #${A.prNumber}` : ''}. Try hard to REFUTE it. Default to refuted=true when uncertain — refuted=false ONLY if it is clearly a real defect after investigation.
 
 FINDING:
 - rule_id: ${f.rule_id}
@@ -82,14 +87,14 @@ Read the cited region (±40 lines) and every other file the finding cites. Budge
 const synthesizePrompt = () => `MODE: synthesize
 
 Read:
-- Diff: ${args.tmpDir}/diff-full.txt
-- Context bundle: ${args.tmpDir}/context-bundle.md
+- Diff: ${A.tmpDir}/diff-full.txt
+- Context bundle: ${A.tmpDir}/context-bundle.md
 
 Walk the diff against the bundle's ## CLAUDE.md and ## ADR sections. Emit synthesized findings for documented-rule violations (claude-md-violation / adr-violation) per your instructions. There are no input findings yet — do NOT annotate. Return { annotations: [], synthesized: [...] }.`
 
 const annotatePrompt = (survivors) => `MODE: annotate
 
-Context bundle: ${args.tmpDir}/context-bundle.md
+Context bundle: ${A.tmpDir}/context-bundle.md
 
 Annotate each of these ${survivors.length} surviving findings with a verdict (OK/CONFLICT/UNCERTAIN/DISMISSED) per your instructions. Do NOT synthesize new findings (synthesis already ran). Return { annotations: [...], synthesized: [] }.
 
@@ -148,8 +153,8 @@ const verifyStage = async (review, reviewer) => {
   return (await parallel(toVerify.map((f) => () => verifyOne(f)))).filter(Boolean)
 }
 
-log(`Reviewing with ${args.reviewers.length} reviewers`)
-const streamed = await pipeline(args.reviewers, reviewStage, verifyStage)
+log(`Reviewing with ${A.reviewers.length} reviewers`)
+const streamed = await pipeline(A.reviewers, reviewStage, verifyStage)
 const survivors = streamed.filter(Boolean).flat()
 log(`${survivors.length} findings survived verify; annotating against context`)
 
