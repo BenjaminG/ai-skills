@@ -18,16 +18,17 @@ Retrieve review feedback and status checks for a pull request, classify each ite
 
 Run these in parallel (single message, multiple tool calls). Cap any log output aggressively.
 
-- **Inline review comments (threaded):** `gh pr view <n> --json reviewThreads` — keep `isResolved`, `isOutdated`, path, line, comments[].author/body.
-- **Thread IDs (needed by the `pr-respond` skill if you'll resolve/reply to threads):** `gh pr view --json reviewThreads` omits the GraphQL node `id` required to resolve a thread. Fetch it (plus each first comment's `databaseId` for reply/reaction endpoints) with:
+- **Inline review comments (threaded):** `gh pr view` has **no** `reviewThreads` JSON field — it errors with `Unknown JSON field`. This is where bot findings (Cursor Bugbot, `naboo-ai-reviews`, etc.) live, so fetch them via GraphQL. The same query also returns the node `id` (needed by `pr-respond` to resolve a thread) and each first comment's `databaseId` (needed for reply/reaction endpoints):
 
   ```bash
   gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
-      reviewThreads(first:100){ nodes{ id isResolved isOutdated
-        comments(first:1){ nodes{ databaseId author{login} body path } } } } } }
+      reviewThreads(first:100){ nodes{ id isResolved isOutdated path line
+        comments(first:1){ nodes{ databaseId author{login} body } } } } } }
   }' -F owner=OWNER -F repo=REPO -F pr=<n>
   ```
+
+  Keep `id`, `isResolved`, `isOutdated`, `path`, `line`, and comments[].databaseId/author/body.
 - **Review summaries:** `gh pr view <n> --json reviews` — state (APPROVED / CHANGES_REQUESTED / COMMENTED), author, body.
 - **Conversation comments:** `gh api repos/{owner}/{repo}/issues/<n>/comments` (owner/repo from step 1).
 - **Status checks:** `gh pr checks <n>`. For each FAIL, fetch a short log tail: `gh run view --log-failed --job <job-id> | tail -n 50`.
