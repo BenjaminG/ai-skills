@@ -147,16 +147,28 @@ git push -u origin HEAD
 **Configuration:**
 - **Draft:** always create the PR as draft (`gh pr create --draft`). The PR is born draft whatever the path afterwards; it goes ready later, by hand or via `/ci-watch`.
 - **Base branch:** `develop` for **mk-copilot** projects, `master` for all other repos
-- **PR title format:**
-  - **With issue ID:** `{type}({ID}): description` → `feat(ENG-1234): add user auth` or `feat(MITB-565): add user auth`
-  - **Without issue ID:** `{type}: description` → `feat: add user auth`
-- **PR body:** Use the appropriate template below based on the PR type
+- **PR title format:** `{type}({scope}): description [{ID}]` — the scope is the primary package or domain modified (inferred from the diff, e.g. `api`, `web`, `backoffice`), and the issue ID goes in trailing square brackets, not in the scope.
+  - **With issue ID:** `feat(api): add user auth [ENG-1234]` or `feat(web): add user auth [MITB-565]`
+  - **Without issue ID:** `{type}({scope}): description` → `feat(api): add user auth`, or `{type}: description` when no scope stands out → `feat: add user auth`
+  - **Constraints:** imperative, English, single type prefix; no `!` suffix, no `BREAKING CHANGE:` footer, no combined prefixes; keep it concise (under ~60 chars before the trailing `[ID]`).
+- **PR body:** Fill the repo's `.github/PULL_REQUEST_TEMPLATE.md` if present; otherwise fall back to the per-type template below (see the PR body section).
 
 **After creating**, apply the merge-queue label (skips silently in repos that don't define it — this skill is multi-repo):
 
 ```bash
 gh pr edit <pr-url> --add-label merge-queue-validation-gate 2>/dev/null || true
 ```
+
+### PR Body: repo template first, per-type fallback
+
+Choose the structure before writing:
+
+- **If the repo has `.github/PULL_REQUEST_TEMPLATE.md`**, fill that template in full — every section gets real content drawn from the diff, no placeholders left behind. This takes precedence over the per-type templates below.
+- **Otherwise**, use the per-type template further down that matches the detected PR type (the historical behaviour).
+
+**Tracker link:** when an issue ID was detected in Step 1.6, append `Closes [{ID}]({ISSUE_URL})` at the bottom of the body — in both cases (repo template or per-type fallback). The per-type templates already carry a `**{TRACKER} issue**:` line; keep it, and add the `Closes …` line at the end.
+
+The Description Writing Principles below apply to whichever structure you picked.
 
 ### Description Writing Principles (MANDATORY for `fix` and `feature`)
 
