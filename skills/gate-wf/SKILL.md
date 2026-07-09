@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `3`. Cache entries are keyed on this — bumping invalidates all caches at once. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
+**Skill version**: `4`. Cache entries are keyed on this — bumping invalidates all caches at once. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
 
 ## Prerequisites
 
@@ -176,7 +176,7 @@ if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
   [ -n "$ADR_GIT_SHA" ] && WT_HASH=$(echo "${WT_HASH} ${ADR_GIT_SHA}" | shasum | cut -c1-12)
 fi
 
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v3"
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v4"
 STATE_DIR="$HOME/.claude/gate-wf-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
@@ -247,13 +247,41 @@ Merge fetched + cached portions into `$TMP_DIR/context-bundle.md` with the secti
 git diff $BASE_SHA...HEAD --name-only > "$TMP_DIR/diff-summary.txt"
 git diff $BASE_SHA...HEAD              > "$TMP_DIR/diff-full.txt"
 
-# `+` lines per file (input to reviewers)
-git diff $BASE_SHA...HEAD | awk '
-  /^diff --git/ { f=$3; sub(/^a\//,"",f) }
-  /^\+\+\+/ { f=substr($2,3) }
-  /^\+/ && !/^\+\+\+/ { print f": "substr($0,2) }
-' > "$TMP_DIR/plus-lines.txt"
+# plus-lines: `+` lines per file. Reused for every scoped variant below.
+plus_lines() {  # $1 = diff file → stdout
+  awk '
+    /^diff --git/ { f=$3; sub(/^a\//,"",f) }
+    /^\+\+\+/ { f=substr($2,3) }
+    /^\+/ && !/^\+\+\+/ { print f": "substr($0,2) }
+  ' "$1"
+}
+
+# Scoped diffs: each reviewer reads only the slice it can act on, so docs/snapshots/
+# lockfiles never fill a code reviewer's context and the JSX reviewers see only .tsx/.jsx.
+# diff-full.txt stays for the context-checker (it walks everything against CLAUDE.md/ADR).
+# ponytail: pathspec excludes are the noise floor, not a security boundary.
+# Leading '.' anchors the include set; :(exclude,glob) so **/ also matches root-level
+# files (a bare **/ won't match zero dirs, so a root pnpm-lock.yaml would leak).
+CODE_EXCLUDES=(
+  '.'
+  ':(exclude,glob)**/*.md'
+  ':(exclude,glob)**/*.snap' ':(exclude,glob)**/__snapshots__/**'
+  ':(exclude,glob)**/*.lock' ':(exclude,glob)**/*-lock.json'
+  ':(exclude,glob)**/*.lockb' ':(exclude,glob)**/pnpm-lock.yaml'
+  ':(exclude,glob)docs/**'
+)
+set -f
+git diff $BASE_SHA...HEAD -- "${CODE_EXCLUDES[@]}" > "$TMP_DIR/diff-code.txt"
+git diff $BASE_SHA...HEAD -- '*.tsx' '*.jsx'        > "$TMP_DIR/diff-tsx.txt"
+set +f
+
+plus_lines "$TMP_DIR/diff-code.txt" > "$TMP_DIR/diff-code-plus.txt"
+plus_lines "$TMP_DIR/diff-tsx.txt"  > "$TMP_DIR/diff-tsx-plus.txt"
 ```
+
+The workflow (`scripts/workflow.js`) maps each reviewer to its diff: the JSX reviewers
+(`react`, `a11y`, `i18n`) read `diff-tsx*`; every other reviewer reads `diff-code*`; the
+context-checker's CLAUDE.md/ADR synthesis reads `diff-full.txt`.
 
 ### 2b. Conditional reviewer flags
 

@@ -56,11 +56,19 @@ const CONTEXT_SCHEMA = {
   },
 }
 
+// Each reviewer reads only the slice of the diff it can act on — docs/snapshots/lockfiles
+// stripped for the code reviewers, tsx/jsx-only for the JSX reviewers. Keeps irrelevant
+// files out of the agent's context. Scoped diff files are generated in SKILL.md Step 2a.
+const TSX_REVIEWERS = new Set([
+  'ai-skills:react-reviewer', 'ai-skills:a11y-reviewer', 'ai-skills:i18n-reviewer',
+])
+const diffBase = (reviewer) => (TSX_REVIEWERS.has(reviewer) ? 'diff-tsx' : 'diff-code')
+
 const reviewPrompt = (reviewer) => `Review this branch's diff. You are ${reviewer}.
 
-Artifacts:
-- Diff: ${A.tmpDir}/diff-full.txt
-- Plus-lines (+ lines per file): ${A.tmpDir}/plus-lines.txt
+Artifacts (scoped to your concern — files outside it are intentionally omitted as noise):
+- Diff: ${A.tmpDir}/${diffBase(reviewer)}.txt
+- Plus-lines (+ lines per file): ${A.tmpDir}/${diffBase(reviewer)}-plus.txt
 - Context bundle (CLAUDE.md + ADRs + Linear + PR + sessions): ${A.tmpDir}/context-bundle.md
 
 Read whatever else you need — full versions of changed files, imported modules, schemas, callers — to reason. The diff scopes WHERE a finding is anchored, NOT what you may read. A defect whose trigger is on a + line but whose evidence lives in a non-diff file IS in scope: anchor it to the diff line, cite the external file in evidence.
