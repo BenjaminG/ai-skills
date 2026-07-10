@@ -10,6 +10,7 @@ Review the diff between the working branch and its baseline, and propose removal
 ## Resolve the baseline
 
 Pick the first available reference, in order:
+
 1. An explicit ref the user provides (e.g. "compare against develop", a commit SHA, or a tag).
 2. The upstream tracking branch (`git rev-parse --abbrev-ref --symbolic-full-name @{u}`).
 3. The repo's default branch (`git symbolic-ref refs/remotes/origin/HEAD`, falling back to `main` then `master`).
@@ -19,10 +20,12 @@ State the resolved baseline in the report so the user can confirm.
 
 ## What counts as slop
 
-- Comments a human wouldn't write or that are inconsistent with the rest of the file
+- **Changelog comments** — comments that narrate the change (what moved, what was dropped, renamed-from, ticket tags like `BOF-xxx`, "seed 0 rather than null") instead of describing the code as it stands. Two checkable tests, either one fails it: (a) durability — would it still read in six months with no diff in view? and (b) redundancy — does the symbol name (prop, variable, function) already say it? Accuracy is not a defence: a precise comment that logs the change or restates the name is still slop.
 - Defensive checks or try/catch blocks abnormal for that area of the codebase (especially on trusted / validated codepaths)
 - Casts to `any` used to sidestep type issues
 - Any other style inconsistent with the surrounding file
+
+> Surrounding-file consistency is not a pass for comments: a verbose file does not license a verbose comment. Judge each comment on the two tests above, not on how chatty its neighbours are.
 
 ## Output
 
