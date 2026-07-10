@@ -18,14 +18,23 @@ Pick the first available reference, in order:
 
 State the resolved baseline in the report so the user can confirm.
 
-## What counts as slop
+## Comments: guilty until proven innocent
 
-- **Changelog comments** — comments that narrate the change (what moved, what was dropped, renamed-from, ticket tags like `BOF-xxx`, "seed 0 rather than null") instead of describing the code as it stands. Two checkable tests, either one fails it: (a) durability — would it still read in six months with no diff in view? and (b) redundancy — does the symbol name (prop, variable, function) already say it? Accuracy is not a defence: a precise comment that logs the change or restates the name is still slop.
+Treat **every comment added in the diff as slop by default.** A senior engineer writes almost none; the diff should read the same way. Do not look for reasons to flag a comment — flag it, then look for a reason to *keep* it. A comment survives only if it passes ALL of these:
+
+1. **Durable** — still reads in six months with no diff in view. (Fails: anything narrating the change — what moved, was dropped, renamed-from, ticket tags like `BOF-xxx`, "seed 0 rather than null now", "TODO from review".)
+2. **Non-redundant** — says something the code cannot. (Fails: restating the symbol name, the type, or the next line in prose — `// increment counter` above `counter++`, `// the user's email` above `userEmail`.)
+3. **Load-bearing** — its absence would actually mislead a competent reader. It explains a *why* that isn't in the code: a non-obvious invariant, a workaround for an external bug (with a link), a deliberate deviation, a perf/security tradeoff. "Might be nice context" does not clear this bar.
+
+If you find yourself writing a "keep" justification longer than the comment, it's slop — cut it. When genuinely unsure, flag it: the cost of a wrong flag is one ignored suggestion; the cost of a kept comment is permanent noise.
+
+This is not softened by the surrounding file. A chatty file does not license one more chatty comment — judge each added comment on the three tests above, never on how its neighbours read.
+
+## Other slop
+
 - Defensive checks or try/catch blocks abnormal for that area of the codebase (especially on trusted / validated codepaths)
 - Casts to `any` used to sidestep type issues
 - Any other style inconsistent with the surrounding file
-
-> Surrounding-file consistency is not a pass for comments: a verbose file does not license a verbose comment. Judge each comment on the two tests above, not on how chatty its neighbours are.
 
 ## Output
 
