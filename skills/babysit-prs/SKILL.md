@@ -19,7 +19,21 @@ Keep your open PRs moving without polling them by hand. Meant to run on a loop �
    gh pr list --author "@me" --state open --json number,url,title
    ```
 
-2. **Diff against last tick.** For each PR, look for what's new since the previous pass — reviews, bot comments, check results, mergeable state. Capture each *new* comment/review with its **author login and author type** (human vs bot), not just CI/mergeable deltas — the tick report below needs it.
+2. **Read each PR's standing state, then the delta.** Two things, in this order — the delta alone is a trap: a backlog of unresolved threads that predates the loop never changes, so a delta-only tick reports `—` while comments pile up unanswered.
+
+   **a. Standing count (every tick, regardless of change).** Per PR, count **open review threads** — `isResolved == false` and `isOutdated == false` — split by author type. One GraphQL call gives both the count and the authors:
+
+   ```bash
+   gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
+     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+       reviewThreads(first:100){ nodes{ isResolved isOutdated
+         comments(first:1){ nodes{ author{login __typename} } } } } } }
+   }' -F owner=OWNER -F repo=REPO -F pr=<n>
+   ```
+
+   **b. Mergeability + CI (every tick).** `gh pr view <n> --json mergeable,mergeStateStatus` for the merge state, and `gh pr checks <n>` for the CI rollup — count conclusions (`pass` / `fail` / `pending` / `skipping`). Report the raw numbers, not a synthesized verdict.
+
+   **c. Delta.** *Then* diff against last tick — which of those threads, reviews, checks, or mergeable state are new since the previous pass.
 
    > Loop state lives in this conversation, not on disk. If a tick has no memory of the last one, re-triaging from scratch is safe: `/pr-feedback` is read-only, so a repeat pass costs tokens, not correctness. This is the **waiting** ceiling — accept it rather than building a state store.
 
@@ -27,13 +41,15 @@ Keep your open PRs moving without polling them by hand. Meant to run on a loop �
 
 3. **Triage new activity** through `/pr-feedback` (classifies P1 / P2 / Nit).
 
-4. **Emit the tick report.** One table, one row per PR — activity, not just state, so a PR with fresh human feedback is never indistinguishable from a silent one:
+4. **Emit the tick report.** One table, one row per PR — standing backlog *and* activity, not just state, so neither a fresh comment nor a pile of unanswered ones can hide behind `—`:
 
    | Colonne | Contenu |
    |---|---|
    | **PR** | `#num` + state glyph (✅ ready / ⚠️ problème / 🚧 draft/WIP) |
-   | **État** | the merge/CI bucket (Merge-ready, Échec E2E, Attend reviewer humain, Attend review/CI, …) |
-   | **Nouveau depuis dernier tick** | each new comment/review as `👤 <login>` or `🤖 <login>` + ≤5-word gist; `—` when nothing new. Both types always listed — no bot filtering. |
+   | **Mergeable** | `mergeable` + `mergeStateStatus` from step 2b, e.g. `✅ CLEAN`, `⚠️ BEHIND` (rebase), `⛔ BLOCKED`, `❌ DIRTY` (conflicts) |
+   | **CI** | check rollup from step 2b — surface failures first: `❌ 1 fail · 2 pending · 43 pass` (skipping omitted unless it's all there is). `✅ all pass` when green. |
+   | **À répondre** | standing count of open threads (step 2a), split e.g. `👤 2 · 🤖 6`; `0` when the PR is clean. This is the number that persists across ticks — never `—` just because nothing changed. |
+   | **Nouveau** | delta only — new comments/reviews *this* tick, each `👤 <login>` or `🤖 <login>` + ≤5-word gist; `—` when nothing new since last tick. |
    | **P1/P2/Nit** | count of open actionable items from the `/pr-feedback` triage (the table links to the triage, it doesn't replace it) |
 
    Then act:
