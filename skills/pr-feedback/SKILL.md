@@ -24,11 +24,11 @@ Run these in parallel (single message, multiple tool calls). Cap any log output 
   gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
       reviewThreads(first:100){ nodes{ id isResolved isOutdated path line
-        comments(first:1){ nodes{ databaseId author{login} body } } } } } }
+        comments(first:1){ nodes{ databaseId author{login __typename} body } } } } } }
   }' -F owner=OWNER -F repo=REPO -F pr=<n>
   ```
 
-  Keep `id`, `isResolved`, `isOutdated`, `path`, `line`, and comments[].databaseId/author/body.
+  Keep `id`, `isResolved`, `isOutdated`, `path`, `line`, and comments[].databaseId/author/body. `author.__typename` gives the human-vs-bot signal for the report's Author field.
 - **Review summaries:** `gh pr view <n> --json reviews` — state (APPROVED / CHANGES_REQUESTED / COMMENTED), author, body.
 - **Conversation comments:** `gh api repos/{owner}/{repo}/issues/<n>/comments` (owner/repo from step 1).
 - **Status checks:** `gh pr checks <n>`. For each FAIL, fetch a short log tail: `gh run view --log-failed --job <job-id> | tail -n 50`.
@@ -50,7 +50,7 @@ Group by priority (P1 → P2 → Nit). One entry per item:
 - **Priority** — P1 / P2 / Nit
 - **Source** — review-comment | review-summary | conversation | check
 - **Where** — `path/to/file.ts:42` or check name
-- **Author** — reviewer / bot
+- **Author** — 👤 `<login>` (human) or 🤖 `<login>` (bot). Mark 🤖 when `author.__typename` is `Bot`, the login ends in `[bot]`, or it's a known bot account (`naboo-ai-reviews`, `cursor`/Bugbot); otherwise 👤. This is a label only — bot items are still reported and triaged, never filtered out.
 - **Quote** — ≤2 lines from the comment or check failure
 - **Why** — one sentence on the classification
 - **Disposition** — fix (apply the change) | reply (answer, no change) | decline (won't fix) | defer (track for later)
