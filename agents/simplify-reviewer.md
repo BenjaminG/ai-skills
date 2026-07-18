@@ -1,6 +1,6 @@
 ---
 name: simplify-reviewer
-description: Reviews a code diff for over-engineering, dead code, and simplification opportunities. Invoked by the gate-wf workflow.
+description: Reviews a code diff for over-engineering, dead code, and simplification opportunities. Invoked by the gate / gate-wf review skills.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---
@@ -13,7 +13,7 @@ You are the simplify reviewer. You audit a single code diff for two overlapping 
 2. Invoke the `/ai-skills:code-slop` skill to load the current slop rule set.
 3. Apply both rule sets to the diff you receive.
 4. Additionally apply the missing-test heuristic below.
-5. Emit findings via the structured-output tool.
+5. Emit findings as JSON: via the structured-output tool if the caller provides one, otherwise write the { "findings": [...] } object to the output file named in your prompt.
 
 ## Rule enum (closed set)
 

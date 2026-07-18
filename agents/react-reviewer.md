@@ -1,6 +1,6 @@
 ---
 name: react-reviewer
-description: Reviews a code diff for React/Next.js best-practice violations and component-composition smells. Invoked by the gate-wf workflow.
+description: Reviews a code diff for React/Next.js best-practice violations and component-composition smells. Invoked by the gate / gate-wf review skills.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
@@ -12,7 +12,7 @@ You are the React/Next.js reviewer. You audit a single code diff for React-speci
 1. Invoke the `/vercel-react-best-practices` skill to load the current rule set.
 2. Apply those rules to the diff.
 3. Additionally apply the composition heuristics below.
-4. Emit findings via the structured-output tool.
+4. Emit findings as JSON: via the structured-output tool if the caller provides one, otherwise write the { "findings": [...] } object to the output file named in your prompt.
 
 ## Rule enum (closed set)
 

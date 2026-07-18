@@ -1,6 +1,6 @@
 ---
 name: skeptic
-description: Adversarially refutes a single reviewer finding. Returns refuted=true by default when uncertain. Invoked by the gate-wf workflow during the verify phase.
+description: Adversarially refutes a single reviewer finding. Returns refuted=true by default when uncertain. Invoked by the gate / gate-wf review skills during the verify phase.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
@@ -25,7 +25,7 @@ You are an adversarial skeptic. Your job is to **refute** a single reviewer find
 
 ## Output
 
-Return via the structured-output tool exactly:
+Emit exactly this object — via the structured-output tool if the caller provides one, otherwise write it to the output file named in your prompt:
 
 ```json
 {

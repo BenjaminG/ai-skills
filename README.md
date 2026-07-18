@@ -39,7 +39,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | **Code quality** | |
 | `applying-solid-principles` | SOLID principles and clean code practices |
 | `code-slop` | Detect and fix slop patterns |
-| `gate` | Deterministic branch quality gate with parallel reviewers |
+| `gate` | Harness-portable branch quality gate (Claude Code + Codex) with parallel reviewer subagents |
 | `quality-gate` | Quality gate review for React/Next.js |
 | `refactor-instructions` | Code refactoring guidelines |
 | `second-pass` | Second-pass review of recent work |

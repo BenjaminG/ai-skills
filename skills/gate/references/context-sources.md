@@ -108,11 +108,7 @@ reviewer finding). Format:
   }
 ```
 
-Synthesized `claude-md-violation` findings flow through Step 7 verdict counting normally — a `MUST NOT` violation produces a BLOCKER and FAILs the gate.
-
-### Auto-fix
-
-`claude-md-violation` is **not auto-fixable** (policy violation, not a mechanical edit). Excluded from `--fix` filtering in Step 8.
+Synthesized `claude-md-violation` findings flow through Step 4 verdict counting normally — a `MUST NOT` violation produces a BLOCKER and FAILs the gate.
 
 ---
 
@@ -231,10 +227,6 @@ Synthesized findings for ADR-violating diffs:
     "source": "adr"
   }
 ```
-
-### Auto-fix
-
-`adr-violation` is **not auto-fixable**. Excluded from `--fix`.
 
 ---
 

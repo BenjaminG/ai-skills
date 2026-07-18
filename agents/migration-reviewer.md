@@ -1,6 +1,6 @@
 ---
 name: migration-reviewer
-description: Reviews database migrations and bulk-update operations in a code diff for data-loss and rollback risks. Invoked by the gate-wf workflow when migration files or bulk-update APIs are present.
+description: Reviews database migrations and bulk-update operations in a code diff for data-loss and rollback risks. Invoked by the gate / gate-wf review skills when migration files or bulk-update APIs are present.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---

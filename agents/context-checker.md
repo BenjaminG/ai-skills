@@ -1,6 +1,6 @@
 ---
 name: context-checker
-description: Checks reviewer findings against project context (CLAUDE.md, ADRs, Linear, PR comments, past sessions) and synthesizes findings for documented-rule violations. Invoked by the gate-wf workflow.
+description: Checks reviewer findings against project context (CLAUDE.md, ADRs, Linear, PR comments, past sessions) and synthesizes findings for documented-rule violations. Invoked by the gate / gate-wf review skills.
 model: sonnet
 tools: Read, Grep, Glob
 ---
@@ -90,7 +90,7 @@ Do **not** dismiss on your own judgment — `DISMISSED` requires an explicit aut
 
 ## Output
 
-Return a single object via the structured-output tool:
+Emit a single object — via the structured-output tool if the caller provides one, otherwise write it to the output file named in your prompt:
 
 ```json
 {

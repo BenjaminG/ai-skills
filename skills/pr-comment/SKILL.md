@@ -13,7 +13,7 @@ Post `gate` / `gate-wf` findings on a PR you're reviewing as **standalone inline
 Findings come from a prior `gate` / `gate-wf` run, in priority order:
 
 1. The findings already in this conversation (the gate verdict you just saw), or
-2. The gate-wf state file for the current branch: `~/.claude/gate-wf-state/<repo-slug>/<branch>.json` → `.findings[]`.
+2. The state file for the current branch — whichever skill ran: `~/.claude/gate-state/<repo-slug>/<branch>.json` (`gate`) or `~/.claude/gate-wf-state/<repo-slug>/<branch>.json` (`gate-wf`) → `.findings[]`.
 
 Both produce the same shape: `id` (B1/M1/N1), `tier` (BLOCKER/MAJOR/NIT), `file`, `line`, `location` (`diff-line` | `adjacent`), `message`, `suggested_fix`.
 

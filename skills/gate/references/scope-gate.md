@@ -1,6 +1,6 @@
 # Scope-gate (Step 2c)
 
-> **Status**: scope-gate runs in `Step 2c` of `SKILL.md` — between diff/stack detection (Step 2a/2b) and parallel review (Step 3). Hard-stops here exit before any Opus reviewer spawns and **do NOT increment the cycle counter**.
+> **Status**: scope-gate runs in `Step 2c` of `SKILL.md` — between diff/stack detection (Step 2a/2b) and parallel review (Step 3). Hard-stops here exit before any reviewer subagent spawns.
 
 This file specifies three deterministic-or-cheap-LLM checks that gate the rest of the pipeline. They share a single Haiku call (when needed) so the cost is ≤ 1 cheap call, not three.
 
@@ -8,7 +8,7 @@ This file specifies three deterministic-or-cheap-LLM checks that gate the rest o
 
 ## Why scope-gate exists
 
-The gate's most expensive operation is Step 3 (5–8 Opus reviewers × 3 passes each = 15–24 Opus passes). Wasting that budget on a botched merge-base, a runaway rebase, or a PR whose changed files have nothing to do with the stated intent is the single biggest cost trap. The scope-gate catches those cases up-front and **refuses to proceed** rather than burn cost on noise.
+The gate's most expensive operation is Step 3 (5–8 reviewers, then a tier-scaled skeptic per finding). Wasting that budget on a botched merge-base, a runaway rebase, or a PR whose changed files have nothing to do with the stated intent is the single biggest cost trap. The scope-gate catches those cases up-front and **refuses to proceed** rather than burn cost on noise.
 
 Scope-gate is also where unobvious upstream mistakes surface in the report: wrong base branch, accidental scope creep.
 
@@ -40,7 +40,7 @@ else
 fi
 ```
 
-**Output**: top-of-report banner appended to Step 7 output. Format:
+**Output**: top-of-report banner appended to Step 4 output. Format:
 
 ```
 ⚠️  Base: <BASE> (<reason>)
@@ -88,7 +88,7 @@ fi
     /gate <BASE> --ignore-scope-gate
 ```
 
-**Action**: skill exits cleanly with no verdict written. **Cycle counter is preserved** (Step 10a writes `cycle: state.cycle` unchanged, not `state.cycle + 1`).
+**Action**: skill exits cleanly with no verdict written. No state is written.
 
 **Cost**: free.
 
@@ -147,7 +147,7 @@ SUSPICIOUS_COUNT = count of files where classification == "SUSPICIOUS"
   Continuing review. Bypass this banner with --ignore-scope-gate.
 ```
 
-The banner appears **above** the verdict in Step 7. PASS/FAIL math is unchanged.
+The banner appears **above** the verdict in Step 4. PASS/FAIL math is unchanged.
 
 ### Hard-stop banner format (≥ 4 SUSPICIOUS)
 
@@ -165,7 +165,7 @@ The banner appears **above** the verdict in Step 7. PASS/FAIL math is unchanged.
   if you are sure.
 ```
 
-**Action**: skill exits cleanly with no verdict written. **Cycle counter is preserved** (same as F1).
+**Action**: skill exits cleanly with no verdict written. No state is written (same as F1).
 
 ---
 
@@ -189,12 +189,12 @@ The flag is intentional: gate trusts the user once they've explicitly said "I kn
 
 ---
 
-## Cycle / verdict impact summary
+## Verdict impact summary
 
-| Outcome | Cycle increment | Verdict written | Step 3 runs |
-|---|---|---|---|
-| F10 banner | yes (normal flow) | yes | yes |
-| F1 hard-stop | **NO** | NO | NO |
-| F9 hard-stop | **NO** | NO | NO |
-| F9 soft-warn | yes (normal flow) | yes | yes |
-| `--ignore-scope-gate` bypass | yes (normal flow) | yes | yes |
+| Outcome | Verdict written | Step 3 runs |
+|---|---|---|
+| F10 banner | yes | yes |
+| F1 hard-stop | NO | NO |
+| F9 hard-stop | NO | NO |
+| F9 soft-warn | yes | yes |
+| `--ignore-scope-gate` bypass | yes | yes |

@@ -1,6 +1,6 @@
 ---
 name: a11y-reviewer
-description: Reviews JSX/TSX in a code diff for accessibility regressions. Invoked by the gate-wf workflow when .tsx/.jsx files are present.
+description: Reviews JSX/TSX in a code diff for accessibility regressions. Invoked by the gate / gate-wf review skills when .tsx/.jsx files are present.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
