@@ -1,68 +1,78 @@
 ---
 name: pr-feedback
-description: This skill should be used when the user wants to triage a pull request's review feedback and CI status — retrieving inline review comments, review summaries, conversation comments, and failing status checks, then classifying each item as P1 / P2 / Nit and proposing an ordered action plan. Triggers on "review PR feedback", "check PR comments", "what's blocking my PR", "classify review comments", "PR CI failures", "triage PR", or a bare PR number/URL.
+description: Triage a pull request — sort every unresolved review item and failing check into P1 / P2 / Nit with a disposition, for `pr-respond` to act on. Use when triaging a PR, asking what is blocking a PR, or given a bare PR number or URL.
 argument-hint: "[pr-number-or-url]"
 ---
 
 # PR Feedback Triage
 
-Retrieve review feedback and status checks for a pull request, classify each item by priority, and propose an ordered action plan. Triage is read-only — do not edit files, post replies, or re-run CI. Once the user picks which items to act on, hand off to the `pr-respond` skill, which applies the agreed changes and posts responses (reply + reaction + resolve). Never re-run CI.
+Triage a pull request: sort every unresolved review item and failing check by urgency, then hand the user's picks to `pr-respond`. Read-only — never edit files, post replies, or re-run CI.
 
 ## 1. Resolve the PR
 
-- If the argument is a PR number or URL, use it.
-- Otherwise, detect from the current branch: `gh pr view --json number,url,headRefName,baseRefName,state`.
-- State the resolved PR (`#<n> — <url>`) so the user can confirm.
+Use the argument when it is a PR number or URL; otherwise detect from the current branch: `gh pr view --json number,url,headRefName,baseRefName,state,author`.
 
-## 2. Fetch feedback and checks
+**Done when**: the resolved `#<n> — <url>` is stated for the user, and `owner` / `repo` / the PR author's login are captured for the calls below.
 
-Run these in parallel (single message, multiple tool calls). Cap any log output aggressively.
+## 2. Fetch every source
 
-- **Inline review comments (threaded):** `gh pr view` has **no** `reviewThreads` JSON field — it errors with `Unknown JSON field`. This is where bot findings (Cursor Bugbot, `naboo-ai-reviews`, etc.) live, so fetch them via GraphQL. The same query also returns the node `id` (needed by `pr-respond` to resolve a thread) and each first comment's `databaseId` (needed for reply/reaction endpoints):
+Four sources, fetched in parallel. Cap any log output aggressively.
+
+- **Inline review threads** — `gh pr view` has **no** `reviewThreads` JSON field (it errors with `Unknown JSON field`), so use GraphQL. This is where bot findings (Cursor Bugbot, `naboo-ai-reviews`) live. Paginate until `hasNextPage` is false: a PR can carry more than 100 threads, and an unfetched page is a silently dropped finding.
 
   ```bash
-  gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
+  gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
-      reviewThreads(first:100){ nodes{ id isResolved isOutdated path line
-        comments(first:1){ nodes{ databaseId author{login __typename} body } } } } } }
-  }' -F owner=OWNER -F repo=REPO -F pr=<n>
+      reviewThreads(first:100,after:$cursor){ pageInfo{hasNextPage endCursor}
+        nodes{ id isResolved isOutdated path line
+          comments(first:20){ nodes{ databaseId author{login __typename} body } } } } } }
+  }' -F owner=OWNER -F repo=REPO -F pr=<n> -F cursor=<endCursor>
   ```
 
-  Keep `id`, `isResolved`, `isOutdated`, `path`, `line`, and comments[].databaseId/author/body. `author.__typename` gives the human-vs-bot signal for the report's Author field.
-- **Review summaries:** `gh pr view <n> --json reviews` — state (APPROVED / CHANGES_REQUESTED / COMMENTED), author, body.
-- **Conversation comments:** `gh api repos/{owner}/{repo}/issues/<n>/comments` (owner/repo from step 1).
-- **Status checks:** `gh pr checks <n>`. For each FAIL, fetch a short log tail: `gh run view --log-failed --job <job-id> | tail -n 50`.
+  Omit `-F cursor=` on the first call; pass `pageInfo.endCursor` on each next one. Fetch the whole thread, not just its opening comment — the last comment is what tells you whether the ball is still in your court (§3). Keep `id` (the node id `pr-respond` needs to resolve the thread), the first comment's `databaseId` (its reply and reaction endpoints), `isResolved`, `isOutdated`, `path`, `line`, and every comment's author and body. `author.__typename` is the human-vs-bot signal.
+- **Review summaries** — `gh pr view <n> --json reviews`: state (APPROVED / CHANGES_REQUESTED / COMMENTED), author, body.
+- **Conversation comments** — `gh api repos/{owner}/{repo}/issues/<n>/comments`.
+- **Status checks** — `gh pr checks <n>`. For each FAIL, a short log tail: `gh run view --log-failed --job <job-id> | tail -n 50`.
 
-Skip threads where `isResolved` or `isOutdated` is true, unless a later comment flags a regression.
+Drop a thread when `isResolved` or `isOutdated` is true, unless a later comment in it flags a regression.
 
-## 3. Classify each item as P1 / P2 / Nit
+**Done when**: all four sources are in, `hasNextPage` is false, and the working set holds every surviving thread, review, conversation comment, and failing check.
 
-- **P1 — blocking:** failing required checks; correctness / security bugs; reviewer submitted CHANGES_REQUESTED on this item; missing tests for new behavior.
-- **P2 — important, non-blocking:** design concerns, maintainability, perf tradeoffs, ambiguous behavior, reviewer questions that need an answer before merge.
-- **Nit:** naming, formatting, phrasing, optional refactors, style preferences. Clues: comment starts with `nit:`, `optional:`, `consider`, `suggestion:`, or is purely taste.
+## 3. Classify
 
-When in doubt, prefer the higher priority and note the uncertainty.
+First, set aside the threads that are **awaiting reviewer** — those whose last comment is the PR author's. The ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. One exception keeps a thread in the buckets: the author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart.
 
-## 4. Emit the report
+Everything else takes one priority:
 
-Group by priority (P1 → P2 → Nit). One entry per item:
+- **P1 — blocking**: a failing required check, a correctness or security bug, an item carrying CHANGES_REQUESTED, new behavior shipped without a test.
+- **P2 — important, not blocking**: design concerns, maintainability, perf tradeoffs, ambiguous behavior, a reviewer question that needs an answer before merge.
+- **Nit**: naming, formatting, phrasing, optional refactors, taste. Signalled by `nit:`, `optional:`, `consider`, `suggestion:`.
 
-- **Priority** — P1 / P2 / Nit
+When in doubt, take the higher priority and note that it was close.
+
+And one **disposition** — `fix` (change the code) | `reply` (answer, no change) | `decline` (won't fix) | `defer` (track for later). `pr-respond` acts on the disposition, not on the priority, so mark an item `fix` only when code must actually change.
+
+**Done when**: every item in the working set carries a priority and a disposition, or is marked awaiting-reviewer. A bot's item is triaged like anyone else's — never filtered out for its author.
+
+## 4. Report
+
+Group by priority, P1 → P2 → Nit. Per item:
+
+- **Where** — `path/to/file.ts:42`, or the check name
+- **Author** — 👤 `<login>`, or 🤖 when `author.__typename` is `Bot`, the login ends in `[bot]`, or it is a known bot account (`naboo-ai-reviews`, `cursor` / Bugbot)
 - **Source** — review-comment | review-summary | conversation | check
-- **Where** — `path/to/file.ts:42` or check name
-- **Author** — 👤 `<login>` (human) or 🤖 `<login>` (bot). Mark 🤖 when `author.__typename` is `Bot`, the login ends in `[bot]`, or it's a known bot account (`naboo-ai-reviews`, `cursor`/Bugbot); otherwise 👤. This is a label only — bot items are still reported and triaged, never filtered out.
-- **Quote** — ≤2 lines from the comment or check failure
-- **Why** — one sentence on the classification
-- **Disposition** — fix (apply the change) | reply (answer, no change) | decline (won't fix) | defer (track for later)
+- **Quote** — ≤2 lines from the comment or the check failure
+- **Why** — one sentence on the priority
+- **Disposition** — fix | reply | decline | defer
 
-## 5. Action plan
+Then the ordered plan: P1 first, grouped by file so edits batch cleanly, then P2, then Nits. Then the awaiting-reviewer threads, one line each (author, location, what they are waiting on) — visible, but nothing to act on. Close with 1–3 sentences on overall health ("2 P1 CI failures + 1 P1 review comment, 3 P2s, 5 nits, 2 awaiting reviewer"), then:
 
-After the report, emit an ordered plan:
+> Tell me which items to act on, or say "apply all P1" / "apply all".
 
-1. P1 items first, grouped by file when multiple items touch the same file (so edits batch cleanly).
-2. Then P2, then Nits.
-3. Close with 1–3 sentences summarizing overall health (e.g. "2 P1 CI failures + 1 P1 review comment, 3 P2s, 5 nits").
+**Done when**: every triaged item appears in the report — count them against step 3's working set — and the user has been asked to pick.
 
-End with: *"Tell me which items to act on, or say 'apply all P1' / 'apply all' to proceed."* Once the user picks items, invoke the `pr-respond` skill to act on each per its disposition.
+## 5. Hand off
 
-Selecting an item means **act on it per its disposition** — `fix` items get the code change, `decline`/`reply` items get a reply only. "apply all" does not force a fix on a `decline` item; `pr-respond` flags any such mismatch for confirmation.
+Invoke `pr-respond` with the user's picks. It reads this triage from the conversation and does not re-fetch, so carry each picked item's priority, disposition, thread `id`, first-comment `databaseId`, `owner`, `repo` and PR number into the handoff.
+
+**Done when**: `pr-respond` is invoked, or the user picks nothing and the triage is left as the deliverable.
