@@ -13,6 +13,7 @@ Apply the agreed code changes for the review items the user picked, then post th
 This skill consumes the prior `pr-feedback` triage from the conversation. Each selected item carries:
 
 - **disposition** — fix (apply the change) / reply (answer, no change) / decline (won't fix) / defer (track for later)
+- **verdict** — for a defect claim: confirmed / refuted / unclear, with the `file:line` that settled it. The reply to a refuted claim is written from that evidence, so a refuted item arriving without it goes back to `pr-feedback` for adjudication rather than getting a hand-waved reply.
 - **inline-thread `id`** — GraphQL node id (from §2 of pr-feedback), needed to resolve the thread
 - **first-comment `databaseId`** — needed for the reply and reaction endpoints
 - **`owner` / `repo` / PR number**
