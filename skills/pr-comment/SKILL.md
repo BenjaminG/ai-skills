@@ -27,11 +27,12 @@ Drafting goes through the `humanizer` skill — that dependency is mandatory, no
 
 `tier` orders the work (BLOCKER → MAJOR → NIT). For each selected finding:
 
-1. **Draft the comment** — turn `message` + `suggested_fix` into a 1–3 sentence reviewer comment. Route it through the `humanizer` skill. **Never post a raw draft — always route it through humanizer first.** For NIT findings, prefix the body with `nit:`.
-2. **Place it** — `location: diff-line` → standalone inline comment at `file:line`. `location: adjacent` (legacy code outside the diff) **cannot be inline** (GitHub only accepts comments on diff lines) → post as a top-level PR conversation comment citing `file:line`.
-3. **Collect it** — add the drafted comment to the pending batch (inline or conversation) for one preview.
+1. **Draft the comment** — turn `message` + `suggested_fix` into a 1–3 sentence reviewer comment. Route it through the `humanizer` skill. **Never post a raw draft — always route it through humanizer first.**
+2. **Label the tier** — prepend the tier marker to the humanized body, in this order (humanizer runs on the prose only, never on the marker, so it can't rewrite or drop it): `**blocker:** ` / `**major:** ` / `nit: `. Verify the final body still starts with the marker before batching; re-add it if humanizer's output lost it.
+3. **Place it** — `location: diff-line` → standalone inline comment at `file:line`. `location: adjacent` (legacy code outside the diff) **cannot be inline** (GitHub only accepts comments on diff lines) → post as a top-level PR conversation comment citing `file:line`.
+4. **Collect it** — add the drafted comment to the pending batch (inline or conversation) for one preview.
 
-Show the **one batch preview** — every comment with its placement (`file:line` inline, or "conversation") — then post the whole batch only after a **single** confirmation.
+Show the **one batch preview** — every comment with its tier marker and placement (`file:line` inline, or "conversation") — then post the whole batch only after a **single** confirmation. A comment in the preview with no tier marker is a bug: fix it before posting.
 
 **Done when** every selected finding has been posted as either an inline comment (diff-line) or a conversation comment (adjacent), *and* the summary reports the counts (inline / conversation / skipped-stale) with comment links.
 
@@ -44,7 +45,7 @@ Post each comment independently — no review object. After the single confirmat
 ```bash
 gh api repos/{owner}/{repo}/pulls/<n>/comments \
   -f commit_id=<headRefOid> -f path=src/db/users.ts -F line=42 \
-  -f body="User input is concatenated into raw SQL — use a parameterized query."
+  -f body="**blocker:** User input is concatenated into raw SQL — use a parameterized query."
 ```
 
 `adjacent` → one top-level PR conversation comment per finding:
