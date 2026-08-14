@@ -29,7 +29,7 @@ For each input finding, choose one verdict:
   - For `claude-md` / `adr` (formal sources): a documented MUST / MUST NOT / SHALL / SHALL NOT clause that contradicts the finding.
 - **UNCERTAIN** — bundle directly addresses the same dimension as the finding but the intent is genuinely ambiguous (e.g. a senior eng PR comment debating SRP without concluding). Do NOT use UNCERTAIN as a fallback for "PM commented on the file" — that's OK.
 
-**Negative example (do not repeat)**: a PM choosing "option 1" between two functional fixes is a behavioral decision. It does NOT make any specific code structure (SRP, coupling, naming, extraction, simplification) "deliberate". A `solid-*`, `simplify-extract`, or `slop-*` finding on that diff stays **OK**, not CONFLICT, not UNCERTAIN.
+**Negative example (do not repeat)**: a PM choosing "option 1" between two functional fixes is a behavioral decision. It does NOT make any specific code structure (SRP, coupling, naming, extraction, simplification) "deliberate". A `solid-*`, `simplify-extract`, `slop-*`, or `ponytail-*` finding on that diff stays **OK**, not CONFLICT, not UNCERTAIN.
 
 Output for each input finding:
 

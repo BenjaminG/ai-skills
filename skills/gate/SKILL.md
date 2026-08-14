@@ -12,7 +12,7 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 
 It orchestrates with a single primitive every agent harness has: **spawn a subagent, read its result**. No Workflow tool, no agent teams — so it runs unchanged on Claude Code and Codex. The companion `gate-wf` skill runs the same review logic on the Claude Code `Workflow` engine (deterministic static script, `--resume` caching); prefer it when Workflows are enabled.
 
-**Skill version**: `5`. Cache entries are keyed on this — bumping invalidates all caches at once.
+**Skill version**: `6`. Cache entries are keyed on this — bumping invalidates all caches at once. v6: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive.
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ Reviewer subagents invoke skills via slash-command. A skill is reachable when fo
 
 ```bash
 missing=()
-for s in vercel-react-best-practices solid security-review simplify; do
+for s in vercel-react-best-practices solid security-review simplify ponytail-review; do
   [ -f ~/.claude/skills/$s/SKILL.md ] && continue
   compgen -G "$HOME/.claude/plugins/cache/*/*/*/skills/$s/SKILL.md" >/dev/null && continue
   missing+=("$s")
@@ -58,6 +58,7 @@ If any report `MISS`, stop and tell the user which skills are missing. Do not pr
 | `security-review`             | `npx skills add https://github.com/getsentry/skills --skill security-review -g`                                     |
 | `code-slop`                   | Ships with this plugin. If missing, reinstall the `bgelis-ai-skills` plugin (`/plugin reinstall bgelis-ai-skills`). |
 | `simplify`                    | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g`                                    |
+| `ponytail-review`             | Ships with the `ponytail` plugin — `/plugin install ponytail`.                                                       |
 
 If the project is not React/Next.js, `vercel-react-best-practices` is optional (the react-reviewer is skipped automatically).
 
@@ -325,12 +326,15 @@ Every subagent is **read-only** and writes its JSON result to a file in `$TMP_DI
 ### 3a. Prepare the reviewer list
 
 ```bash
-# simplify-reviewer covers slop too (loads /simplify + /ai-skills:code-slop).
+# One reviewer per rule set (v6): simplify=/simplify, slop=/ai-skills:code-slop,
+# ponytail=/ponytail-review. None of the three can emit BLOCKER.
 REVIEWERS=(
   "bug-reviewer"
   "solid-reviewer"
   "security-reviewer"
   "simplify-reviewer"
+  "slop-reviewer"
+  "ponytail-reviewer"
 )
 [ $SPAWN_REACT -eq 1 ]     && REVIEWERS+=("react-reviewer")
 [ $SPAWN_A11Y -eq 1 ]      && REVIEWERS+=("a11y-reviewer")

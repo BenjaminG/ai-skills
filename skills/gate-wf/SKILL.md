@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `4`. Cache entries are keyed on this — bumping invalidates all caches at once. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
+**Skill version**: `5`. Cache entries are keyed on this — bumping invalidates all caches at once. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ Reviewer agents invoke skills via slash-command. A skill is reachable when found
 
 ```bash
 missing=()
-for s in vercel-react-best-practices solid security-review simplify; do
+for s in vercel-react-best-practices solid security-review simplify ponytail-review; do
   [ -f ~/.claude/skills/$s/SKILL.md ] && continue
   compgen -G "$HOME/.claude/plugins/cache/*/*/*/skills/$s/SKILL.md" >/dev/null && continue
   missing+=("$s")
@@ -57,6 +57,7 @@ If any report `MISS`, stop and tell the user which skills are missing. Do not pr
 | `security-review`             | `npx skills add https://github.com/getsentry/skills --skill security-review -g`                                     |
 | `code-slop`                   | Ships with this plugin. If missing, reinstall the `bgelis-ai-skills` plugin (`/plugin reinstall bgelis-ai-skills`). |
 | `simplify`                    | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g`                                    |
+| `ponytail-review`             | Ships with the `ponytail` plugin — `/plugin install ponytail`.                                                       |
 
 If the project is not React/Next.js, `vercel-react-best-practices` is optional (the react-reviewer is skipped automatically).
 
@@ -336,12 +337,15 @@ running alongside the reviewers. No model-generated script, so the shape can't d
 ### 3a. Prepare flag-conditional reviewer list
 
 ```bash
-# simplify-reviewer covers slop too (merged in v3 — loads /simplify + /ai-skills:code-slop).
+# One reviewer per rule set (v5): simplify=/simplify, slop=/ai-skills:code-slop,
+# ponytail=/ponytail-review. None of the three can emit BLOCKER.
 REVIEWERS=(
   "ai-skills:bug-reviewer"
   "ai-skills:solid-reviewer"
   "ai-skills:security-reviewer"
   "ai-skills:simplify-reviewer"
+  "ai-skills:slop-reviewer"
+  "ai-skills:ponytail-reviewer"
 )
 [ $SPAWN_REACT -eq 1 ]     && REVIEWERS+=("ai-skills:react-reviewer")
 [ $SPAWN_A11Y -eq 1 ]      && REVIEWERS+=("ai-skills:a11y-reviewer")
