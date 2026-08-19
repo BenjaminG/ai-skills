@@ -82,6 +82,8 @@ For each changed file, read it in full and identify:
 - Routes / screens / pages affected
 - Which state transitions or side effects are new
 - How the changes map to the Linear acceptance criteria / product rule (from Step 2.5, if available)
+- The **exact fields the code reads** to decide behavior (which `startDate`, which currency source), named with `file:line` — these are what the premise gate's *reachable* check compares against
+- Any **short-circuit or guard** that would stop a naive fixture from reaching the new code (an extractor fabricating a website/placeId, an entity matcher, a trigger/flag absent off prod), named with `file:line`
 
 ### Agent 2: `tester-surface-scout`
 Map out the **tester-facing surfaces** needed to exercise these changes without dev tooling:
@@ -90,6 +92,9 @@ Map out the **tester-facing surfaces** needed to exercise these changes without 
 - Ephemeral env URL pattern for this repo (e.g. `*-pr-<N>.*`)
 - Manual job/cron triggers exposed in the admin UI
 - Existing automated test coverage (unit/integration/e2e) for the changed code — so those paths can be excluded from the QA plan
+- For each surface mapped, the **exact field it writes** — so the plan can confirm it writes the field the code reads, not a parallel one (the *reachable* check)
+- The **verification channel** of each observable the plan might assert (is the brief in the email body, or behind a partner-side auth link?) — the *reachable* check
+- For any fixture the plan will hand the tester, whether it can **collide** with seeded data or be short-circuited before reaching the branch — the *fixture-proof* check
 
 Give both agents the changed file list and PR body.
 
@@ -123,6 +128,26 @@ If the `tester-surface-scout` found automated coverage, exclude it.
 Require a **"How to reach this state"** line that names the concrete tester-facing surface (BO route, screen path, Mailpit inbox, env URL). No surface → out of scope.
 
 Ground each scenario's expected results in the Linear acceptance criteria (Step 2.5) when available — test the *intended* behavior, not just the behavior observed in the diff.
+
+### Premise gate — apply to every scenario before writing it
+
+A scenario is worth drafting only if it is **reachable**, **deterministic**, and
+**fixture-proof**. Fail any check → move it to "Out of scope — needs dev fixture" (don't ship
+a void scenario; it produces a dead-end run).
+
+- **Reachable** — the "How to reach this state" surface actually delivers what the scenario
+  asserts: it writes the *same field* the code reads, and the observable is visible on that
+  surface's channel (from `change-analyzer` / `tester-surface-scout`). No lever → out of
+  scope. (A panel writing `clientproposal.startDate` when the code reads `quote.startDate`,
+  or a marker asserted in a CTA-only email, is not reachable.)
+- **Deterministic** — the precondition is fully carried by the fixture, not left to an
+  external coin-flip (an extractor promoting a date, a trigger absent on ephemeral envs). If
+  the outcome depends on something the tester can't control, tag it "needs dev fixture" or
+  drop it.
+- **Fixture-proof** — any fixture you hand the tester uses collision-proof synthetic
+  identifiers and actually reaches the branch under test (no fuzzy-match against seeded data,
+  no short-circuit). If you can't guarantee that from the diff, don't hand it — flag it for
+  the dev.
 
 **Group by feature area.** Within each area, include only the relevant categories:
 1. User flows & interactions (multi-step)
@@ -187,11 +212,12 @@ Also produce:
 
 ---
 
-### Out of scope — covered by automated tests
+### Out of scope
 
-> Listed so the dev can confirm coverage exists; the tester does not run these.
+> Listed so the dev can confirm coverage or supply a fixture; the tester does not run these.
 
 - <scenario> — covered by `<test file or description>`
+- <scenario> — needs dev fixture (`<what the fixture must carry or avoid>`)
 
 ---
 

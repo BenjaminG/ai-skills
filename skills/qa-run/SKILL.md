@@ -73,6 +73,11 @@ Every scenario still runs — the banner directs attention, it does not narrow s
 
 ## Step 2: Iterate scenarios
 
+**Pre-flight (dev runner):** before the first scenario, confirm the fixture actually reaches
+the branch under test (e.g. the placeholder house is Draft, not Published; the new row
+appeared). A fixture that collides or short-circuits burns a whole pass — catch it here and
+log a plan-defect, don't mark passes against it.
+
 For each scenario in plan order — **all of them**; the run file starts empty, so there is nothing to skip:
 
 1. **Announce**: §X.Y title, "How to reach this state", preconditions. If the scenario is in `KNOWN_ISSUES`, frame it as fix-verification: `§X.Y previously failed (Finding: <title>, <prior-ts>) — verify whether it's fixed.`
