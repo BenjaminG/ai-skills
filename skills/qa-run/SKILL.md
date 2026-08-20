@@ -83,10 +83,15 @@ runs — the banner directs attention, it doesn't narrow scope.
 
 ## Step 2: Create the run record
 
-- **linear**: `linear issue create --parent "$QA_KEY" --title "QA Run <ts>" --description-file $TMP` (`<ts>` = `date +%Y%m%d-%H%M%S`).
+Created in **Todo**, assigned to the runner, so the tracker shows every run's
+lifecycle end to end — Todo → In Progress (Step 3) → closed (Step 4).
+
+- **linear**: `linear issue create --parent "$QA_KEY" --title "QA Run <ts>" --assignee self --state unstarted --description-file $TMP` (`<ts>` = `date +%Y%m%d-%H%M%S`; `unstarted` is the state *type* — Todo in Linear's default template — not a team-specific state name, so this holds regardless of the team's actual label).
 - **github**: `gh label create qa-run --color 5319E7 2>/dev/null || true`, then
-  `gh issue create --title "QA Run <ts>" --label qa-run --body-file $TMP`, then
-  nest it under the plan issue:
+  `gh issue create --title "QA Run <ts>" --label qa-run --assignee @me --body-file $TMP`
+  (GitHub issues have no Todo/In-Progress distinction without a Projects board,
+  out of scope here — the issue is simply open, assigned, for the run's
+  duration, then closed in Step 4), then nest it under the plan issue:
   ```bash
   gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){clientMutationId}}' -F p="$PARENT_NODE_ID" -F c="$RUN_NODE_ID"
   ```
@@ -105,7 +110,12 @@ catch it here as a plan-defect rather than mark passes against it.
 
 ## Step 3: Iterate scenarios
 
-For each scenario in plan order — all of them, nothing is skipped:
+**Move the run to In Progress** before the first scenario:
+`linear issue update <RUN_KEY> --state started` (`github`/`local`: no-op —
+the issue is already open / the file already exists).
+
+For each scenario in plan order — all of them, nothing is skipped, unless the
+user stops the run early after a blocker (see Step 4):
 
 1. **Announce**: §X.Y title, preconditions. If in `KNOWN_ISSUES`, frame as
    fix-verification: `§X.Y previously failed (Finding: <title>, <prior-ts>) — verify whether it's fixed.`
@@ -130,14 +140,25 @@ For each scenario in plan order — all of them, nothing is skipped:
 5. **Accumulate the playbook delta** from the sub-agent's payload (don't write
    yet — merged once at end of run, Step 4).
 
-## Step 4: End-of-run summary + playbook merge
+## Step 4: End-of-run summary, close-out + playbook merge
 
-- Totals: passed / failed / skipped / pending.
+This step runs on **every** exit path — all scenarios completed, or the user
+stopped the run early after a blocker finding — so the run issue never sits
+abandoned in "In Progress". Run it against whatever scenarios actually
+executed.
+
+- Totals: passed / failed / skipped / pending (pending = not reached, only
+  possible on an early stop).
 - **Fix-verification rollup** (only if `KNOWN_ISSUES` was non-empty): `Prior
   issues: 2 fixed, 1 still open (§3.1), 1 regression (§1.2).`
 - Triage table grouped by severity: `blocker`, `improvement`, `nit`, `plan-defect`.
 - Next step: blockers → fix, re-run; plan-defects → fix the plan, re-run;
   nits only → ready for review.
+
+**Close the run:** `linear issue update <RUN_KEY> --state completed` /
+`gh issue close <n>` (`local`: nothing to close). This applies whether the run
+finished normally or was stopped early on a blocking finding — the run itself
+completed its job (it produced a result), so it closes rather than staying open.
 
 In autonomous mode give the Scenarios table a **Proof** column — see
 [references/linear-evidence.md](references/linear-evidence.md) for the
@@ -206,3 +227,6 @@ upload/embed mechanics (Linear only; GitHub has no issue-asset API, so under
 - **A failing scenario never contributes a `Verify` fast path** — see
   [references/playbook.md](references/playbook.md#learning). It can still
   contribute `Reach` (the precondition) plus site notes.
+- **The run issue's lifecycle is Todo → In Progress → closed, every time.**
+  Assigned to the runner at creation (Step 2). Never leave it "In Progress"
+  after the run stops — Step 4 runs, and the issue closes, on any exit path.
