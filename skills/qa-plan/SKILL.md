@@ -7,8 +7,7 @@ description: >-
   and the app's admin UI — no terminal, SQL, GraphQL, or code access.
   Always renders in chat for review and iteration first; publishes to a
   markdown file, GitHub issue, or Linear sub-issue only on explicit approval.
-  Companion skill `qa-run` (future) will guide the tester through executing
-  the plan.
+  Companion skill `qa-run` will guide the tester through executing the plan.
   This skill should be used when asked to create a QA plan, test checklist,
   or manual test cases for a PR.
 argument-hint: "[pr-number-or-url] [--file | --github | --linear]"
@@ -282,7 +281,7 @@ rm -f "$TMP"
 - **Iteration is the default.** Publishing without the user saying `publish` is a bug.
 - **Large diffs (> 50KB):** pass only the changed file list to the Explore agents; let them read files directly.
 - **PR body as signal:** the PR body often lists what the author already tested — use it to skip redundant scenarios.
-- **Companion:** a future `qa-run` skill will pick up a plan produced here and walk the tester through execution.
+- **Companion:** `qa-run` picks up a plan produced here and walks the tester through execution.
 
 ## Audience & dogfooding
 

@@ -110,7 +110,8 @@ CSS px = screenshot image px / DPR
 
 ## Tips
 
-- Prefer `snap --compact` over `html` for page structure.
+- Prefer `snap` over `html` for page structure — the daemon always returns it compact.
 - Use `type` (not eval) to enter text in cross-origin iframes — `click`/`clickxy` to focus first, then `type`.
 - Chrome shows an "Allow debugging" modal once per tab on first access. A background daemon keeps the session alive so subsequent commands need no further approval. Daemons auto-exit after 20 minutes of inactivity.
 - In `--isolated` mode the sandboxed Chrome starts with no extensions, no logins, and a blank profile. Re-launching it (`scripts/chrome-debug.sh`) is a no-op while it's running.
+- **Batching:** because the daemon holds the session open, chaining several `cdp.mjs` calls with `&&` in one Bash call is already a batch — `click` throws when its selector is missing, so a bad step stops the chain instead of mis-clicking the next one. There's no wait command; poll for a post-action element with `eval`'s `awaitPromise: true` support instead of a fixed `sleep`.
