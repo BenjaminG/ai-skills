@@ -1,5 +1,5 @@
 ---
-name: pr
+name: pr-create
 description: Publish a pull request with automated type detection, Linear/Jira linking, PR templates, and Slack review message.
 argument-hint: "[type] [ISSUE-ID]"
 ---
@@ -11,11 +11,11 @@ argument-hint: "[type] [ISSUE-ID]"
 Publish a pull request by following this automated workflow.
 
 **Arguments:** `$0` = `[type] [ISSUE-ID]` (both optional)
-- `/pr` — auto-detect type, no issue
-- `/pr fix` — fix PR, no issue
-- `/pr fix ENG-1234` — fix PR with a Linear issue
-- `/pr fix MITB-565` — fix PR with a Jira issue
-- `/pr ENG-1234` — auto-detect type with an issue ID (`[A-Z]+-\d+` matches both Linear and Jira; tracker is resolved in Step 1.6)
+- `/pr-create` — auto-detect type, no issue
+- `/pr-create fix` — fix PR, no issue
+- `/pr-create fix ENG-1234` — fix PR with a Linear issue
+- `/pr-create fix MITB-565` — fix PR with a Jira issue
+- `/pr-create ENG-1234` — auto-detect type with an issue ID (`[A-Z]+-\d+` matches both Linear and Jira; tracker is resolved in Step 1.6)
 
 ## 1. Review the Full Diff
 
@@ -51,7 +51,7 @@ git --no-pager diff main     # Inspect everything that changed vs. main
 ## 1.5. Determine PR Type (MANDATORY if not provided)
 
 **Skip this step only if:**
-- PR type was explicitly provided via `/pr [type]` argument.
+- PR type was explicitly provided via `/pr-create [type]` argument.
 - You are confident in the type based on the diff.
 
 **Analysis Approach:**
@@ -401,11 +401,10 @@ Generate a brief, friendly message that includes the PR link using the template 
 5. **MANDATORY:** Complete Step 6 (generate and output Slack message)
 6. Confirm the draft PR is published: all steps completed, label applied, held Slack message generated
 
-**Optional Arguments:** `/pr [type] [ISSUE-ID]`
-- `/pr` — Auto-detect PR type, no issue
-- `/pr feature` — Create feature PR, no issue
-- `/pr fix` — Create fix PR, no issue
-- `/pr fix ENG-1234` — Create fix PR with a Linear ID
-- `/pr fix MITB-565` — Create fix PR with a Jira ID
-- `/pr ENG-1234` — Auto-detect type with an issue ID (tracker resolved in Step 1.6)
-
+**Optional Arguments:** `/pr-create [type] [ISSUE-ID]`
+- `/pr-create` — Auto-detect PR type, no issue
+- `/pr-create feature` — Create feature PR, no issue
+- `/pr-create fix` — Create fix PR, no issue
+- `/pr-create fix ENG-1234` — Create fix PR with a Linear ID
+- `/pr-create fix MITB-565` — Create fix PR with a Jira ID
+- `/pr-create ENG-1234` — Auto-detect type with an issue ID (tracker resolved in Step 1.6)

@@ -123,8 +123,14 @@ user stops the run early after a blocker (see Step 4):
    [references/scenario-agent.md](references/scenario-agent.md): it replays the
    scenario's playbook block if one exists, falls back to interactive
    exploration otherwise, and returns the structured payload described there.
-3. **Decide outcome, annotate with prior-run relation, append to the run doc:**
-   - Pass → `[x] §X.Y — passed (<note>, proof: <path>)`. If it was a known
+3. **Upload the evidence** (`--tracker linear` only — `github`/`local` keep the
+   local paths as-is): for the payload's `proof`, run
+   `URL=$(node scripts/upload-image.mjs <proof>)`. Use `$URL` — never the local
+   path — everywhere the run doc cites that proof. If the upload exits non-zero,
+   cite the local path and note `(upload failed)`; never abort the run for it.
+   `debug` shots are not uploaded here — they go to the finding comment in Step 5.
+4. **Decide outcome, annotate with prior-run relation, append to the run doc:**
+   - Pass → `[x] §X.Y — passed (<note>, [📷 §X.Y](<proof URL or path>))`. If it was a known
      failure: `(fixed: was <finding-ref> @ <prior-ts>)`.
    - Fail → `[!] §X.Y — failed → Finding #<n>` + a Finding entry (dev runner
      fills **Root cause** with `file:line`; PM/QA leaves it blank). If it was a
@@ -132,12 +138,12 @@ user stops the run early after a blocker (see Step 4):
      passed previously: `(regression — passed @ <prior-ts>)`.
    - Skip → `[~] §X.Y — skipped (<reason>)`, Finding tagged `plan-defect` if the
      plan itself is the problem.
-4. **Rewrite the run body/file now** (never batch): `linear issue update
+5. **Rewrite the run body/file now** (never batch): `linear issue update
    <RUN_KEY> --description-file $TMP` / `gh issue edit <n> --body-file $TMP` /
    overwrite the local file. **If the push fails** (auth, network), print the
    error, write the doc to `tasks/<TASK>/qa-results-<ts>.md` as a crash file,
    and continue the run — a 40-minute pass must not die to a token expiry.
-5. **Accumulate the playbook delta** from the sub-agent's payload (don't write
+6. **Accumulate the playbook delta** from the sub-agent's payload (don't write
    yet — merged once at end of run, Step 4).
 
 ## Step 4: End-of-run summary, close-out + playbook merge
@@ -160,10 +166,13 @@ executed.
 finished normally or was stopped early on a blocking finding — the run itself
 completed its job (it produced a result), so it closes rather than staying open.
 
-In autonomous mode give the Scenarios table a **Proof** column — see
+**Attach the debug shots** for each finding (`--tracker linear`): post the
+finding's gallery with `linear issue comment add <RUN_KEY> --attach shot.png`
+(repeatable) — `--attach` always appends the images at the end of the comment,
+which is exactly what a gallery wants. Under `github`/`local` the run doc's
+local `tasks/<TASK>/evidence/` paths are the record. See
 [references/linear-evidence.md](references/linear-evidence.md) for the
-upload/embed mechanics (Linear only; GitHub has no issue-asset API, so under
-`--tracker github` cite the local `tasks/<TASK>/evidence/<X.Y>.png` path instead).
+mechanics and the inline-image alternative.
 
 **Merge the playbook** (once, here — not per scenario):
 - Site: append each returned `playbook.site` line to
@@ -188,6 +197,8 @@ upload/embed mechanics (Linear only; GitHub has no issue-asset API, so under
 - [ ] §1.1 — <title>
 - [ ] §1.2 — <title>
 
+<!-- proof links are Linear assetUrls under --tracker linear, local paths otherwise -->
+
 ## Findings
 
 ### Finding #1 — <title> — <blocker|improvement|nit|plan-defect>
@@ -197,7 +208,7 @@ upload/embed mechanics (Linear only; GitHub has no issue-asset API, so under
 **Expected:** <from plan>
 **Observed:** <what happened>
 **Root cause:** <dev only — file:line; omit if not investigated>
-**Evidence:** proof: <path>; debug: <path>, <path>
+**Evidence:** proof: <assetUrl under linear, else path>; debug: <path>, <path>
 
 ## Notes
 - <gotcha not worth a playbook entry>

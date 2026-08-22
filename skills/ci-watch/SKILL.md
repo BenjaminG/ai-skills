@@ -1,6 +1,6 @@
 ---
 name: ci-watch
-description: Watch a PR's CI hands-free after a push. A persistent Monitor streams each check as it lands; the skill auto-handles the mechanical (rebase a clean conflict, fix lint) and STOPs on any judgment (failing tests, a stack restack, going ready). Triggers on "watch CI", "surveille la CI", "attends la CI", or right after /pr or a push.
+description: Watch a PR's CI hands-free after a push. A persistent Monitor streams each check as it lands; the skill auto-handles the mechanical (rebase a clean conflict, fix lint) and STOPs on any judgment (failing tests, a stack restack, going ready). Triggers on "watch CI", "surveille la CI", "attends la CI", or right after /pr-create or a push.
 argument-hint: "[pr-number|url]"
 disable-model-invocation: true
 ---

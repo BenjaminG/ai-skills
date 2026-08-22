@@ -56,7 +56,7 @@ claude --plugin-dir .
 
 - **Daily workflow** (`daily-update`): Standup compilation from Linear/Slack.
 - **Code quality** (`gate`, `quality-gate`, `code-slop`, `applying-solid-principles`, `second-pass`): Review and auto-fix workflows using agent teams.
-- **Review & PR** (`pr`, `pr-feedback`, `pr-respond`, `pr-comment`, `ci-watch`, `babysit-prs`, `qa-plan`, `qa-run`, `consensus`): Git/GitHub and review automation.
+- **Review & PR** (`pr-create`, `pr-feedback`, `pr-respond`, `pr-comment`, `ci-watch`, `babysit-prs`, `qa-plan`, `qa-run`, `consensus`): Git/GitHub and review automation.
 - **CLI integrations** (`acli`, `confluence-cli`, `codex-cli`, `chrome-cdp`): Wrappers for external CLI tools.
 - **Investigation & planning** (`interview`, `investigate`, `elevate`, `innovate`, `retrospective`, `ralph-loop`, `skill-creator`): Structured thinking workflows.
 - **Specialist agents** (`backend-developer`, `frontend-developer`, `swiftui-performance`): Domain-specific subagent definitions.

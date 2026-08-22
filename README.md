@@ -46,7 +46,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `ubiquitous-language` | Domain-driven naming review |
 | **Review & PR** | |
 | `consensus` | Run a prompt N times and consolidate by vote |
-| `pr` | Publish a PR with type detection + Linear/Jira linking |
+| `pr-create` | Publish a PR with type detection + Linear/Jira linking |
 | `pr-feedback` | Triage and classify PR review comments + CI |
 | `pr-respond` | Apply picked PR feedback + post replies/reactions/resolve |
 | `pr-comment` | Post gate/gate-wf findings as a humanizer-drafted PR review |
