@@ -70,21 +70,31 @@ And one **disposition** — `fix` (change the code) | `reply` (answer, no change
 
 ## 5. Report
 
-Group by priority, P1 → P2 → Nit. Per item:
+One table, rows ordered P1 → P2 → Nit:
 
-- **Where** — `path/to/file.ts:42`, or the check name
-- **Author** — 👤 `<login>`, or 🤖 when `author.__typename` is `Bot`, the login ends in `[bot]`, or it is a known bot account (`naboo-ai-reviews`, `cursor` / Bugbot)
-- **Source** — review-comment | review-summary | conversation | check
-- **Quote** — ≤2 lines from the comment or the check failure
-- **Verdict** — defect claims only: confirmed | refuted | unclear, plus the `file:line` that settled it
-- **Why** — one sentence on the priority
-- **Disposition** — fix | reply | decline | defer
+| # | Where | Who | Claim | Verdict | Do |
+|---|-------|-----|-------|---------|----|
+| P1 | `auth.ts:42` | 🤖 bugbot | null deref on `user.id` | ✅ confirmed — `auth.ts:42`, callers pass undefined | fix |
+| P1 | `ci / build` | ⚙️ check | `tsc` fails, 3 errors | — | fix |
+| P2 | `sync.ts:110` | 👤 alice | why not batch these writes? | ❓ unclear — needs perf numbers | reply |
+| Nit | `api.ts:8` | 🤖 bugbot | unused import | ❌ refuted — used at `api.ts:31` | decline |
 
-Then the ordered plan: P1 first, grouped by file so edits batch cleanly, then P2, then Nits. Then the awaiting-reviewer threads, one line each (author, location, what they are waiting on) — visible, but nothing to act on. Close with 1–3 sentences on overall health, counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"), then:
+- **#** — P1 | P2 | Nit. Append `†` when the priority was rounded up, and footnote the reason in one line under the table.
+- **Where** — `path/to/file.ts:42`, or the check name.
+- **Who** — 👤 `<login>` for a human, 🤖 `<login>` when `author.__typename` is `Bot`, the login ends in `[bot]`, or it is a known bot account (`naboo-ai-reviews`, `cursor` / Bugbot), ⚙️ `check` for a failing check.
+- **Claim** — the item in one line, paraphrased. Quote only when the exact wording is the point.
+- **Verdict** — ✅ confirmed | ❌ refuted | ❓ unclear, then the `file:line` that settled it. `—` for taste items and checks, which carry no verdict.
+- **Do** — fix | reply | decline | defer.
+
+Keep every cell to one line so rows stay scannable; the evidence that will not fit goes in a footnote under the table.
+
+Then the awaiting-reviewer threads in their own table — Where | Who | Waiting on — one row each, nothing to act on.
+
+Close with one line of files touched by the `fix` rows, then 1–3 sentences on overall health counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"), then:
 
 > Tell me which items to act on, or say "apply all P1" / "apply all".
 
-**Done when**: every triaged item appears in the report — count them against step 4's working set — and the user has been asked to pick.
+**Done when**: every triaged item is a row — count the rows against step 4's working set — and the user has been asked to pick.
 
 ## 6. Hand off
 
