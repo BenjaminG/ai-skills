@@ -8,7 +8,7 @@ argument-hint: "[pr-number-or-url] [--auto <policy>]"
 
 Triage a pull request: sort every unresolved review item and failing check by urgency, then hand the user's picks to `pr-respond`. Read-only — never edit files, post replies, or re-run CI.
 
-**`--auto <policy>`** — the caller (a loop, another skill) supplies the selection up front, so §5 reports without asking and §6 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed, and leaves ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision unselected and flagged for the user. Without `--auto`, §5 asks as usual.
+`--auto <policy>` lets a caller (a loop, another skill) supply the selection up front, so §5 reports without asking and §6 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed. It leaves three kinds unselected and flagged for the user: ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision. Without `--auto`, §5 asks as usual.
 
 ## 1. Resolve the PR
 
@@ -96,7 +96,7 @@ Close with one line of files touched by the `fix` rows, then 1–3 sentences on 
 
 > Tell me which items to act on, or say "apply all P1" / "apply all".
 
-Under `--auto`, skip that prompt: mark each row selected or held, and list the held rows in one line ("2 held for you: #3 unclear, #7 needs a merge call").
+Under `--auto`, skip that prompt. Mark each row selected or held, then list the held rows in one line ("2 held for you: #3 unclear, #7 needs a merge call").
 
 **Done when**: every triaged item is a row — count the rows against step 4's working set — and the user has been asked to pick, or the `--auto` policy has selected for them.
 
