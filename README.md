@@ -51,7 +51,8 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `pr-respond` | Apply picked PR feedback + post replies/reactions/resolve |
 | `pr-comment` | Post gate/gate-wf findings as a humanizer-drafted PR review |
 | `ci-watch` | Watch a PR's CI hands-free via a persistent Monitor |
-| `babysit-prs` | Loop over open PRs: triage, batch-respond, notify |
+| `fixup` | Fold a fix into the commit that introduced it, force-push |
+| `babysit-prs` | Self-paced loop driving open PRs to merge-ready |
 | `qa-plan` | Manual QA plan generation |
 | `qa-run` | Execute a manual QA plan |
 | **Developer tools** | |

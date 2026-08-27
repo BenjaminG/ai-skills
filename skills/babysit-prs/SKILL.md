@@ -1,91 +1,59 @@
 ---
 name: babysit-prs
-description: Babysit open PRs on a self-paced loop — no `/loop` wrapper needed; one pass per tick reporting each PR's standing open threads, CI, and mergeability, triaging through `pr-feedback`, batching nits through `pr-respond`, and notifying on approval or merge-ready. Use when asked to babysit, watch, or surveiller open PRs, or to keep checking them on an interval.
+description: Drive every open PR to merge-ready on a self-paced loop — no `/loop` wrapper. Each tick triages through `pr-feedback --auto confirmed`, which answers and folds through `pr-respond` and `fixup`, then waits for CI and new reviews and goes again until the PR is green. Use when asked to babysit, watch, or surveiller open PRs, or to keep them moving until they can merge.
 argument-hint: "[--once] [--every <interval>]"
 ---
 
 # Babysit PRs
 
-Keep open PRs moving without polling them by hand. `/babysit-prs` runs a pass and **schedules its own next pass** — no `/loop` wrapper. `--once` runs a single pass and stops.
-
-**The boundary:** act unasked only on the **mechanical** — a nit reply through an already-gated skill. Every **judgment** — which P1/P2 to fix, the merge — is a **STOP**. This skill composes `pr-feedback` and `pr-respond`; it adds the scan and the **waiting**, no review logic of its own.
+Keep open PRs moving without polling them by hand. This skill owns the **scan**, the **waiting**, and the **stopping** — nothing else. Every judgment about the code belongs to the skills it calls.
 
 ## Each tick
 
-1. **List** open PRs in the current repo:
+1. **List** the PRs still in flight:
 
    ```bash
-   gh pr list --author "@me" --state open --json number,url,title
+   gh pr list --author "@me" --state open --json number,url,title,isDraft
    ```
 
-2. **Read the standing state, then the delta.** In that order — **delta** alone is a trap: a backlog that predates the loop never changes, so a delta-only tick reports `—` while comments pile up unanswered.
+   None left → say so and stop the loop.
 
-   **a. Standing open threads** (every tick, changed or not) — `isResolved == false` and `isOutdated == false`, split by author type. One call gives both the count and the authors:
+2. **Per PR, invoke `pr-feedback <n> --auto confirmed`.** It fetches, adjudicates, and hands off to `pr-respond`, which applies the agreed changes, folds them through `fixup`, pushes, then replies and resolves. Don't re-fetch threads, re-classify, or draft replies here — that is all downstream, and duplicating it is how the two drift apart.
 
-   ```bash
-   gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){
-     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
-       reviewThreads(first:100){ nodes{ isResolved isOutdated
-         comments(first:1){ nodes{ author{login __typename} } } } } } }
-   }' -F owner=OWNER -F repo=REPO -F pr=<n>
+   `--auto confirmed` is the boundary: Nits and ✅ confirmed items go through unattended; ❓ unclear, ❌ refuted-but-blocking, and any merge decision come back **held**. Held items are reported, never acted on.
+
+3. **Report the tick** — one table, one row per PR:
+
+   | PR | Mergeable | CI | Answered | Held | New |
+   |---|---|---|---|---|---|
+   | `#num` | `mergeable` + `mergeStateStatus` | `gh pr checks <n>` rollup, failures first | items closed out this tick | items waiting on the user, one gist each | new comments/reviews since last tick, `—` if none |
+
+   `✅ CLEAN` + all checks green + nothing held = **merge-ready**: notify via `PushNotification` (`ToolSearch "select:PushNotification"`), drop the PR from the loop. The merge itself is the user's.
+
+4. **Wait.** End the turn with `ScheduleWakeup` — always, including a turn that ends on a held item or a `fixup` blocker. A turn that ends without an armed wakeup kills the loop.
+
+   ```
+   ScheduleWakeup({ prompt: "/babysit-prs", delaySeconds: 300, noop: <nothing changed?>, reason: "<what you're waiting on>" })
    ```
 
-   **b. Mergeability + CI** (every tick). `gh pr view <n> --json mergeable,mergeStateStatus` for the merge state, `gh pr checks <n>` for the rollup — count conclusions (`pass` / `fail` / `pending` / `skipping`). Report the raw numbers, not a synthesized verdict.
+   `300` while CI runs or reviews are expected — that is the cadence the loop is built around. Stretch to `1200`–`1800` once every remaining PR is held on the user, since nothing will move until they answer. `--every <interval>` pins it.
 
-   **c. Delta** — which of those threads, reviews, checks, or mergeable state are new since the previous pass.
+   `noop: true` on a tick where nothing changed, `false` when something moved.
 
-   > Loop state lives in this conversation, not on disk. A tick with no memory of the last one re-triages from scratch, which is safe: `pr-feedback` is read-only, so a repeat pass costs tokens, not correctness. That is the **waiting** ceiling — accept it rather than building a state store.
+## Stopping
 
-   **Author type is a label, not a filter.** Mark an author 🤖 when GraphQL `author{ __typename }` is `Bot`, the login ends in `[bot]`, or it's a known bot account (`naboo-ai-reviews`, `cursor`/Bugbot); everyone else is 👤. Report bot findings alongside human ones.
+`ScheduleWakeup({ stop: true })`, and don't re-arm, when every PR is merge-ready or closed, when `--once` was passed (never arm at all), or when the user says stop.
 
-3. **Triage** through `pr-feedback` — **standing**, not delta: every open thread counted in 2a lands in the P1 / P2 / Nit classification, including ones raised before the loop started.
+Everything else keeps ticking — a held item and a rebase conflict both mean *report and come back*, not *give up*.
 
-4. **Emit the tick report** — one table, one row per PR, carrying standing backlog *and* activity:
+## What lives where
 
-   | Column | Content |
-   |---|---|
-   | **PR** | `#num` + state glyph (✅ ready / ⚠️ blocked / 🚧 draft) |
-   | **Mergeable** | `mergeable` + `mergeStateStatus` from 2b — `✅ CLEAN`, `⚠️ BEHIND` (rebase), `⛔ BLOCKED`, `❌ DIRTY` (conflicts) |
-   | **CI** | rollup from 2b, failures first: `❌ 1 fail · 2 pending · 43 pass`; `✅ all pass` when green (omit `skipping` unless it's all there is) |
-   | **To answer** | standing open threads from 2a, split e.g. `👤 2 · 🤖 6`; `0` when the PR is clean — this number persists across ticks |
-   | **New** | delta only — each new comment/review this tick as `👤 <login>` or `🤖 <login>` + ≤5-word gist; `—` when nothing new since last tick |
-   | **P1/P2/Nit** | counts from the step-3 triage; the table links to that triage, it doesn't replace it |
-
-5. **Act**, by the boundary above:
-
-   - Nits and clear agreements → batch through `pr-respond` (**mechanical** — it gates on one confirmation and runs replies through humanizer).
-   - Which P1 / P2 to actually fix → surface it and **STOP**. That choice is the user's.
-
-6. **Notify** via `PushNotification` (load it first: `ToolSearch "select:PushNotification"`) on:
-
-   - an **APPROVE** → "merge-ready".
-   - all checks green / PR ready for human review.
-   - a push answering feedback → "re-solicit the reviewer". Re-soliciting is the user's: leave GitHub review requests and Slack untouched.
-
-## Cadence
-
-The skill drives its own loop. **Arm `ScheduleWakeup` before ending any turn** — including a turn that ends on a `pr-respond` confirmation prompt or a P1/P2 question. A turn that ends waiting on the user without an armed wakeup kills the loop.
-
-```
-ScheduleWakeup({ prompt: "/babysit-prs", delaySeconds: <see below>, noop: <nothing changed?>, reason: "<what you're waiting on>" })
-```
-
-If `ScheduleWakeup` isn't in the tool list, load it: `ToolSearch "select:ScheduleWakeup"`.
-
-| Situation | Delay |
+| Concern | Skill |
 |---|---|
-| CI pending on a PR that's otherwise green | `300` — it's about to resolve |
-| Normal backlog, threads open | `1200` — matches review latency |
-| Nothing moved for 2+ ticks, or all PRs blocked on the user | `1800`–`3600` |
+| Fetching threads, verdicts, P1/P2/Nit | `pr-feedback` |
+| Code changes, replies, reactions, resolving | `pr-respond` |
+| Finding the introducing commit, fold, force-push | `fixup` |
+| Restacking children after a fold | `gh-stack` |
+| Scanning, cadence, stopping | here |
 
-Set `noop: true` on a tick where nothing changed (collapses the report in the user's terminal), `false` when you acted or something moved.
-
-**Stop** — call `ScheduleWakeup({ stop: true })` and don't re-arm — when:
-
-- `--once` was passed (never arm at all).
-- Every listed PR is merged or closed.
-- The user says stop.
-
-A **STOP** boundary (a P1/P2 fix choice, a merge) does *not* stop the loop: report it, arm the next tick, and say the loop is holding on their answer.
-
-`--every <interval>` pins a fixed delay instead of the table above.
+Loop state lives in this conversation, not on disk — the ticks have to stay in one session. A tick that has forgotten the last one re-triages from scratch, which costs tokens, not correctness.

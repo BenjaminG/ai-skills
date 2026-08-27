@@ -1,12 +1,14 @@
 ---
 name: pr-feedback
 description: Triage a pull request — sort every unresolved review item and failing check into P1 / P2 / Nit with a disposition, for `pr-respond` to act on. Use when triaging a PR, asking what is blocking a PR, or given a bare PR number or URL.
-argument-hint: "[pr-number-or-url]"
+argument-hint: "[pr-number-or-url] [--auto <policy>]"
 ---
 
 # PR Feedback Triage
 
 Triage a pull request: sort every unresolved review item and failing check by urgency, then hand the user's picks to `pr-respond`. Read-only — never edit files, post replies, or re-run CI.
+
+**`--auto <policy>`** — the caller (a loop, another skill) supplies the selection up front, so §5 reports without asking and §6 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed, and leaves ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision unselected and flagged for the user. Without `--auto`, §5 asks as usual.
 
 ## 1. Resolve the PR
 
@@ -94,10 +96,14 @@ Close with one line of files touched by the `fix` rows, then 1–3 sentences on 
 
 > Tell me which items to act on, or say "apply all P1" / "apply all".
 
-**Done when**: every triaged item is a row — count the rows against step 4's working set — and the user has been asked to pick.
+Under `--auto`, skip that prompt: mark each row selected or held, and list the held rows in one line ("2 held for you: #3 unclear, #7 needs a merge call").
+
+**Done when**: every triaged item is a row — count the rows against step 4's working set — and the user has been asked to pick, or the `--auto` policy has selected for them.
 
 ## 6. Hand off
 
 Invoke `pr-respond` with the user's picks. It reads this triage from the conversation and does not re-fetch, so carry each picked item's priority, disposition, verdict with its evidence (the reply to a refuted claim is written from it), thread `id`, first-comment `databaseId`, `owner`, `repo` and PR number into the handoff.
+
+Under `--auto`, pass the policy through so `pr-respond` skips its confirmation too.
 
 **Done when**: `pr-respond` is invoked, or the user picks nothing and the triage is left as the deliverable.
