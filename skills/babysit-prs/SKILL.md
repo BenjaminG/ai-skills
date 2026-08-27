@@ -18,15 +18,25 @@ Keep open PRs moving without polling them by hand. This skill owns the scan, the
 
    None left? Say so and stop the loop.
 
-2. Per PR, invoke `pr-feedback <n> --auto confirmed`. It fetches, adjudicates, and hands off to `pr-respond`, which applies the agreed changes, folds them through `fixup`, pushes, then replies and resolves. Don't re-fetch threads, re-classify, or draft replies here. All of that lives downstream, and duplicating it is how the two drift apart.
+2. Per PR, spawn one subagent to run the triage. Send them all in a single message so they run concurrently:
 
-   `--auto confirmed` draws the line. Nits and confirmed items go through unattended. Unclear items, refuted-but-blocking ones, and any merge decision come back held. Report held items, never act on them.
+   ```
+   Agent({
+     subagent_type: "general-purpose",
+     model: "opus",
+     name: "triage-pr-<n>",
+     description: "Triage PR #<n>",
+     prompt: "Think hard. Invoke the `pr-feedback` skill on PR #<n> with `--auto confirmed`. Adjudicating each review item — is this claim real, or refuted? — is the part that matters; default to refuted when unsure, and spend the reasoning there rather than on restating the diff. Return only: items answered this tick (one line each), items held for the user (one gist each), and any `fixup` blocker."
+   })
+   ```
+
+   The subagent keeps every thread body, diff, and reply draft out of this context, which is what makes many open PRs affordable, and it gets a model that can actually weigh a review claim. Don't fetch threads, classify, or draft replies here — the main loop only collects status.
 
 3. Report the tick as one table, one row per PR:
 
    | PR | Issue | Mergeable | CI | Answered | Held | New |
    |---|---|---|---|---|---|---|
-   | `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | `mergeable` + `mergeStateStatus` | `gh pr checks <n>` rollup, failures first | items closed out this tick | items waiting on the user, one gist each | new comments and reviews since last tick, `—` if none |
+   | `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | `mergeable` + `mergeStateStatus` | `gh pr checks <n>` rollup, failures first | from the subagent's report | from the subagent's report, one gist each | new comments and reviews since last tick, `—` if none |
 
    Take the Linear key from `headRefName` and the title from `linear-cli` once per PR, then reuse it for the rest of the session — it doesn't change between ticks.
 
@@ -52,10 +62,10 @@ Everything else keeps ticking. A held item and a rebase conflict both mean repor
 
 | Concern | Skill |
 |---|---|
-| Fetching threads, verdicts, P1/P2/Nit | `pr-feedback` |
+| Fetching threads, verdicts, P1/P2/Nit | `pr-feedback`, in a per-PR Opus subagent |
 | Code changes, replies, reactions, resolving | `pr-respond` |
 | Finding the introducing commit, fold, force-push | `fixup` |
 | Restacking children after a fold | `gh-stack` |
-| Scanning, cadence, stopping | here |
+| Scanning, PR status, cadence, stopping | here |
 
 Loop state lives in this conversation, not on disk, so the ticks have to stay in one session. A tick that has forgotten the last one re-triages from scratch, which costs tokens, not correctness.
