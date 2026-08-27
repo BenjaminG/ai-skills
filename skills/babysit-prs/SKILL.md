@@ -1,12 +1,12 @@
 ---
 name: babysit-prs
-description: Babysit open PRs on a loop — one pass per tick reporting each PR's standing open threads, CI, and mergeability, triaging through `pr-feedback`, batching nits through `pr-respond`, and notifying on approval or merge-ready. Use when asked to babysit, watch, or surveiller open PRs, or to keep checking them on an interval.
-argument-hint: "[--once]"
+description: Babysit open PRs on a self-paced loop — no `/loop` wrapper needed; one pass per tick reporting each PR's standing open threads, CI, and mergeability, triaging through `pr-feedback`, batching nits through `pr-respond`, and notifying on approval or merge-ready. Use when asked to babysit, watch, or surveiller open PRs, or to keep checking them on an interval.
+argument-hint: "[--once] [--every <interval>]"
 ---
 
 # Babysit PRs
 
-Keep open PRs moving without polling them by hand. One pass per tick; `--once` runs a single pass.
+Keep open PRs moving without polling them by hand. `/babysit-prs` runs a pass and **schedules its own next pass** — no `/loop` wrapper. `--once` runs a single pass and stops.
 
 **The boundary:** act unasked only on the **mechanical** — a nit reply through an already-gated skill. Every **judgment** — which P1/P2 to fix, the merge — is a **STOP**. This skill composes `pr-feedback` and `pr-respond`; it adds the scan and the **waiting**, no review logic of its own.
 
@@ -64,4 +64,28 @@ Keep open PRs moving without polling them by hand. One pass per tick; `--once` r
 
 ## Cadence
 
-`/loop /babysit-prs` — ~20 min matches review latency. In dynamic mode, tighten via `ScheduleWakeup` when a PR is close to **green**, loosen otherwise.
+The skill drives its own loop. **Arm `ScheduleWakeup` before ending any turn** — including a turn that ends on a `pr-respond` confirmation prompt or a P1/P2 question. A turn that ends waiting on the user without an armed wakeup kills the loop.
+
+```
+ScheduleWakeup({ prompt: "/babysit-prs", delaySeconds: <see below>, noop: <nothing changed?>, reason: "<what you're waiting on>" })
+```
+
+If `ScheduleWakeup` isn't in the tool list, load it: `ToolSearch "select:ScheduleWakeup"`.
+
+| Situation | Delay |
+|---|---|
+| CI pending on a PR that's otherwise green | `300` — it's about to resolve |
+| Normal backlog, threads open | `1200` — matches review latency |
+| Nothing moved for 2+ ticks, or all PRs blocked on the user | `1800`–`3600` |
+
+Set `noop: true` on a tick where nothing changed (collapses the report in the user's terminal), `false` when you acted or something moved.
+
+**Stop** — call `ScheduleWakeup({ stop: true })` and don't re-arm — when:
+
+- `--once` was passed (never arm at all).
+- Every listed PR is merged or closed.
+- The user says stop.
+
+A **STOP** boundary (a P1/P2 fix choice, a merge) does *not* stop the loop: report it, arm the next tick, and say the loop is holding on their answer.
+
+`--every <interval>` pins a fixed delay instead of the table above.
