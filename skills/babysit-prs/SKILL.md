@@ -13,7 +13,7 @@ Keep open PRs moving without polling them by hand. This skill owns the scan, the
 1. List the PRs still in flight:
 
    ```bash
-   gh pr list --author "@me" --state open --json number,url,title,isDraft
+   gh pr list --author "@me" --state open --json number,url,title,isDraft,headRefName
    ```
 
    None left? Say so and stop the loop.
@@ -24,9 +24,11 @@ Keep open PRs moving without polling them by hand. This skill owns the scan, the
 
 3. Report the tick as one table, one row per PR:
 
-   | PR | Mergeable | CI | Answered | Held | New |
-   |---|---|---|---|---|---|
-   | `#num` | `mergeable` + `mergeStateStatus` | `gh pr checks <n>` rollup, failures first | items closed out this tick | items waiting on the user, one gist each | new comments and reviews since last tick, `—` if none |
+   | PR | Issue | Mergeable | CI | Answered | Held | New |
+   |---|---|---|---|---|---|---|
+   | `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | `mergeable` + `mergeStateStatus` | `gh pr checks <n>` rollup, failures first | items closed out this tick | items waiting on the user, one gist each | new comments and reviews since last tick, `—` if none |
+
+   Take the Linear key from `headRefName` and the title from `linear-cli` once per PR, then reuse it for the rest of the session — it doesn't change between ticks.
 
    A PR that is `CLEAN`, green on every check, and holding nothing is merge-ready. Notify via `PushNotification` (`ToolSearch "select:PushNotification"`) and drop it from the loop. The merge itself is the user's.
 
