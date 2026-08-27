@@ -48,12 +48,11 @@ If no item changed code, meaning everything was `reply`, `decline`, or `defer`, 
 ## Posting (after confirmation, and after the push)
 
 - **Reply — inline review thread:** `gh api repos/{owner}/{repo}/pulls/<n>/comments -f body='…' -F in_reply_to=<databaseId>`
-- **Reply — conversation / issue comment (e.g. some bugbot posts):** `gh api repos/{owner}/{repo}/issues/<n>/comments -f body='…'`
 - **Reaction — review comment:** `gh api repos/{owner}/{repo}/pulls/comments/<databaseId>/reactions -f content=+1` (or `-1`)
 - **Reaction — issue / conversation comment:** `gh api repos/{owner}/{repo}/issues/comments/<databaseId>/reactions -f content=+1` (or `-1`)
 - **Resolve — inline threads only:** `gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -f id=<thread-id>` using the thread `id` from triage.
 
 Notes:
 
-- Issue-level conversation comments have no thread and **cannot be resolved** — reply + react only, and say so in the summary.
+- **Only a thread with a Resolve button gets a reply.** PR-level conversation comments — a review bot's `AI Review` summary, a CI recap, anything posted on the conversation tab rather than on a line — have no thread to resolve, and a reply there is a new top-level comment everyone gets mailed about. React if it helps; never reply. Fix what such a comment got right in the code, and say in the summary that it was acted on without an answer.
 - CI-check items have nothing to reply to; they're fixed by editing code, not by posting.
