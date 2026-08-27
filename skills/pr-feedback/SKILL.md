@@ -8,39 +8,37 @@ argument-hint: "[pr-number-or-url] [--auto <policy>]"
 
 Triage a pull request: sort every unresolved review item and failing check by urgency, then hand the user's picks to `pr-respond`. Read-only — never edit files, post replies, or re-run CI.
 
-`--auto <policy>` lets a caller (a loop, another skill) supply the selection up front, so §5 reports without asking and §6 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed. It leaves three kinds unselected and flagged for the user: ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision. Without `--auto`, §5 asks as usual.
+`--auto <policy>` lets a caller (a loop, another skill) supply the selection up front, so §4 reports without asking and §5 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed. It leaves three kinds unselected and flagged for the user: ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision. Without `--auto`, §4 asks as usual.
 
-## 1. Resolve the PR
+## 1. Fetch
 
-Use the argument when it is a PR number or URL; otherwise detect from the current branch: `gh pr view --json number,url,headRefName,baseRefName,state,author`.
+The script ships with the plugin; resolve its path the same way `gate-wf` resolves its own
+(plugin-root env → newest plugin cache → global-skills fallback), then run it:
 
-**Done when**: the resolved `#<n> — <url>` is stated for the user, and `owner` / `repo` / the PR author's login are captured for the calls below.
+```bash
+for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/pr-feedback/scripts/fetch-pr.py}" \
+         $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/pr-feedback/scripts/fetch-pr.py 2>/dev/null | sort -V | tail -1) \
+         "$HOME/.claude/skills/pr-feedback/scripts/fetch-pr.py"; do
+  [ -n "$c" ] && [ -f "$c" ] && FETCH="$c" && break
+done
+python3 "$FETCH" [pr-number-or-url]
+```
 
-## 2. Fetch every source
+One call, one JSON blob on stdout: the PR (`number`, `url`, `owner`, `repo`, `author`, `head`,
+`base`, `state`), every unresolved inline review `thread` (paginated, with `id`, `comment_id`,
+`path`, `line`, `awaiting_reviewer`, and each comment's `author` / `is_bot` / `body`), the
+`reviews`, the conversation `comments`, and each entry in `failing_checks` with a 50-line
+`log_tail`. Resolved and outdated threads are already dropped — `dropped_threads` counts them, so
+the omission is visible rather than silent — and a bot's superseded review passes are collapsed to
+its latest one.
 
-Four sources, fetched in parallel. Cap any log output aggressively.
+Omit the argument to detect the PR from the current branch. A source that failed leaves a line in
+`errors[]` instead of taking the run down: triage the rest and say in the report which source is
+missing.
 
-- **Inline review threads** — `gh pr view` has **no** `reviewThreads` JSON field (it errors with `Unknown JSON field`), so use GraphQL. This is where bot findings (Cursor Bugbot, `naboo-ai-reviews`) live. Paginate until `hasNextPage` is false: a PR can carry more than 100 threads, and an unfetched page is a silently dropped finding.
+**Done when**: the resolved `#<n> — <url>` is stated for the user and the JSON is in hand.
 
-  ```bash
-  gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
-    repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
-      reviewThreads(first:100,after:$cursor){ pageInfo{hasNextPage endCursor}
-        nodes{ id isResolved isOutdated path line
-          comments(first:20){ nodes{ databaseId author{login __typename} body } } } } } }
-  }' -F owner=OWNER -F repo=REPO -F pr=<n> -F cursor=<endCursor>
-  ```
-
-  Omit `-F cursor=` on the first call; pass `pageInfo.endCursor` on each next one. Fetch the whole thread, not just its opening comment — the last comment is what tells you whether the ball is still in your court (§4). Keep `id` (the node id `pr-respond` needs to resolve the thread), the first comment's `databaseId` (its reply and reaction endpoints), `isResolved`, `isOutdated`, `path`, `line`, and every comment's author and body. `author.__typename` is the human-vs-bot signal.
-- **Review summaries** — `gh pr view <n> --json reviews`: state (APPROVED / CHANGES_REQUESTED / COMMENTED), author, body.
-- **Conversation comments** — `gh api repos/{owner}/{repo}/issues/<n>/comments`.
-- **Status checks** — `gh pr checks <n>`. For each FAIL, a short log tail: `gh run view --log-failed --job <job-id> | tail -n 50`.
-
-Drop a thread when `isResolved` or `isOutdated` is true, unless a later comment in it flags a regression.
-
-**Done when**: all four sources are in, `hasNextPage` is false, and the working set holds every surviving thread, review, conversation comment, and failing check.
-
-## 3. Adjudicate each claim
+## 2. Adjudicate each claim
 
 A review comment is a **claim**, not a fact. Before an item gets a priority it gets a **verdict**, and the verdict is earned by reading the code — never by reading the comment more carefully. Default to **refuted** when the evidence does not arrive: a bot's fluent prose is not evidence, the file is.
 
@@ -50,13 +48,13 @@ For every item asserting a defect — bug, race, security hole, missing test, br
 2. Try to **refute** it. Name the input that triggers the defect, or the reason it cannot occur. "No caller passes null here" refutes; "looks fine" does not.
 3. Record the verdict with its evidence — **confirmed** (`file:line` + the triggering case) | **refuted** (`file:line` + why it cannot happen) | **unclear** (the one thing that would settle it).
 
-Items asserting taste — naming, formatting, phrasing, an optional refactor — assert no fact, so they carry no verdict. Send them straight to §4.
+Items asserting taste — naming, formatting, phrasing, an optional refactor — assert no fact, so they carry no verdict. Send them straight to §3.
 
 **Done when**: every defect-asserting item carries a verdict naming a `file:line` read in this run. A verdict resting only on the comment's own wording is not a verdict — go read the file.
 
-## 4. Classify
+## 3. Classify
 
-First, set aside the threads that are **awaiting reviewer** — those whose last comment is the PR author's. The ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. One exception keeps a thread in the buckets: the author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart.
+The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. One exception pulls a thread back into the buckets: the author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart.
 
 Everything else takes one priority:
 
@@ -70,7 +68,7 @@ And one **disposition** — `fix` (change the code) | `reply` (answer, no change
 
 **Done when**: every item in the working set carries a priority and a disposition consistent with its verdict, or is marked awaiting-reviewer. A bot's item is adjudicated like anyone else's — its author decides neither the verdict nor the priority.
 
-## 5. Report
+## 4. Report
 
 One table, rows ordered P1 → P2 → Nit:
 
@@ -98,9 +96,9 @@ Close with one line of files touched by the `fix` rows, then 1–3 sentences on 
 
 Under `--auto`, skip that prompt. Mark each row selected or held, then list the held rows in one line ("2 held for you: #3 unclear, #7 needs a merge call").
 
-**Done when**: every triaged item is a row — count the rows against step 4's working set — and the user has been asked to pick, or the `--auto` policy has selected for them.
+**Done when**: every triaged item is a row — count the rows against step 3's working set — and the user has been asked to pick, or the `--auto` policy has selected for them.
 
-## 6. Hand off
+## 5. Hand off
 
 Invoke `pr-respond` with the user's picks. It reads this triage from the conversation and does not re-fetch, so carry each picked item's priority, disposition, verdict with its evidence (the reply to a refuted claim is written from it), thread `id`, first-comment `databaseId`, `owner`, `repo` and PR number into the handoff.
 
