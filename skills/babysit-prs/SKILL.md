@@ -40,6 +40,10 @@ The blob opens with `state_dir` — the absolute path where mutes and agent repo
 you write into an agent's prompt must be that value expanded, never `$STATE_DIR`: a subagent has no
 such variable, and a report written to a literal `$STATE_DIR/…` is a report you never receive.
 
+Drafts are out of scope: the scan filters them at the source, so a draft never fills a row
+and never spawns an agent. Marking one ready for review brings it into the matrix on the next
+pass.
+
 Empty PR list? Say so and stop.
 
 ## 2. Fill the matrix

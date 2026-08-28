@@ -67,7 +67,8 @@ def is_bot(login, typename):
 
 
 def open_prs():
-    out = gh("pr", "list", "--author", "@me", "--state", "open", "--json", "number", "-q", ".[].number")
+    out = gh("pr", "list", "--author", "@me", "--state", "open", "--draft=false",
+             "--json", "number", "-q", ".[].number")
     return sorted(int(n) for n in out.split())
 
 
