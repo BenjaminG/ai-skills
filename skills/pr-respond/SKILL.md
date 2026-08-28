@@ -30,6 +30,8 @@ Replies are drafted through the `humanizer` skill (see below) — that dependenc
 
 1. **Apply** — for `fix`, make the agreed code change. Skip the edit for `reply`, `decline`, and `defer`.
 2. **Draft the reply** — a 1–3 sentence reply stating what was done (applied + how) or why it was declined. Route it through the `humanizer` skill. **Never post a raw draft — always route it through humanizer first.**
+
+   Into a **bot** thread, that reply ends the exchange. It reports a decision already taken — applied, refuted, declined, deferred — and closes. No question ("what do you think?"), no offer waiting on an answer ("happy to open a follow-up if you think it's relevant"), no choice handed to a reader who is not there. Humanizer shapes the voice; this rule fixes what the sentence commits to. A human thread keeps the full register — a question there has a reader.
 3. **Pick the reaction** — `fix` / agreed → 👍 (`+1`); `decline` → 👎 (`-1`). `reply` / `defer` → no reaction unless you're agreeing.
 4. **Add to the batch preview** — three blocks, in this order, so nothing that leaves the machine is missing from it:
 
@@ -44,7 +46,7 @@ Replies are drafted through the `humanizer` skill (see below) — that dependenc
 
 Step 1's edits are **local**: they come before the preview because they are what makes it concrete. Everything that leaves the machine — `commit`, `rebase`, `push`, replies, reactions, resolutions — comes after the confirmation. Under `--auto`, that confirmation is the policy the caller already gave.
 
-Show the **one batch preview**, then post everything only after a **single** confirmation. One confirmation covers all three blocks. Under `--auto <policy>`, passed through by `pr-feedback`, the caller has already authorized the batch. Show the preview and proceed without waiting — within the two limits that policy carries: a **human-authored** item is never in the batch, and an item marked *leave open* gets its reply but keeps its thread unresolved.
+Show the **one batch preview**, then post everything only after a **single** confirmation. One confirmation covers all three blocks. Under `--auto <policy>`, passed through by `pr-feedback`, the caller has already authorized the batch. Show the preview and proceed without waiting — within the limit that policy carries: a **human-authored** item is never in the batch. Every bot item in it is replied to, reacted to and resolved — an item whose remedy is the author's call is resolved like the rest and reported as **held**.
 
 **Done when** every selected item has been either applied-and-answered or explicitly skipped with its reason, *and* the summary lists each item's outcome (reply posted / reaction set / thread resolved-or-not). Don't stop before every picked item is accounted for.
 
@@ -65,6 +67,7 @@ If no item changed code, meaning everything was `reply`, `decline`, or `defer`, 
 
 Notes:
 
+- **A bot thread always ends resolved.** Reply, react, resolve — in that order, every time. Holding one open waits on a reader who will not come: the bot never answers, and the open thread re-enters the next triage as `awaiting_reviewer` (our own reply flips that flag) and keeps `babysit-prs` spawning an agent for it. When the remedy is the author's call, the thread still closes — the reply says what was decided and what was left to the author, and the item is reported as **held**. Only a human thread may be left open. A bot thread an earlier run already answered arrives with nothing to say: resolve it and post no second reply.
 - **Only a thread with a Resolve button gets a reply.** PR-level conversation comments — a review bot's `AI Review` summary, a CI recap, anything posted on the conversation tab rather than on a line — have no thread to resolve, and a reply there is a new top-level comment everyone gets mailed about. React if it helps; never reply. Fix what such a comment got right in the code, and say in the summary that it was acted on without an answer.
 - **A review submission is not a thread either.** The body of an APPROVED or CHANGES_REQUESTED review lives on the conversation tab, same as any PR-level comment.
 - **Draft the answer, never post it.** An item marked `reply (hand back)` still gets written — a refutation, a correction, whatever the claim earns — but it goes in the summary handed back to the author, ready to paste, and never through `gh pr comment` or `gh pr review`. Only the author decides to mail the whole PR. To clear a stale CHANGES_REQUESTED, offer `gh pr edit <n> --add-reviewer <login>`; don't run it.

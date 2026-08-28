@@ -15,9 +15,12 @@ Two limits hold under every `--auto` policy, because the caller is unattended:
 - **Only bots and checks are selectable.** An item authored by a human is reported and held, never
   acted on — no reply, no reaction, no resolve, no code change. A human wrote to the author, and an
   automated pass answering in their place is the one thing no policy authorises.
-- **A confirmed item that §2 turned into a `reply` for want of a decision** is posted as a reply and
-  its thread is left **open**, then counted as held. The reviewer sees the adjudication; the choice
-  still waits for the author.
+- **A confirmed item that §2 turned into a `reply` for want of a decision** is posted as a reply,
+  its thread is **resolved**, and it is counted as held and named in §4's held line. Only bot items
+  are selectable here, and a bot never reads the answer: an open thread waits on nobody, re-enters
+  the next triage as `awaiting_reviewer` because our own reply flipped that flag, and keeps a caller
+  like `babysit-prs` spawning an agent for it. The held decision reaches the author through the
+  report, never through a thread left ajar.
 
 ## 1. Fetch
 
@@ -93,7 +96,7 @@ PR-level recap comment — has no anchor and stays out.
 
 ## 3. Classify
 
-The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. One exception pulls a thread back into the buckets: the author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart.
+The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. Two exceptions pull a thread back out. The author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart. Or the reviewer is a **bot**: `awaiting_reviewer` only means the last comment is the author's, and no bot ever takes that ball back. An answered bot thread is finished, so it takes the disposition `reply` with nothing left to say and goes to `pr-respond` for the resolve alone — that is how a thread an earlier run left ajar finally closes.
 
 Everything else takes one priority:
 

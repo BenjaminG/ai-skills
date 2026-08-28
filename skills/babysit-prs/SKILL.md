@@ -48,13 +48,14 @@ One row per PR. The objective columns come from the script, the last three from 
 
 | PR | Issue | Mergeable | CI | Threads | Fixed | Held | Blocked |
 |---|---|---|---|---|---|---|---|
-| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `report.held` | `report.blocked` or `—` |
+| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `report.held`, then `— <report.held_gist>` when there is one | `report.blocked` or `—` |
 
 Take the Linear key from the branch name and the title from `linear-cli` once per PR, then reuse
 it — it does not change between events.
 
-Nothing else goes in the table, and nothing goes under it. A held item's substance lives on the PR
-where you will act on it, not here.
+Nothing else goes in the table, and nothing goes under it. The `held_gist` is the whole substance
+you get: its thread is resolved, so the matrix is where the author learns a decision is waiting.
+One line, no expansion under the table.
 
 A PR reported `merge_ready` earns a `PushNotification` (`ToolSearch "select:PushNotification"`)
 and leaves the matrix. The merge itself is yours.
@@ -95,8 +96,10 @@ Agent({
 
     **When the remedy is a choice, not a fix**: a bot claim you confirmed whose fix means picking
     an architecture, or that contradicts a decision recorded in an ADR, `CLAUDE.md`, project
-    memory, or the git history — reply in that bot's thread with your adjudication, leave the
-    thread OPEN, and count the item as held. Do not decide for the author.
+    memory, or the git history — reply in that bot's thread with your adjudication, **resolve the
+    thread**, and count the item as held with a one-line gist. Do not decide for the author, and do
+    not park the decision in a thread nobody reads: a bot never answers, and an open bot thread
+    keeps this PR spawning an agent forever. The author reads held items in the matrix.
 
     **The same check failing twice after you fixed it** means your fix missed the cause. Stop
     touching it, count it as blocked.
@@ -105,7 +108,8 @@ Agent({
     <state_dir>/<n>.report.json (the absolute path, substituted here by the manager):
 
       {\"pushed\": <fixes on the remote>, \"inflight\": <started, not pushed>,
-       \"held\": <items left for the author>, \"blocked\": \"<one gist or null>\"}
+       \"held\": <items left for the author>, \"held_gist\": \"<one gist or null>\",
+       \"blocked\": \"<one gist or null>\"}
 
     That file is your only report; nothing else you say reaches the manager. Write it, then stop."
 })
