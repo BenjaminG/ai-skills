@@ -34,21 +34,22 @@ python3 "$FETCH" [pr-number-or-url]
 ```
 
 One call, one JSON blob on stdout: the PR (`number`, `url`, `owner`, `repo`, `author`, `head`,
-`base`, `state`), every unresolved inline review `thread` (paginated, with `id`, `comment_id`,
-`path`, `line`, `awaiting_reviewer`, and each comment's `author` / `is_bot` / `body`), the
+`base`, `state`), every **live** inline review `thread` (paginated, with `id`, `comment_id`,
+`path`, `line`, `awaiting_reviewer`, and each comment's `author` / `is_bot` / `body`),
+`settled_threads` — the resolved and outdated ones, same shape in 300-char excerpts — the
 `reviews`, the conversation `comments`, and each entry in `failing_checks` with a 50-line
-`log_tail`. Resolved and outdated threads are already dropped — `dropped_threads` counts them, so
-the omission is visible rather than silent — and a bot's superseded review passes are collapsed to
-its latest one.
+`log_tail`. A bot's superseded review passes are collapsed to its latest one.
 
 Omit the argument to detect the PR from the current branch. A source that failed leaves a line in
 `errors[]` instead of taking the run down: triage the rest and say in the report which source is
 missing.
 
-The working set is what the script returns. A resolved or outdated thread is **settled** — someone
-closed it — so never fetch one back to re-adjudicate it against current code: on a mature PR that
-stock is most of the threads, and re-reading it costs the whole triage while changing nothing.
-`dropped_threads` is a count, not a to-do list.
+The working set is `threads` + `reviews` + `comments` + `failing_checks`. `settled_threads` is
+**not** part of it: someone closed those, so they earn no verdict, no priority and no row. They
+ship for one job — a PR-level summary carries no `path:line` of its own and recaps findings that
+each got a thread, so the settled excerpts are the only evidence that separates a live claim from
+one already answered. Read them for that (§3), then leave them closed: never re-adjudicate one
+against current code, and never re-fetch their full bodies.
 
 **Done when**: the resolved `#<n> — <url>` is stated for the user and the JSON is in hand.
 
@@ -102,7 +103,9 @@ Everything else takes one priority:
 
 Doubt about **severity** rounds up — take the higher priority and note it was close. Doubt about **truth** rounds down: an `unclear` verdict caps at P2, and a **refuted** one at Nit unless a reviewer blocked the PR on it. A refuted claim still earns an answer, just not a code change.
 
-An item with no Resolve button — a PR-level conversation comment (a bot's `AI Review` summary, a CI recap), or the body of an APPROVED / CHANGES_REQUESTED review submission — is triaged like any other, `reply` included: an answer is often exactly what it deserves. What changes is who posts it. There is no thread to answer there, so a reply becomes a new top-level comment everyone gets mailed about, and that is the author's call, never `pr-respond`'s. Mark such an item `reply (hand back)` and carry that note into the handoff.
+An item with no Resolve button — a PR-level conversation comment (a bot's `AI Review` summary, a CI recap), or the body of an APPROVED / CHANGES_REQUESTED review submission — gets one check before anything else: **match each of its claims against `settled_threads`.** Such a summary recaps findings that each got their own thread, and it is frozen at the SHA that produced it — answering the findings does not rewrite it. A claim that already sits in a settled thread is answered; it produces no row. Say it in one line under the table ("the AI Review body recaps 3 threads, all resolved") and move on. Only a claim with no settled counterpart survives as an item.
+
+What survives is triaged like any other, `reply` included: an answer is often exactly what it deserves. What changes is who posts it. There is no thread to answer there, so a reply becomes a new top-level comment everyone gets mailed about, and that is the author's call. Mark it `reply (hand back)` — the answer is **written into §4's report**, ready to paste, and nothing posts it: not `pr-respond`, not you. `gh pr comment` and `gh pr review` are outside this skill and its handoff, whatever the disposition says.
 
 And one **disposition** — `fix` (change the code) | `reply` (answer, no change) | `decline` (won't fix) | `defer` (track for later). `pr-respond` acts on the disposition, not on the priority, so mark an item `fix` only when code must actually change. A refuted claim is `reply` carrying the refutation, or `decline` — never `fix`.
 
@@ -110,7 +113,15 @@ And one **disposition** — `fix` (change the code) | `reply` (answer, no change
 
 ## 4. Report
 
-One table, rows ordered P1 → P2 → Nit:
+**Empty working set — no table.** No live thread, no failing check, and every PR-level claim matched
+a settled thread: say that in two or three lines (the PR state, what the settled stock already
+covers, what is actually left — usually an approval), and stop. No rows, no dispositions, no
+`apply all` prompt, no handoff. A row is a commitment to act, and a settled PR has nothing to commit
+to; a `†` footnote on a row that says "already answered" is that row admitting it should not exist.
+Under `--auto` that is a report of zero selected, zero held — the ordinary state of a green PR whose
+threads are all settled.
+
+Otherwise, one table, rows ordered P1 → P2 → Nit:
 
 | # | Where | Who | Claim | Verdict | Do |
 |---|-------|-----|-------|---------|----|
@@ -132,16 +143,33 @@ Then the awaiting-reviewer threads in their own table — Where | Who | Waiting 
 
 Close with one line of files touched by the `fix` rows, then 1–3 sentences on overall health counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"), then:
 
-> Tell me which items to act on, or say "apply all P1" / "apply all".
+> Tell me which items to act on — "all P1" / "all" works. Nothing is edited, pushed or posted on
+> that answer: it picks the items, then `pr-respond` drafts everything and shows you one batch to
+> approve.
 
 Under `--auto`, skip that prompt. Mark each row selected or held, then list the held rows in one line ("2 held for you: #3 unclear, #7 needs a merge call").
 
-**Done when**: every triaged item is a row — count the rows against step 3's working set — and the user has been asked to pick, or the `--auto` policy has selected for them.
+**Done when**: every triaged item is a row — count the rows against step 3's working set — and the user has been asked to pick, or the `--auto` policy has selected for them. Zero items is a valid outcome, reported in prose with no prompt and no handoff.
 
 ## 5. Hand off
+
+- **A selection is not an authorization.** "apply all" names items; it authorizes no edit, no
+  commit, no push, no publication. Consent is a separate act, asked on `pr-respond`'s batch
+  preview, never on the selection. **Under `--auto`, the caller gave that consent up front**:
+  `pr-respond` shows the batch and proceeds without waiting. The gate protects an attended run; it
+  is not a stall for an unattended one.
+- **Nothing leaves this skill directly.** `pr-feedback` never runs `gh pr comment`,
+  `gh pr review`, `gh api …/comments`, a `gh api graphql` mutation, `git commit`, `git rebase`
+  or `git push`. The picks leave by one door: `pr-respond`, whose dispositions are the whole
+  outward surface — a `defer` is a note in the report, not a Linear issue; a `reply (hand back)`
+  is a draft, not a posted comment. Anything beyond that, the user asks for by name.
+- **Do not reimplement `pr-respond`.** Doing its work inline — editing, folding, pushing,
+  replying — bypasses `humanizer`, the batch preview and the confirmation, which exist only there.
+  If `pr-respond` cannot be invoked, stop and say so — under `--auto`, that means reporting the
+  item as **blocked**, not abandoning it quietly. Never carry on by hand.
 
 Invoke `pr-respond` with the user's picks. It reads this triage from the conversation and does not re-fetch, so carry each picked item's priority, disposition, verdict with its evidence (the reply to a refuted claim is written from it), thread `id`, first-comment `databaseId`, `owner`, `repo` and PR number into the handoff.
 
 Under `--auto`, pass the policy through so `pr-respond` skips its confirmation too.
 
-**Done when**: `pr-respond` is invoked, or the user picks nothing and the triage is left as the deliverable.
+**Done when**: `pr-respond` is invoked, or the user picks nothing (or there was nothing to pick) and the triage is left as the deliverable — and no write command ran inside this skill. A file edited, a commit, a push or a comment posted before `pr-respond` earned its confirmation is a failed step, not a shortcut.

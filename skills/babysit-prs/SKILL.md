@@ -78,7 +78,9 @@ Agent({
   description: "Own PR #<n>",
   prompt: "Think hard. You own PR #<n> end to end.
 
-    Invoke `pr-feedback` on PR #<n> with `--auto confirmed`, then act on its handoff yourself.
+    Invoke `pr-feedback` on PR #<n> with `--auto confirmed`, then take its handoff through
+    `pr-respond` with the same policy — it drafts through `humanizer`, folds through `fixup`,
+    force-pushes and resolves, all without asking you anything.
 
     **Bots, checks and merge state are yours.** A thread opened by a bot, a failing check, a
     branch behind its base: fix it, answer it, fold it through `fixup`, force-push, resolve the

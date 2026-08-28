@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 BODY_CAP = 1200
+SETTLED_CAP = 300
 LOG_LINES = 50
 LOG_CHARS = 3000
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
@@ -23,21 +24,28 @@ def gh(*args, check=True):
     return p.stdout
 
 
-def trunc(s):
+def trunc(s, cap=BODY_CAP):
     s = (s or "").strip()
-    return s if len(s) <= BODY_CAP else s[:BODY_CAP] + " […]"
+    return s if len(s) <= cap else s[:cap] + " […]"
 
 
 def is_bot(login, typename):
     return typename == "Bot" or login.endswith("[bot]") or login in BOT_LOGINS
 
 
-def normalise_threads(nodes, pr_author):
-    """Drop resolved/outdated threads, flatten the rest to what triage reads.
+def flatten(comments, cap):
+    return [{"author": (c.get("author") or {}).get("login", "ghost"),
+             "is_bot": is_bot((c.get("author") or {}).get("login", ""),
+                              (c.get("author") or {}).get("__typename", "")),
+             "body": trunc(c.get("body"), cap)} for c in comments]
 
-    Returns (threads, dropped_count).
+
+def normalise_threads(nodes, pr_author):
+    """Split threads into the live working set and the settled (resolved/outdated) ones.
+
+    Returns (threads, settled).
     """
-    out, dropped = [], 0
+    out, settled = [], []
     for t in nodes:
         comments = t.get("comments", {}).get("nodes", [])
         if not comments:
@@ -45,14 +53,18 @@ def normalise_threads(nodes, pr_author):
         # ponytail: resolved or outdated means done, no exception. GitHub exposes no
         # resolve timestamp, so "a comment landed after the resolve" is not decidable
         # here; a reviewer who spots a regression unresolves the thread or opens a new
-        # one. dropped_count keeps the omission visible instead of silent.
+        # one. Settled threads still ship as short excerpts, because a PR-level bot
+        # summary carries no path:line and only they can show it is stale.
         if t.get("isResolved") or t.get("isOutdated"):
-            dropped += 1
+            settled.append({
+                "path": t.get("path"),
+                "line": t.get("line"),
+                "resolved": bool(t.get("isResolved")),
+                "outdated": bool(t.get("isOutdated")),
+                "comments": flatten(comments, SETTLED_CAP),
+            })
             continue
-        cs = [{"author": (c.get("author") or {}).get("login", "ghost"),
-               "is_bot": is_bot((c.get("author") or {}).get("login", ""),
-                                (c.get("author") or {}).get("__typename", "")),
-               "body": trunc(c.get("body"))} for c in comments]
+        cs = flatten(comments, BODY_CAP)
         out.append({
             "id": t.get("id"),
             "comment_id": comments[0].get("databaseId"),
@@ -61,7 +73,7 @@ def normalise_threads(nodes, pr_author):
             "awaiting_reviewer": cs[-1]["author"] == pr_author,
             "comments": cs,
         })
-    return out, dropped
+    return out, settled
 
 
 QUERY = """query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
@@ -153,14 +165,14 @@ def main(argv):
             try:
                 result[k] = f.result()
             except Exception as e:
-                result[k] = ([], 0) if k == "threads" else []
+                result[k] = ([], []) if k == "threads" else []
                 errors.append(f"{k}: {e}")
 
     json.dump({
         "pr": {"number": num, "url": url, "author": author, "owner": owner, "repo": repo,
                "head": pr["headRefName"], "base": pr["baseRefName"], "state": pr["state"]},
         "threads": result["threads"][0] if result["threads"] else [],
-        "dropped_threads": result["threads"][1] if result["threads"] else 0,
+        "settled_threads": result["threads"][1] if result["threads"] else [],
         "reviews": result["reviews"],
         "comments": result["comments"],
         "failing_checks": result["failing_checks"],
@@ -187,10 +199,14 @@ def self_check():
              {"databaseId": 6, "author": {"login": "bob", "__typename": "User"},
               "body": "regressed again"}]}},
     ]
-    out, dropped = normalise_threads(nodes, pr_author="me")
+    out, settled = normalise_threads(nodes, pr_author="me")
     ids = [t["id"] for t in out]
-    assert ids == ["T2", "T3"], ids                           # T1 and T4 resolved: dropped
-    assert dropped == 2, dropped                              # and counted, not hidden
+    assert ids == ["T2", "T3"], ids                           # T1 and T4 resolved: out of the set
+    assert [s["path"] for s in settled] == ["a.ts", "d.ts"]   # kept as evidence, not as items
+    assert settled[0]["resolved"] and not settled[0]["outdated"]
+    assert len(settled[1]["comments"]) == 2                   # whole exchange, so a stale
+    assert settled[1]["comments"][-1]["body"] == "regressed again"   # summary can be matched
+    assert len(trunc("a" * 2000, SETTLED_CAP)) == SETTLED_CAP + 4
     assert out[0]["awaiting_reviewer"] is True                # last comment is the PR author
     assert out[0]["comments"][0]["is_bot"] is True            # __typename Bot
     assert out[0]["comment_id"] == 2                          # first comment's databaseId

@@ -31,9 +31,20 @@ Replies are drafted through the `humanizer` skill (see below) — that dependenc
 1. **Apply** — for `fix`, make the agreed code change. Skip the edit for `reply`, `decline`, and `defer`.
 2. **Draft the reply** — a 1–3 sentence reply stating what was done (applied + how) or why it was declined. Route it through the `humanizer` skill. **Never post a raw draft — always route it through humanizer first.**
 3. **Pick the reaction** — `fix` / agreed → 👍 (`+1`); `decline` → 👎 (`-1`). `reply` / `defer` → no reaction unless you're agreeing.
-4. **Add to the batch preview** — per thread: the drafted reply, the planned reaction, and whether it will be resolved.
+4. **Add to the batch preview** — three blocks, in this order, so nothing that leaves the machine is missing from it:
 
-Show the **one batch preview**, then post everything only after a **single** confirmation. Under `--auto <policy>`, passed through by `pr-feedback`, the caller has already authorized the batch. Show the preview and proceed without waiting — within the two limits that policy carries: a **human-authored** item is never in the batch, and an item marked *leave open* gets its reply but keeps its thread unresolved.
+```
+## Batch — PR #<n>
+### Code (<k> files)                    one line of delta per file
+### Fixup + push                        <n> fixups → <m> original commits,
+                                        git push --force-with-lease, <old> → <new>
+### Reply to @<login> (thread <id>)     the humanizer draft, the reaction,
+                                        resolved or left open
+```
+
+Step 1's edits are **local**: they come before the preview because they are what makes it concrete. Everything that leaves the machine — `commit`, `rebase`, `push`, replies, reactions, resolutions — comes after the confirmation. Under `--auto`, that confirmation is the policy the caller already gave.
+
+Show the **one batch preview**, then post everything only after a **single** confirmation. One confirmation covers all three blocks. Under `--auto <policy>`, passed through by `pr-feedback`, the caller has already authorized the batch. Show the preview and proceed without waiting — within the two limits that policy carries: a **human-authored** item is never in the batch, and an item marked *leave open* gets its reply but keeps its thread unresolved.
 
 **Done when** every selected item has been either applied-and-answered or explicitly skipped with its reason, *and* the summary lists each item's outcome (reply posted / reaction set / thread resolved-or-not). Don't stop before every picked item is accounted for.
 
