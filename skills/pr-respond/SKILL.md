@@ -55,4 +55,6 @@ If no item changed code, meaning everything was `reply`, `decline`, or `defer`, 
 Notes:
 
 - **Only a thread with a Resolve button gets a reply.** PR-level conversation comments — a review bot's `AI Review` summary, a CI recap, anything posted on the conversation tab rather than on a line — have no thread to resolve, and a reply there is a new top-level comment everyone gets mailed about. React if it helps; never reply. Fix what such a comment got right in the code, and say in the summary that it was acted on without an answer.
+- **A review submission is not a thread either.** The body of an APPROVED or CHANGES_REQUESTED review lives on the conversation tab, same as any PR-level comment.
+- **Draft the answer, never post it.** An item marked `reply (hand back)` still gets written — a refutation, a correction, whatever the claim earns — but it goes in the summary handed back to the author, ready to paste, and never through `gh pr comment` or `gh pr review`. Only the author decides to mail the whole PR. To clear a stale CHANGES_REQUESTED, offer `gh pr edit <n> --add-reviewer <login>`; don't run it.
 - CI-check items have nothing to reply to; they're fixed by editing code, not by posting.

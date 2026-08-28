@@ -64,7 +64,7 @@ Everything else takes one priority:
 
 Doubt about **severity** rounds up — take the higher priority and note it was close. Doubt about **truth** rounds down: an `unclear` verdict caps at P2, and a **refuted** one at Nit unless a reviewer blocked the PR on it. A refuted claim still earns an answer, just not a code change.
 
-An item from a PR-level conversation comment (no Resolve button — a bot's `AI Review` summary, a CI recap) is triaged like any other, but it can only be `fix`, `decline` or `defer`, never `reply`: there is no thread there to answer, only the conversation tab. Carry the no-reply note into the handoff.
+An item with no Resolve button — a PR-level conversation comment (a bot's `AI Review` summary, a CI recap), or the body of an APPROVED / CHANGES_REQUESTED review submission — is triaged like any other, `reply` included: an answer is often exactly what it deserves. What changes is who posts it. There is no thread to answer there, so a reply becomes a new top-level comment everyone gets mailed about, and that is the author's call, never `pr-respond`'s. Mark such an item `reply (hand back)` and carry that note into the handoff.
 
 And one **disposition** — `fix` (change the code) | `reply` (answer, no change) | `decline` (won't fix) | `defer` (track for later). `pr-respond` acts on the disposition, not on the priority, so mark an item `fix` only when code must actually change. A refuted claim is `reply` carrying the refutation, or `decline` — never `fix`.
 
