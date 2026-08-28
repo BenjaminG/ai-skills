@@ -8,7 +8,7 @@ argument-hint: "[pr-number-or-url] [--auto <policy>]"
 
 Triage a pull request: sort every unresolved review item and failing check by urgency, then hand the user's picks to `pr-respond`. Read-only — never edit files, post replies, or re-run CI.
 
-`--auto <policy>` lets a caller (a loop, another skill) supply the selection up front, so §4 reports without asking and §5 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed. It leaves three kinds unselected and flagged for the user: ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision. Without `--auto`, §4 asks as usual.
+`--auto <policy>` lets a caller (a loop, another skill) supply the selection up front, so §4 reports without asking and §5 hands off directly. `--auto confirmed` selects every failing check, every Nit, and every item whose verdict is ✅ confirmed. A check carries no verdict and is not a Nit — naming it here is what keeps it from falling out of the selection and being held, which is the one thing a red check must never be. It leaves three kinds unselected and flagged for the user: ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision. Without `--auto`, §4 asks as usual.
 
 Two limits hold under every `--auto` policy, because the caller is unattended:
 
