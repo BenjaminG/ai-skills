@@ -33,7 +33,7 @@ Replies are drafted through the `humanizer` skill (see below) — that dependenc
 3. **Pick the reaction** — `fix` / agreed → 👍 (`+1`); `decline` → 👎 (`-1`). `reply` / `defer` → no reaction unless you're agreeing.
 4. **Add to the batch preview** — per thread: the drafted reply, the planned reaction, and whether it will be resolved.
 
-Show the **one batch preview**, then post everything only after a **single** confirmation. Under `--auto <policy>`, passed through by `pr-feedback`, the caller has already authorized the batch. Show the preview and proceed without waiting.
+Show the **one batch preview**, then post everything only after a **single** confirmation. Under `--auto <policy>`, passed through by `pr-feedback`, the caller has already authorized the batch. Show the preview and proceed without waiting — within the two limits that policy carries: a **human-authored** item is never in the batch, and an item marked *leave open* gets its reply but keeps its thread unresolved.
 
 **Done when** every selected item has been either applied-and-answered or explicitly skipped with its reason, *and* the summary lists each item's outcome (reply posted / reaction set / thread resolved-or-not). Don't stop before every picked item is accounted for.
 

@@ -10,6 +10,15 @@ Triage a pull request: sort every unresolved review item and failing check by ur
 
 `--auto <policy>` lets a caller (a loop, another skill) supply the selection up front, so §4 reports without asking and §5 hands off directly. `--auto confirmed` selects every Nit plus every item whose verdict is ✅ confirmed. It leaves three kinds unselected and flagged for the user: ❓ unclear, ❌ refuted-but-blocking, and anything needing a merge decision. Without `--auto`, §4 asks as usual.
 
+Two limits hold under every `--auto` policy, because the caller is unattended:
+
+- **Only bots and checks are selectable.** An item authored by a human is reported and held, never
+  acted on — no reply, no reaction, no resolve, no code change. A human wrote to the author, and an
+  automated pass answering in their place is the one thing no policy authorises.
+- **A confirmed item that §2 turned into a `reply` for want of a decision** is posted as a reply and
+  its thread is left **open**, then counted as held. The reviewer sees the adjudication; the choice
+  still waits for the author.
+
 ## 1. Fetch
 
 The script ships with the plugin; resolve its path the same way `gate-wf` resolves its own
@@ -36,6 +45,11 @@ Omit the argument to detect the PR from the current branch. A source that failed
 `errors[]` instead of taking the run down: triage the rest and say in the report which source is
 missing.
 
+The working set is what the script returns. A resolved or outdated thread is **settled** — someone
+closed it — so never fetch one back to re-adjudicate it against current code: on a mature PR that
+stock is most of the threads, and re-reading it costs the whole triage while changing nothing.
+`dropped_threads` is a count, not a to-do list.
+
 **Done when**: the resolved `#<n> — <url>` is stated for the user and the JSON is in hand.
 
 ## 2. Adjudicate each claim
@@ -50,7 +64,31 @@ For every item asserting a defect — bug, race, security hole, missing test, br
 
 Items asserting taste — naming, formatting, phrasing, an optional refactor — assert no fact, so they carry no verdict. Send them straight to §3.
 
-**Done when**: every defect-asserting item carries a verdict naming a `file:line` read in this run. A verdict resting only on the comment's own wording is not a verdict — go read the file.
+### Was it written that way on purpose?
+
+Reading the code proves a defect **exists**. It cannot prove the defect is an accident — that lives
+in the history, not in the file. So for an item that came out **confirmed** and would become a
+`fix`, and only for those, spend one more look: `git log`/`git blame` on the cited lines, the ADRs,
+`CLAUDE.md`, and the project memory under `~/.claude/projects/<slug>/memory/`.
+
+Find a deliberate decision that the claim contradicts, or an ambiguity you cannot settle from those
+sources, and the verdict stays confirmed while the disposition becomes `reply` — the remedy is a
+choice, and choices belong to the author. Say which source settled it. Find nothing, or find a
+source that backs the claim, and `fix` stands.
+
+### Registry of past refutations
+
+A bot re-raises what another bot already lost. `gate-wf` keeps the store for this — see its
+`references/dismissals.md` for the file path and the content-anchor helper; the same registry is
+shared, so a claim refuted here stops being re-flagged there.
+
+Before adjudicating, compute each item's anchor and drop the ones already in the registry, noting
+them in one line ("2 claims already refuted on this branch"). After adjudicating, upsert every
+**refuted** item with `rule_id: "bot:<login>"`, `source: "pr-thread"`, and `confidence: "resolved"`
+once its thread is closed (`"rebutted"` while it is still open). An item with no `file:line` — a
+PR-level recap comment — has no anchor and stays out.
+
+**Done when**: every defect-asserting item carries a verdict naming a `file:line` read in this run, every confirmed `fix` has had its history checked, and the refutations are in the registry. A verdict resting only on the comment's own wording is not a verdict — go read the file.
 
 ## 3. Classify
 
