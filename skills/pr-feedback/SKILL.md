@@ -37,7 +37,7 @@ python3 "$FETCH" [pr-number-or-url]
 ```
 
 One call, one JSON blob on stdout: the PR (`number`, `url`, `owner`, `repo`, `author`, `head`,
-`base`, `state`), every **live** inline review `thread` (paginated, with `id`, `comment_id`,
+`base`, `state`, `draft`, `mergeable`), every **live** inline review `thread` (paginated, with `id`, `comment_id`,
 `path`, `line`, `awaiting_reviewer`, and each comment's `author` / `is_bot` / `body`),
 `settled_threads` — the resolved and outdated ones, same shape in 300-char excerpts — the
 `reviews`, the conversation `comments`, and each entry in `failing_checks` with a 50-line
@@ -47,7 +47,9 @@ Omit the argument to detect the PR from the current branch. A source that failed
 `errors[]` instead of taking the run down: triage the rest and say in the report which source is
 missing.
 
-The working set is `threads` + `reviews` + `comments` + `failing_checks`. `settled_threads` is
+The working set is `threads` + `reviews` + `comments` + `failing_checks` + the **branch state**
+(`mergeable`, `draft`). A branch that cannot merge blocks the PR as hard as a red check and shows up
+in no thread and no check run, so `mergeable: "CONFLICTING"` is an item like any other — see §3. `settled_threads` is
 **not** part of it: someone closed those, so they earn no verdict, no priority and no row. They
 ship for one job — a PR-level summary carries no `path:line` of its own and recaps findings that
 each got a thread, so the settled excerpts are the only evidence that separates a live claim from
@@ -100,7 +102,7 @@ The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is wi
 
 Everything else takes one priority:
 
-- **P1 — blocking**: a failing required check, a **confirmed** correctness or security bug, an item carrying CHANGES_REQUESTED, new behavior shipped without a test. A defect claim reaches P1 on its verdict, not on its wording — an unadjudicated claim is not P1 material.
+- **P1 — blocking**: `mergeable: "CONFLICTING"` (the branch conflicts with `base`), a failing required check, a **confirmed** correctness or security bug, an item carrying CHANGES_REQUESTED, new behavior shipped without a test. A defect claim reaches P1 on its verdict, not on its wording — an unadjudicated claim is not P1 material.
 - **P2 — important, not blocking**: design concerns, maintainability, perf tradeoffs, ambiguous behavior, a reviewer question that needs an answer before merge.
 - **Nit**: naming, formatting, phrasing, optional refactors, taste. Signalled by `nit:`, `optional:`, `consider`, `suggestion:`.
 
@@ -112,12 +114,16 @@ What survives is triaged like any other, `reply` included: an answer is often ex
 
 And one **disposition** — `fix` (change the code) | `reply` (answer, no change) | `decline` (won't fix) | `defer` (track for later). `pr-respond` acts on the disposition, not on the priority, so mark an item `fix` only when code must actually change. A refuted claim is `reply` carrying the refutation, or `decline` — never `fix`.
 
+A conflicting branch is the one `fix` that never travels: resolving it is a rebase against `base`,
+which `pr-respond` does not do. Mark it `fix (hand back)`, name the base it conflicts with, and
+leave it to the user — under `--auto` it is held, like anything needing a merge decision.
+
 **Done when**: every item in the working set carries a priority and a disposition consistent with its verdict, or is marked awaiting-reviewer. A bot's item is adjudicated like anyone else's — its author decides neither the verdict nor the priority.
 
 ## 4. Report
 
-**Empty working set — no table.** No live thread, no failing check, and every PR-level claim matched
-a settled thread: say that in two or three lines (the PR state, what the settled stock already
+**Empty working set — no table.** `mergeable` is not `CONFLICTING`, no live thread, no failing check,
+and every PR-level claim matched a settled thread: say that in two or three lines (the PR state, what the settled stock already
 covers, what is actually left — usually an approval), and stop. No rows, no dispositions, no
 `apply all` prompt, no handoff. A row is a commitment to act, and a settled PR has nothing to commit
 to; a `†` footnote on a row that says "already answered" is that row admitting it should not exist.
@@ -129,12 +135,13 @@ Otherwise, one markdown table — pipes and header included, one row per item, r
 | # | Where | Who | Claim | Verdict | Do |
 |---|-------|-----|-------|---------|----|
 | P1 | `auth.ts:42` | 🤖 bugbot | null deref on `user.id` | ✅ confirmed — `auth.ts:42`, callers pass undefined | fix |
+| P1 | `merge` | ⚙️ branch | conflicts with `main`, cannot merge | — | fix (hand back) |
 | P1 | `ci / build` | ⚙️ check | `tsc` fails, 3 errors | — | fix |
 | P2 | `sync.ts:110` | 👤 alice | why not batch these writes? | ❓ unclear — needs perf numbers | reply |
 | Nit | `api.ts:8` | 🤖 bugbot | unused import | ❌ refuted — used at `api.ts:31` | decline |
 
 - **#** — P1 | P2 | Nit. Append `†` when the priority was rounded up, and footnote the reason in one line under the table.
-- **Where** — `path/to/file.ts:42`, or the check name.
+- **Where** — `path/to/file.ts:42`, the check name, or `merge` for the branch state.
 - **Who** — 👤 `<login>` for a human, 🤖 `<login>` when `author.__typename` is `Bot`, the login ends in `[bot]`, or it is a known bot account (`naboo-ai-reviews`, `cursor` / Bugbot), ⚙️ `check` for a failing check.
 - **Claim** — the item in one line, paraphrased. Quote only when the exact wording is the point.
 - **Verdict** — ✅ confirmed | ❌ refuted | ❓ unclear, then the `file:line` that settled it. `—` for taste items and checks, which carry no verdict.
@@ -144,7 +151,7 @@ Keep every cell to one line so rows stay scannable; the evidence that will not f
 
 Then the awaiting-reviewer threads in their own table — Where | Who | Waiting on — one row each, nothing to act on.
 
-Close with one line of files touched by the `fix` rows, then 1–3 sentences on overall health counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"), then:
+Close with one line of files touched by the `fix` rows, then 1–3 sentences on overall health, counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"). Never call a PR clean while it conflicts with its base, and say so when it is still a `draft`. Then:
 
 > Tell me which items to act on — "all P1" / "all" works. Nothing is edited, pushed or posted on
 > that answer: it picks the items, then `pr-respond` drafts everything and shows you one batch to

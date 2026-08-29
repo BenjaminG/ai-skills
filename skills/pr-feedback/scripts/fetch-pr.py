@@ -7,6 +7,7 @@ Usage: fetch-pr.py [pr-number-or-url]   (no arg = detect from current branch)
 import concurrent.futures as cf
 import json
 import re
+import time
 import subprocess
 import sys
 
@@ -99,8 +100,9 @@ def fetch_threads(owner, repo, num, pr_author):
     return normalise_threads(nodes, pr_author)
 
 
-def fetch_reviews(num):
-    rs = json.loads(gh("pr", "view", str(num), "--json", "reviews"))["reviews"]
+def fetch_reviews(owner, repo, num):
+    slug = f"{owner}/{repo}"   # explicit: a PR URL may point outside the current checkout
+    rs = json.loads(gh("pr", "view", str(num), "--repo", slug, "--json", "reviews"))["reviews"]
     out = []
     for r in rs:
         login = (r.get("author") or {}).get("login", "ghost")
@@ -124,8 +126,9 @@ def fetch_comments(owner, repo, num):
              "body": trunc(c.get("body"))} for c in cs]
 
 
-def fetch_checks(num):
-    raw = gh("pr", "checks", str(num), check=False)
+def fetch_checks(owner, repo, num):
+    slug = f"{owner}/{repo}"
+    raw = gh("pr", "checks", str(num), "--repo", slug, check=False)
     out = []
     for line in raw.splitlines():
         cols = line.split("\t")
@@ -135,7 +138,8 @@ def fetch_checks(num):
         job = re.search(r"/job/(\d+)", url)
         tail = ""
         if job:
-            log = gh("run", "view", "--log-failed", "--job", job.group(1), check=False)
+            log = gh("run", "view", "--repo", slug, "--log-failed", "--job", job.group(1),
+                     check=False)
             tail = "\n".join(log.splitlines()[-LOG_LINES:])[-LOG_CHARS:]
         out.append({"name": name, "url": url, "log_tail": tail})
     return out
@@ -144,8 +148,11 @@ def fetch_checks(num):
 def main(argv):
     ref = argv[0] if argv else None
     view = ["pr", "view"] + ([ref] if ref else []) + [
-        "--json", "number,url,headRefName,baseRefName,state,author"]
+        "--json", "number,url,headRefName,baseRefName,state,author,isDraft,mergeable"]
     pr = json.loads(gh(*view))
+    if pr.get("mergeable") == "UNKNOWN":   # GitHub computes it async; one retry usually settles it
+        time.sleep(3)
+        pr = json.loads(gh(*view))
     num, url = pr["number"], pr["url"]
     author = (pr.get("author") or {}).get("login", "")
     owner, repo = re.search(r"github\.com/([^/]+)/([^/]+)/pull/", url).groups()
@@ -153,9 +160,9 @@ def main(argv):
     errors = []
     jobs = {
         "threads": lambda: fetch_threads(owner, repo, num, author),
-        "reviews": lambda: fetch_reviews(num),
+        "reviews": lambda: fetch_reviews(owner, repo, num),
         "comments": lambda: fetch_comments(owner, repo, num),
-        "failing_checks": lambda: fetch_checks(num),
+        "failing_checks": lambda: fetch_checks(owner, repo, num),
     }
     result = {}
     with cf.ThreadPoolExecutor(max_workers=4) as ex:
@@ -170,7 +177,8 @@ def main(argv):
 
     json.dump({
         "pr": {"number": num, "url": url, "author": author, "owner": owner, "repo": repo,
-               "head": pr["headRefName"], "base": pr["baseRefName"], "state": pr["state"]},
+               "head": pr["headRefName"], "base": pr["baseRefName"], "state": pr["state"],
+               "draft": pr["isDraft"], "mergeable": pr["mergeable"]},
         "threads": result["threads"][0] if result["threads"] else [],
         "settled_threads": result["threads"][1] if result["threads"] else [],
         "reviews": result["reviews"],
