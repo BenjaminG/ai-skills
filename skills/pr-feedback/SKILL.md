@@ -124,7 +124,7 @@ to; a `†` footnote on a row that says "already answered" is that row admitting
 Under `--auto` that is a report of zero selected, zero held — the ordinary state of a green PR whose
 threads are all settled.
 
-Otherwise, one table, rows ordered P1 → P2 → Nit:
+Otherwise, one markdown table — pipes and header included, one row per item, rows ordered P1 → P2 → Nit. Never a per-item list or a paragraph: the point is scanning a column, and a cell that will not fit goes to a footnote.
 
 | # | Where | Who | Claim | Verdict | Do |
 |---|-------|-----|-------|---------|----|

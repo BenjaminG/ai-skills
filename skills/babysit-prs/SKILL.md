@@ -63,6 +63,10 @@ One row per PR. The objective columns come from the script, the last three from 
 Take the Linear key from the branch name and the title from `linear-cli` once per PR, then reuse
 it — it does not change between events.
 
+Render it as the markdown table above, always — one row per PR, pipes and header included. Never
+unroll it into a per-PR list or a paragraph: a matrix is read down its columns, and a row that will
+not fit is shortened, not turned into bullets.
+
 Nothing else goes in the table, and nothing goes under it. The `held_gist` is the whole substance
 you get: its thread is resolved, so the matrix is where the author learns a decision is waiting.
 One line, no expansion under the table.
