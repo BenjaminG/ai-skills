@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """Objective state of the author's open PRs — the only reader of GitHub truth for babysit-prs.
 
-Usage: babysit-scan.py                one pass, matrix JSON on stdout
+Usage: babysit-scan.py [PR...]        one pass, matrix JSON on stdout
        babysit-scan.py --watch [SECS] poll forever (default 60s), one line per transition
+       babysit-scan.py --include-drafts  keep draft PRs in the scan
        babysit-scan.py --self-check   offline assertions on the diff logic
+
+Named PR numbers are the selection: they are fetched as given, past the author and the
+draft filter alike.
 
 Owns the mechanical: PR discovery, one aliased GraphQL call for every PR, bot/human
 ventilation of unresolved threads, the previous state on disk, the diff, and the emit
 filter. Owns no judgment: never decides whether a thread deserves an action.
 """
+import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 
 POLL_DEFAULT = 60
@@ -66,9 +70,11 @@ def is_bot(login, typename):
     return typename == "Bot" or login.endswith("[bot]") or login in BOT_LOGINS
 
 
-def open_prs():
-    out = gh("pr", "list", "--author", "@me", "--state", "open", "--draft=false",
-             "--json", "number", "-q", ".[].number")
+def open_prs(include_drafts=False):
+    args = ["pr", "list", "--author", "@me", "--state", "open"]
+    if not include_drafts:
+        args.append("--draft=false")
+    out = gh(*args, "--json", "number", "-q", ".[].number")
     return sorted(int(n) for n in out.split())
 
 
@@ -186,14 +192,15 @@ def resolve_unknown(prs):
     return prs
 
 
-def scan(d):
-    prs = resolve_unknown(fetch(open_prs()))
+def scan(d, only=None, include_drafts=False):
+    # Named numbers are the selection: fetching by number bypasses author and draft alike.
+    prs = resolve_unknown(fetch(only or open_prs(include_drafts)))
     reports, report_lines = fold_reports(d, prs)
     return prs, reports, report_lines
 
 
-def once(d):
-    prs, reports, _ = scan(d)
+def once(d, only=None, include_drafts=False):
+    prs, reports, _ = scan(d, only, include_drafts)
     prev = load_state(d)
     carried = {k: (prev.get(k) or {}).get("report") for k in prev}
     carried.update(reports)
@@ -205,10 +212,10 @@ def once(d):
     }, indent=2))
 
 
-def watch(d, secs):
+def watch(d, secs, only=None, include_drafts=False):
     while True:
         try:
-            prs, reports, lines = scan(d)
+            prs, reports, lines = scan(d, only, include_drafts)
             prev = load_state(d)
             visible = {n: r for n, r in prs.items() if not muted(d, n)}
             lines += diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
@@ -242,6 +249,8 @@ def self_check():
     assert not needs_agent(a), "green PR with no bot thread needs no agent"
     assert not needs_agent(dict(a, unresolved_human=2)), "human threads are yours, not an agent's"
     assert merge_ready(a) and not merge_ready(dict(a, unresolved_human=1))
+    # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own.
+    assert not merge_ready(dict(a, merge_state="DRAFT"))
     assert is_bot("cursor", "User") and is_bot("x[bot]", "User") and not is_bot("viclafouch", "User")
 
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.
@@ -256,15 +265,27 @@ def self_check():
         assert lines == ["#42 report: pushed 2, inflight 0, held 3, blocked -"], lines
         assert not muted(d, 42), "folding the report must lift the mute"
         assert fold_reports(d, [42]) == ({}, []), "a folded report is consumed once"
+    ns = parser().parse_args(["123", "456", "--include-drafts", "--watch", "60"])
+    assert (ns.prs, ns.watch, ns.include_drafts) == ([123, 456], 60, True), ns
+    assert parser().parse_args([]).prs == [] and parser().parse_args([]).watch is None
+    assert parser().parse_args(["--watch"]).watch == POLL_DEFAULT, "bare --watch keeps the default"
     print("self-check ok")
 
 
+def parser():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("prs", nargs="*", type=int, help="PR numbers to scan; default is every open PR")
+    ap.add_argument("--watch", nargs="?", const=POLL_DEFAULT, type=int, metavar="SECS")
+    ap.add_argument("--include-drafts", action="store_true")
+    ap.add_argument("--self-check", action="store_true")
+    return ap
+
+
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    if "--self-check" in args:
+    ns = parser().parse_args()
+    if ns.self_check:
         self_check()
-    elif "--watch" in args:
-        rest = [a for a in args if a != "--watch"]
-        watch(state_dir(), int(rest[0]) if rest else POLL_DEFAULT)
+    elif ns.watch is not None:
+        watch(state_dir(), ns.watch, ns.prs, ns.include_drafts)
     else:
-        once(state_dir())
+        once(state_dir(), ns.prs, ns.include_drafts)

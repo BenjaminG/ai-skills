@@ -1,7 +1,7 @@
 ---
 name: babysit-prs
 description: Drive every open PR to merge-ready without polling by hand. Holds a matrix of the author's open PRs, watches GitHub for real transitions through a persistent Monitor, and hands each PR that has bot feedback or a red check to its own subagent, which answers, folds and pushes on its own. Human reviews are counted, never touched. Use when asked to babysit, watch, or surveiller open PRs, or to keep them moving until they can merge.
-argument-hint: "[--once]"
+argument-hint: "[--once] [--include-drafts] [PR…]"
 ---
 
 # Babysit PRs
@@ -26,7 +26,7 @@ for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/babysit-prs/scripts/b
          "$HOME/.claude/skills/babysit-prs/scripts/babysit-scan.py"; do
   [ -n "$c" ] && [ -f "$c" ] && SCAN="$c" && break
 done
-python3 "$SCAN"
+python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbatim
 ```
 
 One pass, one JSON blob: every open PR of the author with `merge_state`, `ci` rollup,
@@ -40,9 +40,15 @@ The blob opens with `state_dir` — the absolute path where mutes and agent repo
 you write into an agent's prompt must be that value expanded, never `$STATE_DIR`: a subagent has no
 such variable, and a report written to a literal `$STATE_DIR/…` is a report you never receive.
 
-Drafts are out of scope: the scan filters them at the source, so a draft never fills a row
-and never spawns an agent. Marking one ready for review brings it into the matrix on the next
-pass.
+Two flags shape the scan, and both come from the user, never from you:
+
+- **`--include-drafts`** — by default the scan filters drafts at the source, so a draft never
+  fills a row and never spawns an agent; marking one ready for review brings it in on the next
+  pass. With the flag, drafts are babysat like any other PR: bots and CI already run on them,
+  and clearing their findings before the PR goes out is the point.
+- **PR numbers** (`123 456`) — a named PR **is** the selection. It is fetched as given, past the
+  author filter and past the draft filter alike: name a colleague's PR and its agent will push
+  to their branch. Nothing else is scanned that pass.
 
 Empty PR list? Say so and stop.
 
@@ -60,6 +66,9 @@ it — it does not change between events.
 Nothing else goes in the table, and nothing goes under it. The `held_gist` is the whole substance
 you get: its thread is resolved, so the matrix is where the author learns a decision is waiting.
 One line, no expansion under the table.
+
+A draft shows `DRAFT` under Mergeable and can never leave the matrix on its own — passing it
+ready for review is the author's move, not an agent's.
 
 A PR reported `merge_ready` earns a `PushNotification` (`ToolSearch "select:PushNotification"`)
 and leaves the matrix. The merge itself is yours.
@@ -129,7 +138,7 @@ four. After that the regime is quiet: one agent at a time, usually none.
 
 ```
 Monitor({
-  command: "python3 <absolute path of babysit-scan.py> --watch 60",
+  command: "python3 <absolute path of babysit-scan.py> --watch 60 <the same args>",
   description: "transitions on <n> open PRs",
   persistent: true,
   timeout_ms: 3600000,
@@ -137,6 +146,10 @@ Monitor({
 ```
 
 Substitute the resolved absolute path — shell variables do not survive between Bash calls, so a `$SCAN` left in there arms a monitor that dies on its first poll.
+
+**The watch takes the same arguments as the first pass** — the same PR numbers, the same
+`--include-drafts`. Drop them and the watch surveys a different set of PRs than the matrix
+shows: the drafts you asked for go silent, and PRs you never selected start emitting.
 
 The script emits one line per PR whose CI rollup, unresolved-thread counts, `mergeStateStatus` or
 head sha actually moved — not one line per check, which would be dozens per push and would get the
