@@ -112,8 +112,12 @@ def row(p):
 
 
 def needs_agent(r):
-    """An agent is worth an Opus triage only if there is something only it can judge."""
-    return r["unresolved_bot"] >= 1 or r["ci"] == "FAILURE"
+    """An agent is worth an Opus triage only if there is something only it can judge.
+
+    A conflicting branch counts: it blocks the merge, no thread and no check reports it, and on a
+    draft `mergeStateStatus` says DRAFT — `mergeable` is the only field that still says CONFLICTING.
+    """
+    return r["unresolved_bot"] >= 1 or r["ci"] == "FAILURE" or r["mergeable"] == "CONFLICTING"
 
 
 def merge_ready(r):
@@ -247,6 +251,8 @@ def self_check():
     assert diff({"1": a}, {1: dict(a, mergeable="UNKNOWN")}) == [], "mergeable is not watched"
     assert needs_agent(dict(a, unresolved_bot=1)) and needs_agent(dict(a, ci="FAILURE"))
     assert not needs_agent(a), "green PR with no bot thread needs no agent"
+    assert needs_agent(dict(a, mergeable="CONFLICTING", merge_state="DRAFT")), \
+        "a conflicting branch blocks the merge even when mergeStateStatus only says DRAFT"
     assert not needs_agent(dict(a, unresolved_human=2)), "human threads are yours, not an agent's"
     assert merge_ready(a) and not merge_ready(dict(a, unresolved_human=1))
     # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own.

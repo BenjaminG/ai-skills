@@ -71,7 +71,8 @@ Nothing else goes in the table, and nothing goes under it. The `held_gist` is th
 you get: its thread is resolved, so the matrix is where the author learns a decision is waiting.
 One line, no expansion under the table.
 
-A draft shows `DRAFT` under Mergeable and can never leave the matrix on its own — passing it
+A draft shows `DRAFT` under Mergeable — `DRAFT (CONFLICTING)` when `mergeable` says so, since
+`merge_state` swallows the conflict on a draft — and can never leave the matrix on its own — passing it
 ready for review is the author's move, not an agent's.
 
 A PR reported `merge_ready` earns a `PushNotification` (`ToolSearch "select:PushNotification"`)
@@ -79,9 +80,9 @@ and leaves the matrix. The merge itself is yours.
 
 ## 3. Spawn an agent, but only where one is needed
 
-For each PR with `needs_agent: true` — meaning it has at least one unresolved **bot** thread or a
-failing check — mute it, then spawn its owner. Send them in a single message so they run
-concurrently. A PR that is green with no bot thread gets no agent: its row is already complete,
+For each PR with `needs_agent: true` — meaning it has at least one unresolved **bot** thread, a
+failing check, or `mergeable: "CONFLICTING"` — mute it, then spawn its owner. Send them in a single message so they run
+concurrently. A PR that is green, mergeable and free of bot threads gets no agent: its row is already complete,
 and an agent would have nothing to say that the script has not said.
 
 ```bash
@@ -104,6 +105,13 @@ Agent({
     branch behind its base: fix it, answer it, fold it through `fixup`, force-push, resolve the
     thread, restack children through `gh-stack`. Resolve rebase conflicts yourself. No
     confirmation needed — this is why you exist.
+
+    **A conflicting branch is yours too, and it does not come through `pr-feedback`.** That skill
+    holds a conflict as a merge decision because its handoff cannot rebase; here you own merge
+    state, so take it: rebase onto `<base>` (`gh-stack` if the PR sits in a stack), resolve every
+    conflict on its merits — never by taking one side wholesale — verify the branch still builds,
+    then force-push with lease and count it in `pushed`. A conflict you cannot resolve without
+    guessing the author's intent is `blocked`, with the file that stopped you as the gist.
 
     **Human review threads are not yours.** Never reply to one, never resolve one, never change
     code because of one. The author handles those in a manual pass.
@@ -172,7 +180,7 @@ end the turn again.
 ## Stopping
 
 `TaskStop` the monitor when every PR is merged or closed, or when the user says stop. Nothing else
-stops the watch — a held item and a rebase conflict both mean report it in the matrix and keep
+stops the watch — a held item and a conflict its agent could not resolve both mean report it in the matrix and keep
 watching, and a matrix where everything waits on a human is the cheapest state there is: no
 events, no tokens, no ticks.
 
@@ -181,6 +189,7 @@ events, no tokens, no ticks.
 | Concern | Skill |
 |---|---|
 | PR discovery, GitHub truth, the diff, the emit filter, mute, reports | `babysit-scan.py` |
+| Rebasing a conflicting branch onto its base | the PR's agent, directly |
 | Fetching threads, verdicts, P1/P2/Nit, the dismissals registry | `pr-feedback`, inside the PR's agent |
 | Code changes, replies, reactions, resolving threads | `pr-respond` |
 | Finding the introducing commit, fold, force-push | `fixup` |
