@@ -30,9 +30,10 @@ python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbati
 ```
 
 One pass, one JSON blob: every open PR of the author with `merge_state`, `ci` rollup,
-`unresolved_bot`, `unresolved_human`, `humans`, `head`, `base`, `parent` (the open PR this one is
+`unresolved_bot`, `unresolved_human`, `held` (open bot threads an agent already answered — they wait
+on the author, not on an agent), `humans`, `head`, `base`, `parent` (the open PR this one is
 stacked on, `null` at the bottom of a stack), the last agent `report`, plus `needs_agent`,
-`waits_on` and `merge_ready`. It is the **only** reader of GitHub truth in this skill — never
+`waits_on`, `merge_ready` and `status`. It is the **only** reader of GitHub truth in this skill — never
 run `gh pr view`, `gh pr checks`, or a thread query yourself, and never ask an agent for a status
 the script already carries. Two readers is how a matrix ends up showing a check that went red
 minutes ago.
@@ -57,9 +58,22 @@ Empty PR list? Say so and stop.
 
 One row per PR. The objective columns come from the script, the last three from the PR's agent:
 
-| PR | Issue | Mergeable | CI | Threads | Fixed | Held | Blocked |
-|---|---|---|---|---|---|---|---|
-| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `report.held`, then `— <report.held_gist>` when there is one | `report.blocked` or `—` |
+| PR | Issue | Status | Mergeable | CI | Threads | Fixed | Held | Blocked |
+|---|---|---|---|---|---|---|---|---|
+| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | the label for `status` | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `held`, then `— <report.held_gist>` when there is one | `report.blocked` or `—` |
+
+**Status** answers the only question the author actually has — can this merge, and if not, who
+is holding it. The script decides it; you only render the label:
+
+| `status` | Label | Means |
+|---|---|---|
+| `ready` | **READY** | green, mergeable, nothing open. Merge it. |
+| `your-call` | **YOUR CALL** | an agent adjudicated a bot claim and left the decision to you. The thread is open, waiting. |
+| `working` | **WORKING** | bot threads, red CI or a conflict — an agent owns it, nothing for you to do. |
+| `waits` | **WAITS #n** (`n` is `waits_on`) | stacked on #n, which is being rewritten. Its turn comes next pass. |
+| `ci` | **CI** | checks still running. |
+| `review` | **REVIEW** | green and quiet, waiting on a human approval or a base bump. |
+| `draft` | **DRAFT** | clean, but still a draft. Marking it ready is yours. |
 
 Take the Linear key from the branch name and the title from `linear-cli` once per PR, then reuse
 it — it does not change between events.
@@ -69,8 +83,8 @@ unroll it into a per-PR list or a paragraph: a matrix is read down its columns, 
 not fit is shortened, not turned into bullets.
 
 Nothing else goes in the table, and nothing goes under it. The `held_gist` is the whole substance
-you get: its thread is resolved, so the matrix is where the author learns a decision is waiting.
-One line, no expansion under the table.
+you get; the thread itself stays open on the PR, so the matrix says a decision is waiting and the
+thread says what it is. One line, no expansion under the table.
 
 A PR sitting on another open PR shows it under Mergeable — `CONFLICTING (stacked on #12)` — because
 a stacked branch turns conflicting on its own the moment its parent is rewritten under it. The
@@ -134,10 +148,11 @@ Agent({
 
     **When the remedy is a choice, not a fix**: a bot claim you confirmed whose fix means picking
     an architecture, or that contradicts a decision recorded in an ADR, `CLAUDE.md`, project
-    memory, or the git history — reply in that bot's thread with your adjudication, **resolve the
-    thread**, and count the item as held with a one-line gist. Do not decide for the author, and do
-    not park the decision in a thread nobody reads: a bot never answers, and an open bot thread
-    keeps this PR spawning an agent forever. The author reads held items in the matrix.
+    memory, or the git history — reply in that bot's thread with your adjudication, **leave the
+    thread open**, and count the item as held with a one-line gist. Do not decide for the author,
+    and do not resolve the thread either: a resolved thread is one the author cannot find, and the
+    matrix only carries the gist. Your reply is the last word on it, which is what tells the scan
+    this thread waits on a human and stops it spawning an agent here forever.
 
     **The same check failing twice after you fixed it** means your fix missed the cause. Stop
     touching it, count it as blocked.

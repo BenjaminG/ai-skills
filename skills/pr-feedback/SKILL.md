@@ -16,11 +16,11 @@ Two limits hold under every `--auto` policy, because the caller is unattended:
   acted on — no reply, no reaction, no resolve, no code change. A human wrote to the author, and an
   automated pass answering in their place is the one thing no policy authorises.
 - **A confirmed item that §2 turned into a `reply` for want of a decision** is posted as a reply,
-  its thread is **resolved**, and it is counted as held and named in §4's held line. Only bot items
-  are selectable here, and a bot never reads the answer: an open thread waits on nobody, re-enters
-  the next triage as `awaiting_reviewer` because our own reply flipped that flag, and keeps a caller
-  like `babysit-prs` spawning an agent for it. The held decision reaches the author through the
-  report, never through a thread left ajar.
+  its thread is **left open**, and it is counted as held and named in §4's held line. Resolving it
+  would file the one thing the author still has to act on under the threads GitHub hides: the report
+  carries a gist, the open thread carries the question, and the author needs both. Our reply being
+  the last word is also what marks the thread `held` on the next fetch, so it is reported and never
+  re-triaged, re-answered or spawned on again.
 
 ## 1. Fetch
 
@@ -38,7 +38,7 @@ python3 "$FETCH" [pr-number-or-url]
 
 One call, one JSON blob on stdout: the PR (`number`, `url`, `owner`, `repo`, `author`, `head`,
 `base`, `state`, `draft`, `mergeable`), every **live** inline review `thread` (paginated, with `id`, `comment_id`,
-`path`, `line`, `awaiting_reviewer`, and each comment's `author` / `is_bot` / `body`),
+`path`, `line`, `awaiting_reviewer`, `held`, and each comment's `author` / `is_bot` / `body`),
 `settled_threads` — the resolved and outdated ones, same shape in 300-char excerpts — the
 `reviews`, the conversation `comments`, and each entry in `failing_checks` with a 50-line
 `log_tail`. A bot's superseded review passes are collapsed to its latest one.
@@ -126,7 +126,9 @@ PR-level recap comment — has no anchor and stays out.
 
 ## 3. Classify
 
-The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. Two exceptions pull a thread back out. The author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart. Or the reviewer is a **bot**: `awaiting_reviewer` only means the last comment is the author's, and no bot ever takes that ball back. An answered bot thread is finished, so it takes the disposition `reply` with nothing left to say and goes to `pr-respond` for the resolve alone — that is how a thread an earlier run left ajar finally closes.
+The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. Two exceptions pull a thread back out. The author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart. Or the reviewer is a **bot**: `awaiting_reviewer` only means the last comment is the author's, and no bot ever takes that ball back.
+
+A bot thread we answered last carries `held: true`, and that is a **deliberately** open thread — an earlier pass adjudicated the claim and left the decision to the author. It is not an item: no priority, no disposition, no reply, and above all no resolve. Name it on the held line of §4 and move on. `pr-respond` resolves in the same batch it replies, so a bot thread still open with our answer on top is one that was held on purpose; only threads predating that rule are stragglers, and closing those is the author's call, not an automated pass's.
 
 Everything else takes one priority:
 

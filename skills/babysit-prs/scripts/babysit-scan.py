@@ -25,13 +25,17 @@ POLL_DEFAULT = 60
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
 # Fields whose transition is an event. Anything else (a single check flipping, a new
 # resolved thread) is churn: 22 checks per PR would emit 22 lines per push.
-WATCHED = ("ci", "unresolved_bot", "unresolved_human", "merge_state", "head")
+WATCHED = ("ci", "unresolved_bot", "unresolved_human", "held", "merge_state", "head")
 
 FRAGMENT = """
 fragment S on PullRequest {
   number url title isDraft headRefName baseRefName mergeable mergeStateStatus
   reviewThreads(first: 100) {
-    nodes { isResolved comments(first: 1) { nodes { author { __typename login } } } }
+    nodes {
+      isResolved
+      comments(first: 1) { nodes { author { __typename login } } }
+      last: comments(last: 1) { nodes { author { login } } }
+    }
   }
   commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }
 }
@@ -54,6 +58,16 @@ def repo():
         owner, _, name = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").strip().partition("/")
         _REPO.extend((owner, name))
     return _REPO
+
+
+_ME = []
+
+
+def me():
+    """The authenticated login — a bot thread whose last word is ours is held, not unanswered."""
+    if not _ME:
+        _ME.append(gh("api", "user", "-q", ".login").strip())
+    return _ME[0]
 
 
 def repo_slug():
@@ -91,7 +105,7 @@ def fetch(numbers):
 
 def row(p):
     unresolved = [t for t in p["reviewThreads"]["nodes"] if not t["isResolved"]]
-    openers = [t["comments"]["nodes"][0]["author"] for t in unresolved if t["comments"]["nodes"]]
+    bot, human, held = ventilate(unresolved, me())
     commit = (p["commits"]["nodes"] or [{}])[0].get("commit", {}) or {}
     rollup = commit.get("statusCheckRollup") or {}
     return {
@@ -105,10 +119,33 @@ def row(p):
         "mergeable": p["mergeable"],
         "ci": rollup.get("state") or "NONE",
         "head": (commit.get("oid") or "")[:7],
-        "unresolved_bot": sum(1 for a in openers if is_bot(a["login"], a["__typename"])),
-        "unresolved_human": sum(1 for a in openers if not is_bot(a["login"], a["__typename"])),
-        "humans": sorted({a["login"] for a in openers if not is_bot(a["login"], a["__typename"])}),
+        "unresolved_bot": len(bot),
+        "unresolved_human": len(human),
+        "held": len(held),
+        "humans": sorted({a["login"] for a in human}),
     }
+
+
+def ventilate(unresolved, mine):
+    """Split open threads three ways: bot (an agent's), human (the author's), held.
+
+    A held thread is a bot thread whose last comment is ours: an agent already adjudicated it
+    and left the decision to the author. It stays open — that is the point, a resolved thread
+    is one the author cannot find — so it must not count as `unresolved_bot`, or the PR would
+    spawn an agent on every pass for a question only the author can answer.
+    """
+    bot, human, held = [], [], []
+    for t in unresolved:
+        first = t["comments"]["nodes"]
+        if not first:
+            continue
+        author = first[0]["author"]
+        if not is_bot(author["login"], author["__typename"]):
+            human.append(author)
+            continue
+        last = t["last"]["nodes"]
+        (held if last and last[-1]["author"]["login"] == mine else bot).append(author)
+    return bot, human, held
 
 
 def link_stack(prs):
@@ -137,7 +174,25 @@ def needs_agent(r):
 
 
 def merge_ready(r):
-    return r["merge_state"] == "CLEAN" and r["ci"] == "SUCCESS" and not r["unresolved_bot"] and not r["unresolved_human"]
+    return (r["merge_state"] == "CLEAN" and r["ci"] == "SUCCESS"
+            and not r["unresolved_bot"] and not r["unresolved_human"] and not r["held"])
+
+
+def status(r, prs):
+    """Can it merge, in one word — the Status column. First rung that holds wins."""
+    if waits_on(r, prs) is not None:
+        return "waits"      # a parent in the stack is being rewritten under it
+    if needs_agent(r):
+        return "working"    # bot threads, red CI or a conflict: an agent owns it
+    if r["held"]:
+        return "your-call"  # adjudicated, open, waiting on a decision only the author makes
+    if merge_ready(r):
+        return "ready"
+    if r["ci"] == "PENDING":
+        return "ci"
+    if r.get("draft"):
+        return "draft"
+    return "review"         # green and quiet: waiting on a human approval or a base bump
 
 
 def diff(old, new):
@@ -228,7 +283,8 @@ def once(d, only=None, include_drafts=False):
     print(json.dumps({
         "state_dir": d,
         "prs": [dict(r, report=carried.get(str(n)), needs_agent=needs_agent(r),
-                     waits_on=waits_on(r, prs), merge_ready=merge_ready(r))
+                     waits_on=waits_on(r, prs), merge_ready=merge_ready(r),
+                     status=status(r, prs))
                 for n, r in sorted(prs.items())],
     }, indent=2))
 
@@ -255,7 +311,7 @@ def watch(d, secs, only=None, include_drafts=False):
 
 def self_check():
     a = {"number": 1, "ci": "SUCCESS", "unresolved_bot": 0, "unresolved_human": 0,
-         "merge_state": "CLEAN", "head": "aaaaaaa", "mergeable": "MERGEABLE"}
+         "held": 0, "merge_state": "CLEAN", "head": "aaaaaaa", "mergeable": "MERGEABLE"}
     assert diff({"1": a}, {1: a}) == [], "no move, no event"
     assert diff({"1": a}, {1: dict(a, ci="FAILURE")}) == ["#1 ci SUCCESS→FAILURE"]
     two = diff({"1": a}, {1: dict(a, ci="PENDING", head="bbbbbbb")})
@@ -272,6 +328,20 @@ def self_check():
         "a conflicting branch blocks the merge even when mergeStateStatus only says DRAFT"
     assert not needs_agent(dict(a, unresolved_human=2)), "human threads are yours, not an agent's"
     assert merge_ready(a) and not merge_ready(dict(a, unresolved_human=1))
+    # A held thread spawns no agent — and lets nothing merge either.
+    assert not needs_agent(dict(a, held=2)), "a held thread waits on the author, not on an agent"
+    assert not merge_ready(dict(a, held=1)), "a decision still owed is not merge-ready"
+
+    # Ventilation: opener decides bot vs human, our own last word decides held.
+    def th(opener, typename="Bot", last=None):
+        return {"comments": {"nodes": [{"author": {"login": opener, "__typename": typename}}]},
+                "last": {"nodes": [{"author": {"login": last or opener}}]}}
+    bot, human, held = ventilate(
+        [th("cursor", "User"), th("cursor", "User", last="bgelis"),
+         th("viclafouch", "User"), th("viclafouch", "User", last="bgelis")], "bgelis")
+    assert (len(bot), len(human), len(held)) == (1, 2, 1), (bot, human, held)
+    assert held[0]["login"] == "cursor", "a human thread we answered stays the author's, never held"
+    assert ventilate([{"comments": {"nodes": []}, "last": {"nodes": []}}], "bgelis") == ([], [], [])
     # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own.
     assert not merge_ready(dict(a, merge_state="DRAFT"))
     # A stack: each PR based on the one below it. The join is pure — no API call.
@@ -283,6 +353,15 @@ def self_check():
     st[2]["unresolved_bot"] = 1
     assert waits_on(st[3], st) == 2, "parent needs an agent, so the child waits a pass"
     assert waits_on(st[2], st) is None, "the lowest PR that needs an agent always runs"
+    assert status(st[3], st) == "waits" and status(st[2], st) == "working"
+    solo = {1: dict(a, branch="feat-a", base="main", parent=None)}
+    assert status(solo[1], solo) == "ready"
+    assert status(dict(solo[1], held=1), solo) == "your-call"
+    assert status(dict(solo[1], unresolved_bot=1, held=1), solo) == "working", \
+        "an agent still has work: the author is not on the hook yet"
+    assert status(dict(solo[1], ci="PENDING", merge_state="BLOCKED"), solo) == "ci"
+    assert status(dict(solo[1], unresolved_human=1, merge_state="BLOCKED"), solo) == "review"
+    assert status(dict(solo[1], draft=True, merge_state="DRAFT"), solo) == "draft"
     assert is_bot("cursor", "User") and is_bot("x[bot]", "User") and not is_bot("viclafouch", "User")
 
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.

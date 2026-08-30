@@ -66,12 +66,17 @@ def normalise_threads(nodes, pr_author):
             })
             continue
         cs = flatten(comments, BODY_CAP)
+        awaiting = cs[-1]["author"] == pr_author
         out.append({
             "id": t.get("id"),
             "comment_id": comments[0].get("databaseId"),
             "path": t.get("path"),
             "line": t.get("line"),
-            "awaiting_reviewer": cs[-1]["author"] == pr_author,
+            "awaiting_reviewer": awaiting,
+            # A bot thread we already answered and deliberately left open: the decision is the
+            # author's. Re-triaging it would post a second reply nobody reads and could resolve
+            # away the very thread that marks where the author has to look.
+            "held": awaiting and cs[0]["is_bot"],
             "comments": cs,
         })
     return out, settled
@@ -218,7 +223,16 @@ def self_check():
     assert out[0]["awaiting_reviewer"] is True                # last comment is the PR author
     assert out[0]["comments"][0]["is_bot"] is True            # __typename Bot
     assert out[0]["comment_id"] == 2                          # first comment's databaseId
-    assert out[1]["awaiting_reviewer"] is False
+    assert out[0]["held"] is True, "bot thread, our reply last: held for the author, not re-triaged"
+    assert out[1]["awaiting_reviewer"] is False and out[1]["held"] is False
+    # A human thread we answered last awaits its reviewer — it is theirs, never ours to hold.
+    human, _ = normalise_threads([
+        {"id": "T5", "isResolved": False, "isOutdated": False, "path": "e.ts", "line": 5,
+         "comments": {"nodes": [
+             {"databaseId": 7, "author": {"login": "bob", "__typename": "User"}, "body": "?"},
+             {"databaseId": 8, "author": {"login": "me", "__typename": "User"}, "body": "done"}]}},
+    ], pr_author="me")
+    assert human[0]["awaiting_reviewer"] is True and human[0]["held"] is False
     assert out[1]["comments"][0]["is_bot"] is True            # known bot login, User typename
     assert trunc("a" * 2000).endswith("[…]") and len(trunc("a" * 2000)) == BODY_CAP + 4
     assert is_bot("dependabot[bot]", "User") and not is_bot("alice", "User")
