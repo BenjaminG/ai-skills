@@ -43,6 +43,17 @@ One call, one JSON blob on stdout: the PR (`number`, `url`, `owner`, `repo`, `au
 `reviews`, the conversation `comments`, and each entry in `failing_checks` with a 50-line
 `log_tail`. A bot's superseded review passes are collapsed to its latest one.
 
+**Then ask whether the PR sits in a stack** — one call, and it changes what the code in the diff
+means:
+
+```bash
+gh pr list --state open --json number,headRefName,baseRefName
+```
+
+The **parent** is the open PR whose `headRefName` equals this PR's `base`; the **children** are
+those whose `baseRefName` equals this PR's `head`. Note the numbers and stop there — no diff, no
+threads, nothing else is fetched until a claim actually needs them (§2).
+
 Omit the argument to detect the PR from the current branch. A source that failed leaves a line in
 `errors[]` instead of taking the run down: triage the rest and say in the report which source is
 missing.
@@ -82,6 +93,23 @@ sources, and the verdict stays confirmed while the disposition becomes `reply` �
 choice, and choices belong to the author. Say which source settled it. Find nothing, or find a
 source that backs the claim, and `fix` stands.
 
+### Does the rest of the stack answer it?
+
+History is not the only place a decision hides. A stacked PR ships foundations **on purpose**: the
+caller, the second implementation, the test that exercises the new path all land one PR up. So a
+claim from the family *unused / never called / dead code / only one implementation / premature
+abstraction / parameter never read* is not adjudicated against this diff alone — read the child's
+diff (`gh pr diff <child>`) before ruling.
+
+Find the consumer there and the claim is **refuted**, evidence `#<child>` plus the consuming
+`file:line`, disposition `reply`. Find nothing in any child and it stands: a stack is a plan, not an
+alibi, and code that no PR in the stack ever uses is dead today.
+
+The other direction matters as much. A **confirmed** defect on lines this PR did not introduce —
+they belong to the parent's commits, outside `base..HEAD` — is not this PR's to fix: folding it here
+rewrites the parent's history under it, and `fixup` refuses that by design. Verdict stays confirmed,
+disposition becomes `reply` naming the parent PR as where the fix belongs.
+
 ### Registry of past refutations
 
 A bot re-raises what another bot already lost. `gate-wf` keeps the store for this — see its
@@ -117,6 +145,11 @@ And one **disposition** — `fix` (change the code) | `reply` (answer, no change
 A conflicting branch is the one `fix` that never travels: resolving it is a rebase against `base`,
 which `pr-respond` does not do. Mark it `fix (hand back)`, name the base it conflicts with, and
 leave it to the user — under `--auto` it is held, like anything needing a merge decision.
+
+When that `base` is **another open PR**, say so in the row: a stacked branch goes conflicting on its
+own the moment its parent is rewritten under it, so the remedy is a restack (`gh-stack`), not a
+judgment call on whose side of a conflict wins. Same hand-back, different sentence — and under
+`babysit-prs` the PR's own agent performs it.
 
 **Done when**: every item in the working set carries a priority and a disposition consistent with its verdict, or is marked awaiting-reviewer. A bot's item is adjudicated like anyone else's — its author decides neither the verdict nor the priority.
 

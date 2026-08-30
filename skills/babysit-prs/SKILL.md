@@ -30,8 +30,9 @@ python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbati
 ```
 
 One pass, one JSON blob: every open PR of the author with `merge_state`, `ci` rollup,
-`unresolved_bot`, `unresolved_human`, `humans`, `head`, `base`, the last agent `report`, plus
-`needs_agent` and `merge_ready`. It is the **only** reader of GitHub truth in this skill — never
+`unresolved_bot`, `unresolved_human`, `humans`, `head`, `base`, `parent` (the open PR this one is
+stacked on, `null` at the bottom of a stack), the last agent `report`, plus `needs_agent`,
+`waits_on` and `merge_ready`. It is the **only** reader of GitHub truth in this skill — never
 run `gh pr view`, `gh pr checks`, or a thread query yourself, and never ask an agent for a status
 the script already carries. Two readers is how a matrix ends up showing a check that went red
 minutes ago.
@@ -71,6 +72,10 @@ Nothing else goes in the table, and nothing goes under it. The `held_gist` is th
 you get: its thread is resolved, so the matrix is where the author learns a decision is waiting.
 One line, no expansion under the table.
 
+A PR sitting on another open PR shows it under Mergeable — `CONFLICTING (stacked on #12)` — because
+a stacked branch turns conflicting on its own the moment its parent is rewritten under it. The
+remedy there is a restack, not a merge decision.
+
 A draft shows `DRAFT` under Mergeable — `DRAFT (CONFLICTING)` when `mergeable` says so, since
 `merge_state` swallows the conflict on a draft — and can never leave the matrix on its own — passing it
 ready for review is the author's move, not an agent's.
@@ -80,10 +85,17 @@ and leaves the matrix. The merge itself is yours.
 
 ## 3. Spawn an agent, but only where one is needed
 
-For each PR with `needs_agent: true` — meaning it has at least one unresolved **bot** thread, a
-failing check, or `mergeable: "CONFLICTING"` — mute it, then spawn its owner. Send them in a single message so they run
+For each PR with `needs_agent: true` **and `waits_on: null`** — meaning it has at least one
+unresolved **bot** thread, a failing check, or `mergeable: "CONFLICTING"`, and nothing below it in
+its stack is being rewritten right now — mute it, then spawn its owner. Send them in a single message so they run
 concurrently. A PR that is green, mergeable and free of bot threads gets no agent: its row is already complete,
 and an agent would have nothing to say that the script has not said.
+
+`waits_on: <n>` is a stack holding its own line. The PR sits on #n, and #n has an agent about to
+force-push the very branch this one is based on: run both and the child restacks against a base
+still moving, so its rebase is either thrown away or lands and buries the parent's fix. Leave the
+row as it is and spawn nothing. The parent's push moves `head`, the watch emits, and the child gets
+its agent on that pass — a stack is drained from the bottom, one PR per pass.
 
 ```bash
 touch "<state_dir>/<n>.muted"    # its own pushes must not wake you
@@ -108,7 +120,8 @@ Agent({
 
     **A conflicting branch is yours too, and it does not come through `pr-feedback`.** That skill
     holds a conflict as a merge decision because its handoff cannot rebase; here you own merge
-    state, so take it: rebase onto `<base>` (`gh-stack` if the PR sits in a stack), resolve every
+    state, so take it: rebase onto `<base>` (this PR is stacked on **PR #<parent>**, so the rebase is
+    a `gh-stack` restack, not a hand rebase — omit this clause when `parent` is null), resolve every
     conflict on its merits — never by taking one side wholesale — verify the branch still builds,
     then force-push with lease and count it in `pushed`. A conflict you cannot resolve without
     guessing the author's intent is `blocked`, with the file that stopped you as the gist.

@@ -111,6 +111,22 @@ def row(p):
     }
 
 
+def link_stack(prs):
+    """A PR whose base is another open PR's head sits on top of it. Pure join, no API call."""
+    by_head = {r["branch"]: n for n, r in prs.items()}
+    for r in prs.values():
+        r["parent"] = by_head.get(r["base"])
+    return prs
+
+
+def waits_on(r, prs):
+    """Only the lowest PR of a stack gets an agent at a time: a parent's force-push moves the
+    child's base under it, and a restack against a base still being rewritten is thrown away.
+    The parent's push wakes the watch, and the child gets its turn on the next pass."""
+    p = r.get("parent")
+    return p if p is not None and p in prs and needs_agent(prs[p]) else None
+
+
 def needs_agent(r):
     """An agent is worth an Opus triage only if there is something only it can judge.
 
@@ -198,7 +214,7 @@ def resolve_unknown(prs):
 
 def scan(d, only=None, include_drafts=False):
     # Named numbers are the selection: fetching by number bypasses author and draft alike.
-    prs = resolve_unknown(fetch(only or open_prs(include_drafts)))
+    prs = link_stack(resolve_unknown(fetch(only or open_prs(include_drafts))))
     reports, report_lines = fold_reports(d, prs)
     return prs, reports, report_lines
 
@@ -211,7 +227,8 @@ def once(d, only=None, include_drafts=False):
     save_state(d, prs, carried)
     print(json.dumps({
         "state_dir": d,
-        "prs": [dict(r, report=carried.get(str(n)), needs_agent=needs_agent(r), merge_ready=merge_ready(r))
+        "prs": [dict(r, report=carried.get(str(n)), needs_agent=needs_agent(r),
+                     waits_on=waits_on(r, prs), merge_ready=merge_ready(r))
                 for n, r in sorted(prs.items())],
     }, indent=2))
 
@@ -257,6 +274,15 @@ def self_check():
     assert merge_ready(a) and not merge_ready(dict(a, unresolved_human=1))
     # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own.
     assert not merge_ready(dict(a, merge_state="DRAFT"))
+    # A stack: each PR based on the one below it. The join is pure — no API call.
+    st = link_stack({1: dict(a, branch="feat-a", base="main"),
+                     2: dict(a, branch="feat-b", base="feat-a"),
+                     3: dict(a, branch="feat-c", base="feat-b", unresolved_bot=1)})
+    assert st[1]["parent"] is None and st[2]["parent"] == 1 and st[3]["parent"] == 2
+    assert waits_on(st[3], st) is None, "a green parent blocks nobody"
+    st[2]["unresolved_bot"] = 1
+    assert waits_on(st[3], st) == 2, "parent needs an agent, so the child waits a pass"
+    assert waits_on(st[2], st) is None, "the lowest PR that needs an agent always runs"
     assert is_bot("cursor", "User") and is_bot("x[bot]", "User") and not is_bot("viclafouch", "User")
 
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.
