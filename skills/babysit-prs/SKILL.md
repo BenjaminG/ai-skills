@@ -156,7 +156,7 @@ Agent({
   model: "opus",
   name: "pr-<n>",
   description: "Own PR #<n>",
-  prompt: "Think hard. You own PR #<n> end to end.
+  prompt: "Think hard. You own PR #<n> end to end. **End to end ends at your push**, not at green CI.
 
     Invoke `pr-feedback` on PR #<n> with `--auto confirmed`, then take its handoff through
     `pr-respond` with the same policy — it drafts through `humanizer`, folds through `fixup`,
@@ -174,6 +174,15 @@ Agent({
     conflict on its merits — never by taking one side wholesale — verify the branch still builds,
     then force-push with lease and count it in `pushed`. A conflict you cannot resolve without
     guessing the author's intent is `blocked`, with the file that stopped you as the gist.
+
+    **Never wait, never watch.** Once your fix is on the remote you are done: do not arm a
+    `Monitor`, do not sleep on a check, do not re-poll `gh pr checks` for the CI you just triggered,
+    do not verify your own push landed green. A manager is already watching this PR and will see
+    that rollup before you would. Waiting is not thoroughness here, it is damage: your mute holds
+    your whole stack hostage while you idle, it ages out after an hour and hands your live branch to
+    a second agent, and the verdict you were waiting for arrives in a context that is about to be
+    thrown away. Push, report, stop — if the check comes back red, the next pass spawns a fresh
+    agent that reads the real failure.
 
     **Human review threads are not yours.** Never reply to one, never resolve one, never change
     code because of one. The author handles those in a manual pass.
@@ -202,8 +211,11 @@ Agent({
     which is what tells the scan this thread waits on a human and stops it spawning an agent here
     forever. Held is for a question, never for an explanation — if your reply ends the matter, resolve.
 
-    **The same check failing twice after you fixed it** means your fix missed the cause. Stop
-    touching it, count it as blocked.
+    **A check an earlier agent already tried to fix** means the obvious cause is not the cause. You
+    will not see it fail twice yourself — you never wait for CI — so read the branch: a commit on
+    `<head>` that already targets this exact check, or a thread where a previous pass says it fixed
+    it, is your signal. Do not fix it a second time the same way. Either you find a different cause,
+    or it is blocked, with that check as the gist.
 
     Finally — always, including when you fixed nothing or hit a blocker — write
     <state_dir>/<n>.report.json (the absolute path, substituted here by the manager):
