@@ -354,15 +354,26 @@ def scan(d, only=None, include_drafts=False):
     return prs, reports, report_lines, seen, prev
 
 
-def carry(prev, reports):
+def carry(prev, reports, prs):
+    """Carry the last report forward, minus the part the world has moved past.
+
+    A held gist points at an open thread. That thread can be resolved by anyone — the next agent,
+    or the author in another session, who read the gist and fixed it by hand. The scan sees it on
+    the next pass; the report never would. So a gist outlives its thread by exactly zero passes.
+    Only PRs this scan actually looked at are touched: a filtered pass must not wipe the rest.
+    """
     out = {k: (prev.get(k) or {}).get("report") for k in prev}
     out.update(reports)
+    for k, rep in out.items():
+        r = prs.get(int(k))
+        if rep and r and not r["held"]:
+            out[k] = dict(rep, held=0, held_gist=None)
     return out
 
 
 def once(d, only=None, include_drafts=False):
     prs, reports, _, seen, prev = scan(d, only, include_drafts)
-    carried = carry(prev, reports)
+    carried = carry(prev, reports, prs)
     order, running = stacks(prs), {n for n in prs if muted(d, n)}
     save_state(d, prs, carried, seen)
     print(json.dumps({
@@ -384,7 +395,7 @@ def watch(d, secs, only=None, include_drafts=False):
             for n, r in sorted(prs.items()):
                 if merge_ready(r):
                     lines.append(f"#{n} MERGE-READY — {r['url']}")
-            save_state(d, prs, carry(prev, reports), seen)
+            save_state(d, prs, carry(prev, reports, prs), seen)
             for line in lines:
                 print(line, flush=True)
         except Exception as e:  # a transient gh failure must not kill the watch
@@ -515,6 +526,17 @@ def self_check():
         assert muted(d, 7)
         os.utime(stale, (0, time.time() - MUTE_TTL - 1))
         assert not muted(d, 7) and not os.path.exists(stale), "a stale mute is lifted, not obeyed"
+    # A gist outlives its thread by zero passes — whoever resolved it, agent or author elsewhere.
+    rep = {"pushed": 1, "held": 1, "held_gist": "gate the pre-event CTA", "blocked": None}
+    prev = {"42": {"report": rep}, "7": {"report": rep}}
+    live = {42: dict(a, held=1), 7: dict(a, held=0)}
+    kept, cleared = carry(prev, {}, live)["42"], carry(prev, {}, live)["7"]
+    assert kept["held_gist"] == rep["held_gist"], "an open held thread keeps its gist"
+    assert (cleared["held"], cleared["held_gist"]) == (0, None), "a resolved thread drops its gist"
+    assert cleared["pushed"] == 1, "pushed is history, not state — it survives"
+    assert carry(prev, {}, {})["7"]["held_gist"] == rep["held_gist"], \
+        "a PR this pass never scanned keeps its gist"
+
     ns = parser().parse_args(["123", "456", "--include-drafts", "--watch", "60"])
     assert (ns.prs, ns.watch, ns.include_drafts) == ([123, 456], 60, True), ns
     assert parser().parse_args([]).prs == [] and parser().parse_args([]).watch is None

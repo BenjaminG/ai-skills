@@ -61,7 +61,7 @@ One row per PR. The objective columns come from the script, the last three from 
 
 | PR | Issue | Status | Mergeable | CI | Threads | Fixed | Held | Blocked |
 |---|---|---|---|---|---|---|---|---|
-| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | the label for `status` | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `held`, then `— <report.held_gist>` when there is one | `report.blocked` or `—` |
+| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | the label for `status` | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `held`, then `— <report.held_gist>` when `held > 0` | `report.blocked` or `—` |
 
 **Status** answers the only question the author actually has — can this merge, and if not, who
 is holding it. The script decides it; you only render the label:
@@ -86,6 +86,25 @@ not fit is shortened, not turned into bullets.
 Nothing else goes in the table, and nothing goes under it. The `held_gist` is the whole substance
 you get; the thread itself stays open on the PR, so the matrix says a decision is waiting and the
 thread says what it is. One line, no expansion under the table.
+
+**A report is a snapshot; the script is the present.** Every `report.*` field was true when an agent
+stopped, and the world kept moving after that — most of all *you*, in another session: you read the
+held gist, wrote the fix, replied and resolved the thread yourself. The script sees that on its very
+next pass, the report never will. So where the two disagree, the script wins, and the columns you
+render obey it:
+
+- **Held** is the script's `held`, never `report.held`. At `held: 0` the cell is `—` and the
+  `held_gist` is **gone** — no gist, no parenthetical, no "resolved since" note. The gist existed to
+  point at an open thread; there is no thread left to point at.
+- **Fixed** stays `report.pushed`, a tally of what agents pushed. It is history, not state, and
+  nothing out-of-band contradicts it.
+- **Blocked** is the one cell no script can check. Drop `report.blocked` as soon as what it named is
+  green — the check it says keeps failing now passes, or the conflict it gave up on is gone from
+  `merge_state`.
+
+Out-of-band work is *safe*, and that is not a coincidence: `held` is precisely the state where the
+script spawns no agent (`needs_agent` is false on a held thread), so the branch is yours to push on
+while the babysitter watches. Your push moves `head`, the watch emits, and the row corrects itself.
 
 A PR sitting on another open PR shows it under Mergeable — `CONFLICTING (stacked on #12)` — because
 a stacked branch turns conflicting on its own the moment its parent is rewritten under it. The
