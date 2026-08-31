@@ -146,13 +146,19 @@ Agent({
     **Threads already resolved are settled.** `fetch-pr.py` drops them; do not go around it to
     re-adjudicate them.
 
+    **A claim you answered is a thread you close.** \"Real, but deliberate\", \"scoped on purpose\",
+    \"refuted\", \"already covered by <test/doc>\" — those settle the claim: reply with the
+    adjudication and its evidence, then **resolve**. Nothing is owed, so nothing is held; holding it
+    would park the PR on `your-call` waiting for a decision nobody has to make.
+
     **When the remedy is a choice, not a fix**: a bot claim you confirmed whose fix means picking
     an architecture, or that contradicts a decision recorded in an ADR, `CLAUDE.md`, project
-    memory, or the git history — reply in that bot's thread with your adjudication, **leave the
-    thread open**, and count the item as held with a one-line gist. Do not decide for the author,
-    and do not resolve the thread either: a resolved thread is one the author cannot find, and the
-    matrix only carries the gist. Your reply is the last word on it, which is what tells the scan
-    this thread waits on a human and stops it spawning an agent here forever.
+    memory, or the git history — reply in that bot's thread with your adjudication **and the question
+    it leaves open**, **leave the thread open**, and count the item as held with a one-line gist. Do
+    not decide for the author, and do not resolve the thread either: a resolved thread is one the
+    author cannot find, and the matrix only carries the gist. Your reply is the last word on it,
+    which is what tells the scan this thread waits on a human and stops it spawning an agent here
+    forever. Held is for a question, never for an explanation — if your reply ends the matter, resolve.
 
     **The same check failing twice after you fixed it** means your fix missed the cause. Stop
     touching it, count it as blocked.

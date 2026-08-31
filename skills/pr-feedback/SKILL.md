@@ -16,7 +16,10 @@ Two limits hold under every `--auto` policy, because the caller is unattended:
   acted on — no reply, no reaction, no resolve, no code change. A human wrote to the author, and an
   automated pass answering in their place is the one thing no policy authorises.
 - **A confirmed item that §2 turned into a `reply` for want of a decision** is posted as a reply,
-  its thread is **left open**, and it is counted as held and named in §4's held line. Resolving it
+  its thread is **left open**, and it is counted as held and named in §4's held line. What qualifies
+  is narrow: the reply ends in a question the author must answer before the code can be right. A
+  claim confirmed as real but deliberate — a test or a doc names the intent, the scope was chosen —
+  is *answered*, not held: it is replied to and resolved like any settled item. Resolving a held item
   would file the one thing the author still has to act on under the threads GitHub hides: the report
   carries a gist, the open thread carries the question, and the author needs both. Our reply being
   the last word is also what marks the thread `held` on the next fetch, so it is reported and never
