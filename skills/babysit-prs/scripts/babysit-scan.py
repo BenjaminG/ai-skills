@@ -20,6 +20,7 @@ import subprocess
 import time
 
 POLL_DEFAULT = 60
+MUTE_TTL = 3600
 # Same list as pr-feedback/scripts/fetch-pr.py — a machine account posting with a PAT
 # reads as `User`, so __typename alone is not enough.
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
@@ -304,7 +305,22 @@ def fold_reports(d):
 
 
 def muted(d, n):
-    return os.path.exists(os.path.join(d, f"{n}.muted"))
+    """Is an agent still alive on this PR? Its mute file says so — until it goes stale.
+
+    A mute is lifted by the agent's report, and an agent that dies never writes one. Left alone
+    that mute reserves the whole stack forever, and the lowest PR that needs work never gets its
+    turn. ponytail: age it out on a flat hour — long enough for a real triage-fix-rebase pass on
+    a big PR, short enough that a crash costs one hour and not the run. Per-PR budgets if an
+    agent ever legitimately runs longer.
+    """
+    path = os.path.join(d, f"{n}.muted")
+    try:
+        if time.time() - os.path.getmtime(path) <= MUTE_TTL:
+            return True
+        os.remove(path)
+    except OSError:
+        pass
+    return False
 
 
 def resolve_unknown(prs, seen):
@@ -438,6 +454,19 @@ def self_check():
     assert waits_on(st[3], st, o, set()) == 2, "a PR lower in the stack needs an agent: wait"
     assert waits_on(st[2], st, o, set()) is None, "the lowest PR that needs an agent always runs"
     assert status(st[3], st, o, set()) == "waits" and status(st[2], st, o, set()) == "working"
+    # Bottom to top, one at a time: with the whole stack dirty the root goes first, and each
+    # PR's turn only comes once everything below it is clean. The owner is the only `None`.
+    def turn():
+        return [waits_on(st[n], st, o, set()) for n in (1, 2, 3)]
+    for n in st:
+        st[n]["unresolved_bot"] = 1
+    assert turn() == [None, 1, 1], turn()
+    st[1]["unresolved_bot"] = 0
+    assert turn() == [2, None, 2], turn()
+    st[2]["unresolved_bot"] = 0
+    assert turn() == [3, 3, None], turn()
+    st[3]["unresolved_bot"] = 0
+    assert turn() == [None, None, None], "a clean stack reserves nothing"
     # One agent per stack, transitively: the grandparent owns it even through a clean parent.
     st[2]["unresolved_bot"] = 0
     st[1]["ci"] = "FAILURE"
@@ -480,6 +509,12 @@ def self_check():
         assert lines == ["#42 report: pushed 2, inflight 0, held 3, blocked -"], lines
         assert not muted(d, 42), "folding the report must lift the mute"
         assert fold_reports(d) == ({}, []), "a folded report is consumed once"
+        # A dead agent writes no report. Its mute must not reserve the stack forever.
+        stale = os.path.join(d, "7.muted")
+        open(stale, "w").close()
+        assert muted(d, 7)
+        os.utime(stale, (0, time.time() - MUTE_TTL - 1))
+        assert not muted(d, 7) and not os.path.exists(stale), "a stale mute is lifted, not obeyed"
     ns = parser().parse_args(["123", "456", "--include-drafts", "--watch", "60"])
     assert (ns.prs, ns.watch, ns.include_drafts) == ([123, 456], 60, True), ns
     assert parser().parse_args([]).prs == [] and parser().parse_args([]).watch is None

@@ -109,15 +109,18 @@ and an agent would have nothing to say that the script has not said.
 `agent_running: true` is the mute file still on disk: an agent is alive on that PR and has not
 reported. It keeps `needs_agent: true` the whole time it works — its threads only clear as it
 answers them — so spawning on `needs_agent` alone puts a second agent on a branch the first is
-about to force-push. The row is already accounted for; leave it.
+about to force-push. The row is already accounted for; leave it. A live agent also outranks
+bottom-first: it already holds the branch, so a lower PR waits its turn rather than preempting it.
+A mute nothing has lifted within the hour is a dead agent, and the script drops it on its own.
 
-`waits_on: <n>` is a stack holding its own line. **A stack gets one agent at a time, whichever PR
-it sits on** — run two and the child restacks against a base still moving, so its rebase is either
-thrown away or lands and buries the parent's fix. The script picks the owner: the PR of that stack
-whose agent is still alive, else the lowest one that needs one. Every other PR of the stack reads
-`waits_on: <owner>` — including one *below* the owner, because a rebase anywhere in a chain moves
-every branch above it. Leave those rows as they are and spawn nothing. The owner's push moves
-`head`, the watch emits, and the next PR gets its agent on that pass.
+`waits_on: <n>` is a stack holding its own line. **A stack gets one agent at a time, and it is
+drained from the bottom** — run two and the child restacks against a base still moving, so its
+rebase is either thrown away or lands and buries the parent's fix. The script picks the owner: the
+PR of that stack whose agent is still alive, else the **lowest** one that needs one. Every other PR
+of the stack reads `waits_on: <owner>` — including one *below* the owner, because a rebase anywhere
+in a chain moves every branch above it. Leave those rows as they are and spawn nothing. The owner's
+push moves `head`, the watch emits, the next PR up becomes the lowest that needs work, and it gets
+its agent on that pass. A five-PR stack therefore takes five passes, in order, never five agents.
 
 The mute file is what makes that hold, so **create it before the agent, not after**: it is the only
 signal that an agent is still alive on a PR whose threads it has already answered but whose fix it
