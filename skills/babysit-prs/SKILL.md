@@ -200,6 +200,16 @@ Agent({
 An agent that finishes writes its report and dies. Its memory is not lost: refutations live in the
 dismissals registry (see `pr-feedback` §2), so the next agent on that PR does not re-argue them.
 
+**A reported agent is killed, never reused.** The moment a pass folds a report — the scan prints
+`#<n> report: …` — `TaskStop` that PR's agent (`ToolSearch "select:TaskStop"`) before you re-render.
+Never `SendMessage` it back to work: its context is a snapshot of a branch that has since moved, and
+a revived agent goes around the mute entirely. Every pass spawns a **fresh** agent that redoes its
+own `pr-feedback` triage on the current state.
+
+Killing it is also what keeps the name honest: `pr-<n>` is one agent per PR, so **a name collision
+means an agent is still alive on that PR** — leave the row alone. Never accept a suffixed name
+(`pr-<n>b`): that suffix is a second agent about to force-push the branch the first one holds.
+
 At the very first pass — the only moment every PR needs triage at once — spawn in waves of about
 four. After that the regime is quiet: one agent at a time, usually none.
 
@@ -223,7 +233,7 @@ shows: the drafts you asked for go silent, and PRs you never selected start emit
 The script emits one line per PR whose CI rollup, unresolved-thread counts, `mergeStateStatus` or
 head sha actually moved — not one line per check, which would be dozens per push and would get the
 monitor shut down as a firehose. Muted PRs emit nothing. A dropped report is folded in and lifts
-its own mute.
+its own mute — `TaskStop` its agent then, in the same pass, before spawning anything.
 
 Then end the turn. Do not arm a `ScheduleWakeup`, do not poll, do not ask an agent whether it is
 done: an agent going idle is not a signal, and its report file is. Today's silence is the design
