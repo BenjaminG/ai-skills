@@ -67,12 +67,16 @@ def normalise_threads(nodes, pr_author):
             continue
         cs = flatten(comments, BODY_CAP)
         awaiting = cs[-1]["author"] == pr_author
+        rounds = sum(1 for c in cs if c["author"] == pr_author)
         out.append({
             "id": t.get("id"),
             "comment_id": comments[0].get("databaseId"),
             "path": t.get("path"),
             "line": t.get("line"),
             "awaiting_reviewer": awaiting,
+            # How many times we have already answered here. `rounds >= 1` with a bot speaking
+            # last means the item is the bot's *reply*, not the finding it opened with.
+            "rounds": rounds,
             # A bot thread we already answered and deliberately left open: the decision is the
             # author's. Re-triaging it would post a second reply nobody reads and could resolve
             # away the very thread that marks where the author has to look.
@@ -224,7 +228,19 @@ def self_check():
     assert out[0]["comments"][0]["is_bot"] is True            # __typename Bot
     assert out[0]["comment_id"] == 2                          # first comment's databaseId
     assert out[0]["held"] is True, "bot thread, our reply last: held for the author, not re-triaged"
+    assert out[0]["rounds"] == 1 and out[1]["rounds"] == 0
     assert out[1]["awaiting_reviewer"] is False and out[1]["held"] is False
+    # The bot answers back on a thread we already replied to: not held, but not a new finding —
+    # `rounds` is what tells the triage the item is that reply, not the head of the thread.
+    again, _ = normalise_threads([
+        {"id": "T6", "isResolved": False, "isOutdated": False, "path": "f.ts", "line": 6,
+         "comments": {"nodes": [
+             {"databaseId": 9, "author": {"login": "cursor", "__typename": "Bot"}, "body": "claim"},
+             {"databaseId": 10, "author": {"login": "me", "__typename": "User"}, "body": "no"},
+             {"databaseId": 11, "author": {"login": "cursor", "__typename": "Bot"},
+              "body": "accepted"}]}},
+    ], pr_author="me")
+    assert again[0]["held"] is False and again[0]["rounds"] == 1
     # A human thread we answered last awaits its reviewer — it is theirs, never ours to hold.
     human, _ = normalise_threads([
         {"id": "T5", "isResolved": False, "isOutdated": False, "path": "e.ts", "line": 5,

@@ -30,8 +30,9 @@ python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbati
 ```
 
 One pass, one JSON blob: every open PR of the author with `merge_state`, `ci` rollup,
-`unresolved_bot`, `unresolved_human`, `held` (open bot threads an agent already answered — they wait
-on the author, not on an agent), `humans`, `head`, `base`, `parent` (the open PR this one is
+`unresolved_bot`, `unresolved_human`, `held` (open bot threads that have not moved since an agent
+last looked — our reply sits last, or the bot's does and an agent already read it; either way they
+wait on the author, not on an agent), `humans`, `head`, `base`, `parent` (the open PR this one is
 stacked on, `null` at the bottom of a stack), the last agent `report`, plus `needs_agent`,
 `waits_on`, `merge_ready` and `status`. It is the **only** reader of GitHub truth in this skill — never
 run `gh pr view`, `gh pr checks`, or a thread query yourself, and never ask an agent for a status
@@ -70,7 +71,7 @@ is holding it. The script decides it; you only render the label:
 | `ready` | **READY** | green, mergeable, nothing open. Merge it. |
 | `your-call` | **YOUR CALL** | an agent adjudicated a bot claim and left the decision to you. The thread is open, waiting. |
 | `working` | **WORKING** | bot threads, red CI or a conflict — an agent owns it, nothing for you to do. |
-| `waits` | **WAITS #n** (`n` is `waits_on`) | stacked on #n, which is being rewritten. Its turn comes next pass. |
+| `waits` | **WAITS #n** (`n` is `waits_on`) | it has work, but #n holds its stack's single agent. Its turn comes next pass. |
 | `ci` | **CI** | checks still running. |
 | `review` | **REVIEW** | green and quiet, waiting on a human approval or a base bump. |
 | `draft` | **DRAFT** | clean, but still a draft. Marking it ready is yours. |
@@ -99,20 +100,32 @@ and leaves the matrix. The merge itself is yours.
 
 ## 3. Spawn an agent, but only where one is needed
 
-For each PR with `needs_agent: true` **and `waits_on: null`** — meaning it has at least one
+For each PR with `needs_agent: true`, **`waits_on: null` and `agent_running: false`** — meaning it has at least one
 unresolved **bot** thread, a failing check, or `mergeable: "CONFLICTING"`, and nothing below it in
-its stack is being rewritten right now — mute it, then spawn its owner. Send them in a single message so they run
+its stack is being rewritten right now, and it does not already have an agent — mute it, then spawn its owner. Send them in a single message so they run
 concurrently. A PR that is green, mergeable and free of bot threads gets no agent: its row is already complete,
 and an agent would have nothing to say that the script has not said.
 
-`waits_on: <n>` is a stack holding its own line. The PR sits on #n, and #n has an agent about to
-force-push the very branch this one is based on: run both and the child restacks against a base
-still moving, so its rebase is either thrown away or lands and buries the parent's fix. Leave the
-row as it is and spawn nothing. The parent's push moves `head`, the watch emits, and the child gets
-its agent on that pass — a stack is drained from the bottom, one PR per pass.
+`agent_running: true` is the mute file still on disk: an agent is alive on that PR and has not
+reported. It keeps `needs_agent: true` the whole time it works — its threads only clear as it
+answers them — so spawning on `needs_agent` alone puts a second agent on a branch the first is
+about to force-push. The row is already accounted for; leave it.
+
+`waits_on: <n>` is a stack holding its own line. **A stack gets one agent at a time, whichever PR
+it sits on** — run two and the child restacks against a base still moving, so its rebase is either
+thrown away or lands and buries the parent's fix. The script picks the owner: the PR of that stack
+whose agent is still alive, else the lowest one that needs one. Every other PR of the stack reads
+`waits_on: <owner>` — including one *below* the owner, because a rebase anywhere in a chain moves
+every branch above it. Leave those rows as they are and spawn nothing. The owner's push moves
+`head`, the watch emits, and the next PR gets its agent on that pass.
+
+The mute file is what makes that hold, so **create it before the agent, not after**: it is the only
+signal that an agent is still alive on a PR whose threads it has already answered but whose fix it
+has not pushed. Skip it and the script sees a clean parent, releases the child, and both rewrite
+the same branch.
 
 ```bash
-touch "<state_dir>/<n>.muted"    # its own pushes must not wake you
+touch "<state_dir>/<n>.muted"    # its own pushes must not wake you, and its stack stays reserved
 ```
 
 ```
@@ -145,6 +158,13 @@ Agent({
 
     **Threads already resolved are settled.** `fetch-pr.py` drops them; do not go around it to
     re-adjudicate them.
+
+    **A thread you have already answered is not a new finding.** Bots answer back — accepting,
+    conceding, sometimes arguing. `rounds >= 1` marks those threads: the item is the bot's **last**
+    reply, never the claim at the top. An acknowledgement owes nothing — no reply, no resolve, and
+    a question an earlier pass left with the author stays exactly where it is. A real rebuttal you
+    answer on its own terms, without restating what you already wrote. Answering the head of a
+    thread whose tail you did not read is the one failure that makes this loop look broken.
 
     **A claim you answered is a thread you close.** \"Real, but deliberate\", \"scoped on purpose\",
     \"refuted\", \"already covered by <test/doc>\" — those settle the claim: reply with the

@@ -41,7 +41,7 @@ python3 "$FETCH" [pr-number-or-url]
 
 One call, one JSON blob on stdout: the PR (`number`, `url`, `owner`, `repo`, `author`, `head`,
 `base`, `state`, `draft`, `mergeable`), every **live** inline review `thread` (paginated, with `id`, `comment_id`,
-`path`, `line`, `awaiting_reviewer`, `held`, and each comment's `author` / `is_bot` / `body`),
+`path`, `line`, `awaiting_reviewer`, `held`, `rounds`, and each comment's `author` / `is_bot` / `body`),
 `settled_threads` — the resolved and outdated ones, same shape in 300-char excerpts — the
 `reviews`, the conversation `comments`, and each entry in `failing_checks` with a 50-line
 `log_tail`. A bot's superseded review passes are collapsed to its latest one.
@@ -132,6 +132,18 @@ PR-level recap comment — has no anchor and stays out.
 The threads marked `awaiting_reviewer` are **awaiting reviewer**: the ball is with the reviewer, so they take no priority and no disposition, and they land at the end of the report. Two exceptions pull a thread back out. The author's reply only promised a change, and that change is not in the code — read the cited file to tell the two apart. Or the reviewer is a **bot**: `awaiting_reviewer` only means the last comment is the author's, and no bot ever takes that ball back.
 
 A bot thread we answered last carries `held: true`, and that is a **deliberately** open thread — an earlier pass adjudicated the claim and left the decision to the author. It is not an item: no priority, no disposition, no reply, and above all no resolve. Name it on the held line of §4 and move on. `pr-respond` resolves in the same batch it replies, so a bot thread still open with our answer on top is one that was held on purpose; only threads predating that rule are stragglers, and closing those is the author's call, not an automated pass's.
+
+**A thread with `rounds >= 1` and a bot speaking last is the bot answering *us*.** The item is that
+reply, never the finding the thread opened with — re-adjudicating the head posts a second answer to
+a claim already settled and reads, to anyone on the thread, as if the exchange never happened. Read
+the tail first and classify it on its own merits:
+
+- It acknowledges, agrees, or restates ("justification accepted", "resolved") — **nothing is owed**.
+  Not an item, no reply, no resolve, no priority. If an earlier pass left a question with the
+  author, that question is still the state of the thread: leave it exactly as it is.
+- It disputes, narrows, or raises something new — that is a real item, adjudicated like any other,
+  but the claim under verdict is the **reply's**, and your own earlier answer is evidence already on
+  the record. Do not repeat it.
 
 Everything else takes one priority:
 
