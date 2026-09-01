@@ -12,7 +12,7 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 
 It orchestrates with a single primitive every agent harness has: **spawn a subagent, read its result**. No Workflow tool, no agent teams — so it runs unchanged on Claude Code and Codex. The companion `gate-wf` skill runs the same review logic on the Claude Code `Workflow` engine (deterministic static script, `--resume` caching); prefer it when Workflows are enabled.
 
-**Skill version**: `6`. Cache entries are keyed on this — bumping invalidates all caches at once. v6: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive.
+**Skill version**: `7`. Cache entries are keyed on this — bumping invalidates all caches at once. v7: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v6: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive.
 
 ## Prerequisites
 
