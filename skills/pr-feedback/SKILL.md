@@ -154,6 +154,23 @@ they belong to the parent's commits, outside `base..HEAD` — is not this PR's t
 rewrites the parent's history under it, and `fixup` refuses that by design. Verdict stays confirmed,
 disposition becomes `reply` naming the parent PR as where the fix belongs.
 
+### The smallest fix that holds
+
+A `fix` disposition is not a licence to write code. What travels to `pr-respond` is the **smallest**
+change that makes the claim false — and a bot's own suggested patch is the least likely candidate:
+it was written without the repo in view, so it adds a guard where a type would do, a helper where a
+call exists, a config where a constant is enough.
+
+So before a `fix` leaves §2, invoke `/ponytail:ponytail` and take its ladder on the intended change:
+does it need to exist at all, does the stdlib or the platform cover it, does an already-installed
+dependency, can it be one line. Stop at the first rung that holds and carry **that** shape into the
+handoff, not the bot's.
+
+A fix that grows an abstraction, a flag, an interface or a new file to answer one review comment has
+failed this pass. Write down the shape in one clause ("widen the param type", "call `assertUser`",
+"drop the branch") — that clause is what `pr-respond` implements, and anything larger is the author's
+call, so the disposition becomes `reply` instead.
+
 ### Registry of past refutations
 
 A bot re-raises what another bot already lost. `gate-wf` keeps the store for this — see its
@@ -166,7 +183,7 @@ them in one line ("2 claims already refuted on this branch"). After adjudicating
 once its thread is closed (`"rebutted"` while it is still open). An item with no `file:line` — a
 PR-level recap comment — has no anchor and stays out.
 
-**Done when**: every defect-asserting item carries a verdict naming a `file:line` read in this run, every confirmed `fix` has had its history checked, and the refutations are in the registry. A verdict resting only on the comment's own wording is not a verdict — go read the file.
+**Done when**: every defect-asserting item carries a verdict naming a `file:line` read in this run, every confirmed `fix` has had its history checked and carries the smallest-fix clause, and the refutations are in the registry. A verdict resting only on the comment's own wording is not a verdict — go read the file.
 
 ## 3. Classify
 
@@ -288,7 +305,7 @@ Under `--auto`, skip that prompt. Mark each row selected or held, then list the 
   If `pr-respond` cannot be invoked, stop and say so — under `--auto`, that means reporting the
   item as **blocked**, not abandoning it quietly. Never carry on by hand.
 
-Invoke `pr-respond` with the user's picks. It reads this triage from the conversation and does not re-fetch, so carry each picked item's priority, disposition, verdict with its evidence (the reply to a refuted claim is written from it), thread `id`, first-comment `databaseId`, `owner`, `repo` and PR number into the handoff.
+Invoke `pr-respond` with the user's picks. It reads this triage from the conversation and does not re-fetch, so carry each picked item's priority, disposition, verdict with its evidence (the reply to a refuted claim is written from it), the smallest-fix clause for every `fix`, thread `id`, first-comment `databaseId`, `owner`, `repo` and PR number into the handoff.
 
 Under `--auto`, pass the policy through so `pr-respond` skips its confirmation too.
 
