@@ -84,6 +84,47 @@ For every item asserting a defect — bug, race, security hole, missing test, br
 
 Items asserting taste — naming, formatting, phrasing, an optional refactor — assert no fact, so they carry no verdict. Send them straight to §3.
 
+### A reviewer asking *why*
+
+A question asserts nothing, so it carries no verdict — but it still gets its own read, and that read
+goes somewhere the defect pass never goes. The diff shows what the code does, and the reviewer has
+already read the diff: handing it back explains nothing. What they are missing is the **intent** —
+the product rule, the screen the behavior feeds, the bug that forced it. Find that, and make it the
+answer material you carry into the handoff.
+
+Answer material naming only the mechanism — the type that was widened, the field now omitted, the
+call that no longer runs — produces a reply that walks someone through a diff they are looking at.
+The test on a draft answer is whether it would survive the follow-up *yes, but why do we want that?*
+If it would not, the read is not finished.
+
+### Is the shape it fears actually there?
+
+A claim about a **data shape** — a field that may be absent, a link that may be stale, an id that
+may point at the wrong row, an enum value nothing writes any more — is not settled by reading code.
+Code proves the shape is *reachable*; only the data says whether it *occurs*, and the disposition
+turns on that.
+
+So for a **confirmed** claim of that family, run one query against real data before it becomes a
+`fix`, and carry the count into the verdict: "confirmed — 1 row in 250 (local clone)".
+
+- Occurs at scale → `fix`.
+- Reachable, zero or near-zero rows → `reply` carrying the count, naming where the invariant is
+  actually held: a migration, a constraint, a write path.
+- No data reachable → `unclear`, capped at P2. A guard does not get written on a maybe.
+
+A bot cannot query the database. That asymmetry is the whole value this pass adds over the bot that
+raised the claim.
+
+### Does the repo already do this?
+
+Before a `fix` adds a helper, a constant, a guard or an error class, grep for it. A bot names what
+is missing at the cited line; it does not know the same file solves it seventy lines up, or that a
+util already ships the predicate. A `fix` that duplicates something the repo has is not a fix, it is
+a second implementation.
+
+Search the file, then the module, then the package. Found it → the disposition stays `fix`, but the
+change is to **call** the existing thing, and the reply says which. Found nothing → proceed.
+
 ### Was it written that way on purpose?
 
 Reading the code proves a defect **exists**. It cannot prove the defect is an accident — that lives
@@ -168,6 +209,25 @@ own the moment its parent is rewritten under it, so the remedy is a restack (`gh
 judgment call on whose side of a conflict wins. Same hand-back, different sentence — and under
 `babysit-prs` the PR's own agent performs it.
 
+### Weigh the fix set as a whole
+
+Every rule above judges one claim. Nothing judges their sum, and a review loop only ever adds: a bot
+names what is missing, never what is surplus. Twelve individually defensible `fix` items produce a
+diff nobody would have written on purpose.
+
+So before the report, measure the `fix` set as one thing:
+
+- Sum the lines those items would add, against `git diff --shortstat <base>..HEAD`. Past roughly a
+  quarter of the PR's own size, say so in the report: the fix set has outgrown the fix.
+- Re-read the `fix` list **as a list**. Findings restating one worry from several angles — the same
+  field, the same link, the same call — collapse into one `fix`, not one per thread. Name the
+  collapse in the report ("4 threads, one guard").
+
+A PR that has already been through a bot pass is the dangerous case: the new findings are about the
+code the last pass added. When a `fix` targets a line this PR wrote **in answer to an earlier
+finding**, that is the signal the earlier finding was over-applied — reconsider that one instead of
+layering on top of it.
+
 **Done when**: every item in the working set carries a priority and a disposition consistent with its verdict, or is marked awaiting-reviewer. A bot's item is adjudicated like anyone else's — its author decides neither the verdict nor the priority.
 
 ## 4. Report
@@ -201,7 +261,7 @@ Keep every cell to one line so rows stay scannable; the evidence that will not f
 
 Then the awaiting-reviewer threads in their own table — Where | Who | Waiting on — one row each, nothing to act on.
 
-Close with one line of files touched by the `fix` rows, then 1–3 sentences on overall health, counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"). Never call a PR clean while it conflicts with its base, and say so when it is still a `draft`. Then:
+Close with one line of files touched by the `fix` rows, then 1–3 sentences on overall health, counting the refutations alongside the rest ("2 P1 CI failures + 1 confirmed P1 review comment, 2 bot claims refuted, 3 P2s, 5 nits, 2 awaiting reviewer"). Never call a PR clean while it conflicts with its base, and say so when it is still a `draft`. When §3's weighing found the `fix` set oversized or several threads collapsing into one, that goes here too, in its own sentence. Then:
 
 > Tell me which items to act on — "all P1" / "all" works. Nothing is edited, pushed or posted on
 > that answer: it picks the items, then `pr-respond` drafts everything and shows you one batch to
