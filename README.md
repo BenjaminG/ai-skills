@@ -53,6 +53,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `ci-watch` | Watch a PR's CI hands-free via a persistent Monitor |
 | `fixup` | Fold a fix into the commit that introduced it, force-push |
 | `babysit-prs` | Event-driven watch driving open PRs to merge-ready |
+| `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `qa-plan` | Manual QA plan generation |
 | `qa-run` | Execute a manual QA plan |
 | **Developer tools** | |
