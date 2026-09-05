@@ -1,6 +1,6 @@
 ---
 name: review-mining
-description: Mine human review comments from merged PRs into recurring themes and propose where each rule should live (lefthook/Danger, CLAUDE.md, gate reviewer). Report only, no edits.
+description: Mine human review comments from merged PRs into recurring themes and propose where each rule should live (lefthook/Danger, CLAUDE.md, gate-wf reviewer). Report only, no edits.
 argument-hint: "[owner/repo] [--since 30d] [--limit 300] [--min 3]"
 disable-model-invocation: true
 ---
