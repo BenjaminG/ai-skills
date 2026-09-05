@@ -125,10 +125,13 @@ The existing v2 ADR fetch reads every `docs/adr/*.md` and filters bodies for cha
 ADRs are read from the union of these conventional locations — whichever exist in the repo (computed once in Step 1b as `ADR_ROOTS`):
 
 - `docs/adr/`
+- `adr/`
 - `docs/architecture/decisions/`
 - `.claude/rules/`
 
-`.claude/rules/` is treated as a full ADR root: every `*.md` directly under it is a candidate ADR. The applicability filter (below) handles narrowing — generic rules like `search-tools.md` won't surface unless the diff matches their domain via paths/keyword/body-mention.
+Each root is walked **recursively**: every `*.md` at any depth under it is a candidate ADR. A repo that files its rules by domain — `.claude/rules/backend/`, `.claude/rules/frontend/`, `.claude/rules/local/` — has them read like any other; a non-recursive walk silently skipped those, which is the common cause of a documented rule that never fires. The applicability filter (below) handles narrowing — generic rules like `search-tools.md` won't surface unless the diff matches their domain via paths/keyword/body-mention.
+
+Recursion plus multiple roots means the same ADR can be reached twice, so **deduplicate before emitting** (see the companion-file form under Strategy 1): a candidate whose body `@`-references another candidate is that ADR's companion, not a second ADR. Merge the pair — the companion supplies `paths:` and the summary, the referenced file supplies the body — and emit one entry under the referenced file's path.
 
 If none of the roots exist, the fetcher emits `## ADR\nnone` and `adr_git_sha: null` (same shape as today).
 
@@ -146,7 +149,7 @@ paths:
 
 This frontmatter is read **directly from each ADR file** (any of the roots above). For each ADR with a `paths:` array, evaluate the globs against `CHANGED_FILES` — any match → mark this ADR as **applicable**.
 
-The legacy *companion-file* form is still supported for ADRs that live under `docs/adr/`. A `.claude/rules/adr-*.md` file with frontmatter like:
+The legacy _companion-file_ form is still supported for ADRs that live under `docs/adr/`. A `.claude/rules/adr-*.md` file with frontmatter like:
 
 ```yaml
 ---
@@ -156,16 +159,20 @@ paths:
 ---
 ```
 
-maps to `docs/adr/0001-*.md`. Both forms coexist; either marks the ADR applicable.
+maps to `docs/adr/0001-*.md`.
+
+A second companion form links by **reference instead of id**: a rule file whose body carries an `@`-path to another candidate — say `.claude/rules/adr/adr-008-solitary-unit-testing.md` containing `@adr/008-solitary-unit-testing.md` — is that ADR's companion. Resolve the `@`-path relative to the repo root and pair the two. Use this form when the companion carries the `paths:` scoping and the referenced file carries the full text.
+
+All forms coexist; any of them marks the ADR applicable, and each pair emits once.
 
 ### Strategy 2 — filename keyword match
 
 If no companion rule exists, fall back to matching the ADR filename keywords against extensions / directory segments of the changed files. Examples:
 
-| ADR filename | Triggers on |
-|---|---|
+| ADR filename                  | Triggers on                                                      |
+| ----------------------------- | ---------------------------------------------------------------- |
 | `0007-graphql-nullability.md` | files containing `resolvers/`, `*.resolver.ts`, `schema.graphql` |
-| `0012-error-handling.md` | files containing `errors/`, `*.error.ts`, `try {`/`catch` blocks |
+| `0012-error-handling.md`      | files containing `errors/`, `*.error.ts`, `try {`/`catch` blocks |
 
 The keyword extraction is a simple regex on the filename (split on `-`, drop the leading number, drop stopwords). Heuristic — accept some false positives, the checker filters them out.
 
@@ -255,7 +262,8 @@ bundle_sources = {
   linear,    # v2
   pr,        # v2
   adr,       # v2 — content now includes the index + applicability filter,
-             #      and roots are unioned across docs/adr/, docs/architecture/decisions/, .claude/rules/
+             #      and roots are unioned across docs/adr/, adr/, docs/architecture/decisions/,
+             #      .claude/rules/ — each walked recursively, companions deduped
   claude_md, # v3 NEW
   sessions   # v2
 }

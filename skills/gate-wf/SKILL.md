@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `6`. Cache entries are keyed on this — bumping invalidates all caches at once. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
+**Skill version**: `7`. Cache entries are keyed on this — bumping invalidates all caches at once. v7: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
 
 ## Prerequisites
 
@@ -57,7 +57,7 @@ If any report `MISS`, stop and tell the user which skills are missing. Do not pr
 | `security-review`             | `npx skills add https://github.com/getsentry/skills --skill security-review -g`                                     |
 | `code-slop`                   | Ships with this plugin. If missing, reinstall the `bgelis-ai-skills` plugin (`/plugin reinstall bgelis-ai-skills`). |
 | `simplify`                    | `npx skills add https://github.com/brianlovin/claude-config --skill simplify -g`                                    |
-| `ponytail-review`             | Ships with the `ponytail` plugin — `/plugin install ponytail`.                                                       |
+| `ponytail-review`             | Ships with the `ponytail` plugin — `/plugin install ponytail`.                                                      |
 
 If the project is not React/Next.js, `vercel-react-best-practices` is optional (the react-reviewer is skipped automatically).
 
@@ -150,7 +150,7 @@ WT_HASH=$( {
 } | shasum | cut -c1-12)
 
 # CLAUDE.md and ADR roots — see references/context-sources.md
-ADR_ROOT_CANDIDATES=("docs/adr" "docs/architecture/decisions" ".claude/rules")
+ADR_ROOT_CANDIDATES=("docs/adr" "adr" "docs/architecture/decisions" ".claude/rules")
 ADR_ROOTS=()
 for d in "${ADR_ROOT_CANDIDATES[@]}"; do
   [ -d "$REPO_ROOT/$d" ] && ADR_ROOTS+=("$d")
@@ -158,6 +158,7 @@ done
 
 CLAUDE_MD_LIST=$( {
   [ -f "$REPO_ROOT/CLAUDE.md" ] && echo "$REPO_ROOT/CLAUDE.md"
+  [ -f "$REPO_ROOT/CLAUDE.local.md" ] && echo "$REPO_ROOT/CLAUDE.local.md"
   for f in "${CHANGED_FILES_ARR[@]}"; do
     dir=$(dirname -- "$f")
     while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
@@ -169,7 +170,15 @@ CLAUDE_MD_LIST=$( {
 set +f
 
 if [ -n "$CLAUDE_MD_LIST" ]; then
-  CLAUDE_MD_GIT_SHA=$(git log -1 --format=%H -- $CLAUDE_MD_LIST 2>/dev/null | cut -c1-12)
+  # Content hash, not `git log`: CLAUDE.local.md is git-ignored in most repos, so a
+  # git-log fold silently no-ops and a rule edit serves a stale cached verdict. Hashing
+  # the bytes works tracked or not, and additionally catches uncommitted edits.
+  # Read line by line rather than unquoted `cat -- $LIST`: zsh does not word-split an
+  # unquoted expansion, so the whole list would arrive as one bogus path, cat would fail,
+  # and the hash would be sha("") on every run — a cache that never invalidates.
+  CLAUDE_MD_GIT_SHA=$(printf '%s\n' "$CLAUDE_MD_LIST" | while IFS= read -r f; do
+    [ -n "$f" ] && cat -- "$f"
+  done | shasum | cut -c1-12)
   WT_HASH=$(echo "${WT_HASH} ${CLAUDE_MD_GIT_SHA}" | shasum | cut -c1-12)
 fi
 if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
@@ -234,6 +243,7 @@ For each stale source, fetch:
   ```
 
   Emit these under a `### Review threads` subsection of the `## PR` bundle section (one entry per thread: `isResolved`, `path`, `line`, and each comment's `author` + `body`). The context-checker reads this to dismiss findings the author rejected (see `references/dismissals.md` and `agents/context-checker.md` Part 3). Resolving a thread bumps the PR `updatedAt`, so this rides the existing PR freshness probe — no new probe needed.
+
 - **ADR** (if stale): walk `ADR_ROOTS`, determine applicability via frontmatter `paths:` glob, filename keyword match, or body mention. See `references/context-sources.md` § F3.
 - **CLAUDE.md** (if stale): emit each `$CLAUDE_MD_LIST` file verbatim under a `### <path>` heading. See `references/context-sources.md` § F2.
 - **devsql** (if stale): per changed file, last 10 history/jhistory rows. Cap at 80 total.
@@ -547,7 +557,7 @@ Write `$STATE_FILE`:
 }
 ```
 
-`dismissed[]` carries each suppressed finding's full payload plus its `anchor`/`source`/`confidence`/`citation`, so `--undismiss` can promote it back and a cache-hit replay can re-partition without re-running the gate. The registry itself (`$DISMISS_FILE`) is the source of truth for *what* is dismissed; `dismissed[]` is the last-rendered snapshot.
+`dismissed[]` carries each suppressed finding's full payload plus its `anchor`/`source`/`confidence`/`citation`, so `--undismiss` can promote it back and a cache-hit replay can re-partition without re-running the gate. The registry itself (`$DISMISS_FILE`) is the source of truth for _what_ is dismissed; `dismissed[]` is the last-rendered snapshot.
 
 ### 5b. Context bundle cache
 
@@ -604,7 +614,7 @@ done
 - **Resume**: `--resume <runId>` → `Workflow({scriptPath, resumeFromRunId})`. Same session, same args → unchanged `agent()` calls return cached results; editing one `agents/*.md` re-runs only that agent's calls.
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate.
 - **Tier semantics**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
-- **Dismissals**: false-positives are suppressed via a per-branch registry kept *outside* `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
+- **Dismissals**: false-positives are suppressed via a per-branch registry kept _outside_ `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
 - **No auto-fix in v1**: v1 is read-only review. `--fix` mode is reserved for v2.
 - **Coexists** with the legacy `gate` skill during migration.
 
