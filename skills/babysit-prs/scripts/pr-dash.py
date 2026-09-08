@@ -11,20 +11,21 @@ import shutil
 import subprocess
 import sys
 import termios
-import textwrap
 import time
 import tty
+import unicodedata
+from dataclasses import dataclass
 from datetime import datetime
 
 
 STATUS_LABELS = {
-    "ready": "READY",
-    "your-call": "YOUR CALL",
-    "working": "WORKING",
-    "waits": "WAITS",
-    "ci": "CI",
-    "review": "REVIEW",
-    "draft": "DRAFT",
+    "ready": "✅ READY",
+    "your-call": "🙋 YOUR CALL",
+    "working": "🔧 TODO",
+    "waits": "⏳ WAITS",
+    "ci": "🧪 CI",
+    "review": "👀 REVIEW",
+    "draft": "📝 DRAFT",
 }
 COLORS = {
     "READY": "\033[32m",
@@ -32,18 +33,38 @@ COLORS = {
     "WORKING": "\033[36m",
     "WAITS": "\033[36m",
     "CI": "\033[34m",
+    "TODO": "\033[33m",
+    "ACTIVE": "\033[36m",
+    "PASS": "\033[32m",
+    "FAIL": "\033[31m",
+    "RUN": "\033[33m",
+    "CLEAN": "\033[32m",
+    "CONFLICT": "\033[31m",
+    "BEHIND": "\033[33m",
     "REVIEW": "\033[35m",
     "DRAFT": "\033[90m",
-    "SUCCESS": "\033[32m",
-    "FAILURE": "\033[31m",
-    "PENDING": "\033[33m",
-    "CONFLICTING": "\033[31m",
     "BLOCKED": "\033[31m",
 }
+STACK_COLORS = [
+    "\033[38;5;117m",
+    "\033[38;5;183m",
+    "\033[38;5;81m",
+    "\033[38;5;215m",
+    "\033[38;5;150m",
+    "\033[38;5;147m",
+]
 RESET = "\033[0m"
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+OSC8 = re.compile(r"\x1b\]8;;.*?\x1b\\")
 ISSUE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 TITLE_PREFIX = re.compile(r"^[a-z]+(?:\([^)]*\))?:\s*", re.IGNORECASE)
 TITLE_ISSUE = re.compile(r"\s*\[[A-Z][A-Z0-9]+-\d+\]\s*$")
+
+
+@dataclass(frozen=True)
+class Cell:
+    text: str
+    url: str = None
 
 
 def scanner_module():
@@ -128,24 +149,41 @@ def clip(value, limit):
     return value[: limit - 1].rstrip() + "…"
 
 
-def mergeable(row):
-    if row.get("draft"):
-        suffix = " (CONFLICTING)" if row.get("mergeable") == "CONFLICTING" else ""
-        return f"DRAFT{suffix}"
+def ci_status(row):
+    return {
+        "SUCCESS": "✅ PASS",
+        "FAILURE": "❌ FAIL",
+        "PENDING": "⏳ RUN",
+        "NONE": "· NONE",
+    }.get(row.get("ci"), f"? {row.get('ci', 'NONE')}")
+
+
+def merge_status(row):
     if row.get("mergeable") == "CONFLICTING":
-        parent = f" on #{row['parent']}" if row.get("parent") else ""
-        return f"CONFLICTING{parent}"
-    return row.get("merge_state", "UNKNOWN")
+        return "💥 CONFLICT"
+    return {
+        "CLEAN": "✅ CLEAN",
+        "BLOCKED": "⛔ BLOCKED",
+        "BEHIND": "↩ BEHIND",
+        "DIRTY": "💥 CONFLICT",
+        "DRAFT": "📝 DRAFT",
+    }.get(row.get("merge_state"), f"? {row.get('merge_state', 'UNKNOWN')}")
 
 
-def report_cells(row):
-    report = row.get("report") or {}
+def fixed_count(report):
     pushed = report.get("pushed", 0)
-    fixed = str(pushed if type(pushed) is int else int(bool(pushed)))
-    held = "—"
+    return pushed if type(pushed) is int else int(bool(pushed))
+
+
+def note(row):
+    report = row.get("report") or {}
+    parts = []
+    fixed = fixed_count(report)
+    if fixed:
+        parts.append(f"✓ {fixed} fixed")
     if row.get("held"):
         gist = clip(report.get("held_gist") or "decision pending", 180)
-        held = f"{row['held']} · {gist}"
+        parts.append(f"🙋 {row['held']} · {gist}")
     blocked = clip(report.get("blocked"), 140) if report.get("blocked") else "—"
     if (
         blocked != "—"
@@ -153,24 +191,55 @@ def report_cells(row):
         and row.get("mergeable") != "CONFLICTING"
     ):
         blocked = "—"
-    return fixed, held, blocked
+    if blocked != "—":
+        parts.append(f"⛔ {blocked}")
+    return " · ".join(parts) or "—"
+
+
+def stack_layout(prs, order):
+    children = {number: [] for number in prs}
+    for number, row in prs.items():
+        parent = row.get("parent")
+        if parent in children:
+            children[parent].append(number)
+
+    groups = {}
+    for members in order.values():
+        groups.setdefault(tuple(members), None)
+
+    output = []
+    stack_number = 0
+    for members in sorted(groups, key=lambda item: item[0]):
+        if len(members) == 1:
+            output.append((members[0], "◆ SINGLE"))
+            continue
+        stack_number += 1
+        for number in members:
+            if prs[number].get("parent") not in prs:
+                role = "╭ BASE"
+            elif not children[number]:
+                role = "╰ HEAD"
+            else:
+                role = "├ MID"
+            output.append((number, f"S{stack_number} {role}"))
+    return output
 
 
 def dashboard_status(number, row, prs, order, running, scanner):
     if number in running:
-        return "WORKING"
+        return "🔧 WORKING"
     if row.get("held"):
-        return "YOUR CALL"
+        return "🙋 YOUR CALL"
     report = row.get("report") or {}
     blocker_is_current = report.get("blocked") and (
         row.get("ci") == "FAILURE" or row.get("mergeable") == "CONFLICTING"
     )
     if blocker_is_current:
-        return "REVIEW"
-    waiting = scanner.waits_on(row, prs, order, running)
-    if waiting is not None:
-        return f"WAITS #{waiting}"
-    return STATUS_LABELS[scanner.status(row, prs, order, running)]
+        return "👀 REVIEW"
+    status = scanner.status(row, prs, order, running)
+    if status == "waits":
+        return f"⏳ WAITS #{scanner.waits_on(row, prs, order, running)}"
+    return STATUS_LABELS[status]
 
 
 def rows(state, directory, scanner):
@@ -180,7 +249,9 @@ def rows(state, directory, scanner):
     order = scanner.stacks(prs)
     running = active_agents(directory, prs, scanner.MUTE_TTL)
     output = []
-    for number, row in sorted(prs.items()):
+    for number, stack in stack_layout(prs, order):
+        row = prs[number]
+        issue = issue_key(row)
         label = dashboard_status(number, row, prs, order, running, scanner)
         humans = row.get("unresolved_human", 0)
         logins = ", ".join(row.get("humans") or [])
@@ -189,29 +260,29 @@ def rows(state, directory, scanner):
             threads += "s"
         if logins:
             threads += f" ({logins})"
-        fixed, held, blocked = report_cells(row)
         output.append(
             [
-                f"#{number} {pr_title(row)}",
-                issue_key(row),
+                stack,
+                Cell(f"#{number} {pr_title(row)}", row.get("url")),
+                Cell(
+                    issue, None if issue == "—" else f"https://linear.app/issue/{issue}"
+                ),
                 label,
-                mergeable(row),
-                row.get("ci", "NONE"),
+                "🤖 ACTIVE" if number in running else "·",
+                ci_status(row),
+                merge_status(row),
                 threads,
-                fixed,
-                held,
-                blocked,
+                note(row),
             ]
         )
     return output
 
 
 def widths(columns):
-    terminal = max(108, min(220, shutil.get_terminal_size((180, 24)).columns))
-    fixed = [None, 9, 10, 13, 9, 14, 5, None, None]
+    terminal = max(116, min(220, shutil.get_terminal_size((180, 24)).columns))
+    fixed = [11, None, 9, 15, 9, 8, 11, 14, None]
     available = terminal - 28 - sum(value or 0 for value in fixed)
-    flexible = [max(14, available * 34 // 100), max(8, available * 36 // 100)]
-    flexible.append(max(8, available - sum(flexible)))
+    flexible = [max(12, available * 44 // 100), max(10, available * 56 // 100)]
     result = []
     flex = iter(flexible)
     for index, value in enumerate(fixed):
@@ -221,32 +292,90 @@ def widths(columns):
 
 
 def wrap(value, width):
-    return textwrap.wrap(
-        str(value), width=width, break_long_words=True, break_on_hyphens=False
-    ) or [""]
+    text = value.text if isinstance(value, Cell) else str(value)
+    words = text.split()
+    if not words:
+        return [""]
+    lines = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}" if current else word
+        if display_width(candidate) <= width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        while display_width(word) > width:
+            piece, word = split_at_width(word, width)
+            lines.append(piece)
+        current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def character_width(character):
+    if unicodedata.category(character).startswith(("C", "M")):
+        return 0
+    return 2 if unicodedata.east_asian_width(character) in ("W", "F") else 1
+
+
+def display_width(value):
+    plain = ANSI.sub("", OSC8.sub("", value))
+    return sum(character_width(character) for character in plain)
+
+
+def split_at_width(value, width):
+    used = 0
+    for index, character in enumerate(value):
+        size = character_width(character)
+        if used + size > width:
+            return value[:index], value[index:]
+        used += size
+    return value, ""
+
+
+def pad(value, width):
+    return value + " " * max(0, width - display_width(value))
+
+
+def hyperlink(value, url, enabled):
+    if not enabled or not url:
+        return value
+    return f"\033]8;;{url}\033\\{value}\033]8;;\033\\"
 
 
 def tint(value, column, enabled):
-    if not enabled or column not in (2, 3, 4):
+    if not enabled:
         return value
     clean = value.strip()
     if not clean:
         return value
-    color = COLORS.get(clean) or COLORS.get(clean.split()[0])
+    if column == 0:
+        match = re.match(r"S(\d+)", clean)
+        if not match:
+            return f"\033[90m{value}{RESET}"
+        color = STACK_COLORS[(int(match.group(1)) - 1) % len(STACK_COLORS)]
+        return f"{color}{value}{RESET}"
+    semantic_columns = (3, 4, 5, 6)
+    if column not in semantic_columns:
+        return value
+    color = next((color for key, color in COLORS.items() if key in clean), None)
     return f"{color}{value}{RESET}" if color else value
 
 
 def table(data, color=False):
     columns = [
+        "Stack",
         "PR",
         "Issue",
         "Status",
-        "Mergeable",
+        "Agent",
         "CI",
+        "Merge",
         "Threads",
-        "Fixed",
-        "Held",
-        "Blocked",
+        "Note",
     ]
     sizes = widths(columns)
     top = "┌" + "┬".join("─" * (size + 2) for size in sizes) + "┐"
@@ -261,7 +390,10 @@ def table(data, color=False):
             parts = []
             for column, (cell, size) in enumerate(zip(cells, sizes)):
                 raw = cell[line] if line < len(cell) else ""
-                parts.append(f" {tint(raw.ljust(size), column, color and colored)} ")
+                styled = tint(pad(raw, size), column, color and colored)
+                source = values[column]
+                url = source.url if raw and isinstance(source, Cell) else None
+                parts.append(f" {hyperlink(styled, url, color and colored)} ")
             lines.append("│" + "│".join(parts) + "│")
         return lines
 
@@ -330,36 +462,91 @@ def watch(directory, repo, scanner):
 
 
 def self_check(scanner):
-    sample = {
-        "42": {
-            "number": 42,
-            "url": "https://example.test/42",
-            "title": "Fix cart [BOF-42]",
-            "draft": False,
-            "branch": "fix/BOF-42-cart",
-            "base": "dev",
-            "parent": None,
-            "merge_state": "BLOCKED",
-            "mergeable": "MERGEABLE",
-            "ci": "FAILURE",
-            "unresolved_bot": 0,
-            "unresolved_human": 1,
-            "held": 0,
-            "humans": ["reviewer"],
-            "report": {"pushed": 1, "blocked": "failing e2e"},
-        }
+    import tempfile
+
+    base = {
+        "url": "https://example.test/42",
+        "draft": False,
+        "base": "dev",
+        "merge_state": "BLOCKED",
+        "mergeable": "MERGEABLE",
+        "ci": "FAILURE",
+        "unresolved_bot": 0,
+        "unresolved_human": 0,
+        "held": 0,
+        "humans": [],
+        "report": None,
     }
-    rendered = rows(sample, "/missing", scanner)[0]
-    assert rendered[1:7] == [
-        "BOF-42",
-        "REVIEW",
-        "BLOCKED",
-        "FAILURE",
-        "0 bot, 1 humain (reviewer)",
-        "1",
+    sample = {
+        "42": dict(
+            base,
+            number=42,
+            title="Fix cart [BOF-42]",
+            branch="fix/BOF-42-cart",
+            parent=None,
+            report={"pushed": 1, "blocked": "failing e2e"},
+        ),
+        "43": dict(
+            base,
+            number=43,
+            title="Wire cart [BOF-43]",
+            branch="fix/BOF-43-cart",
+            parent=42,
+            ci="PENDING",
+        ),
+        "44": dict(
+            base,
+            number=44,
+            title="Finish cart [BOF-44]",
+            branch="fix/BOF-44-cart",
+            parent=43,
+            ci="SUCCESS",
+            merge_state="CLEAN",
+        ),
+        "99": dict(
+            base,
+            number=99,
+            title="Draft report [BOF-99]",
+            branch="feat/BOF-99-report",
+            parent=None,
+            draft=True,
+            ci="NONE",
+            merge_state="DRAFT",
+        ),
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        open(os.path.join(directory, "43.muted"), "w").close()
+        rendered = rows(sample, directory, scanner)
+
+    assert [row[0] for row in rendered] == [
+        "S1 ╭ BASE",
+        "S1 ├ MID",
+        "S1 ╰ HEAD",
+        "◆ SINGLE",
     ]
-    assert rendered[8] == "failing e2e"
-    assert "#42 Fix cart" in table([rendered])
+    assert rendered[0][2].text == "BOF-42"
+    assert rendered[0][3:] == [
+        "👀 REVIEW",
+        "·",
+        "❌ FAIL",
+        "⛔ BLOCKED",
+        "0 bot, 0 humain",
+        "✓ 1 fixed · ⛔ failing e2e",
+    ]
+    assert rendered[1][3:7] == [
+        "🔧 WORKING",
+        "🤖 ACTIVE",
+        "⏳ RUN",
+        "⛔ BLOCKED",
+    ]
+    assert rendered[2][3] == "✅ READY"
+    assert rendered[3][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
+    colored = table(rendered, color=True)
+    line_widths = {display_width(line) for line in colored.splitlines()}
+    assert len(line_widths) == 1, line_widths
+    assert "#42 Fix cart" in colored
+    assert "\033]8;;https://example.test/42" in colored
+    assert "\033]8;;https://linear.app/issue/BOF-42" in colored
     assert "No open PRs" in table([], color=True)
     print("self-check ok")
 
