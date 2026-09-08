@@ -9,9 +9,9 @@ Usage: babysit-scan.py [PR...]        one pass, matrix JSON on stdout
 Named PR numbers are the selection: they are fetched as given, past the author and the
 draft filter alike.
 
-Owns the mechanical: PR discovery, one aliased GraphQL call for every PR, bot/human
-ventilation of unresolved threads, the previous state on disk, the diff, and the emit
-filter. Owns no judgment: never decides whether a thread deserves an action.
+Owns the mechanical: PR discovery, aliased GraphQL pagination, bot/human ventilation
+of threads, the previous state on disk, the diff, and the emit filter. Owns no judgment:
+never decides whether a thread deserves an action.
 """
 import argparse
 import json
@@ -28,15 +28,20 @@ BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
 # resolved thread) is churn: 22 checks per PR would emit 22 lines per push.
 WATCHED = ("ci", "unresolved_bot", "unresolved_human", "held", "merge_state", "head")
 
+THREAD_FIELDS = """
+nodes {
+  id isResolved
+  comments(first: 1) { nodes { author { __typename login } } }
+  last: comments(last: 1) { nodes { id author { login } } }
+}
+pageInfo { hasNextPage endCursor }
+"""
+
 FRAGMENT = """
 fragment S on PullRequest {
   number url title isDraft headRefName baseRefName mergeable mergeStateStatus
   reviewThreads(first: 100) {
-    nodes {
-      id isResolved
-      comments(first: 1) { nodes { author { __typename login } } }
-      last: comments(last: 1) { nodes { id author { login } } }
-    }
+""" + THREAD_FIELDS + """
   }
   commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }
 }
@@ -94,14 +99,35 @@ def open_prs(include_drafts=False):
 
 
 def fetch_raw(numbers):
-    """One aliased query for every PR. Returns {number: payload}."""
+    """One initial aliased query, then aliased pages only for PRs above 100 threads."""
     if not numbers:
         return {}
     aliases = "\n".join(f"  p{n}: pullRequest(number: {n}) {{ ...S }}" for n in numbers)
     query = f"query($o:String!,$r:String!){{\n repository(owner:$o,name:$r){{\n{aliases}\n }}\n}}\n{FRAGMENT}"
     owner, name = repo()
     raw = json.loads(gh("api", "graphql", "-f", f"query={query}", "-F", f"o={owner}", "-F", f"r={name}"))
-    return {p["number"]: p for p in raw["data"]["repository"].values() if p}
+    prs = {p["number"]: p for p in raw["data"]["repository"].values() if p}
+    return fetch_remaining_threads(prs, owner, name)
+
+
+def fetch_remaining_threads(prs, owner, name):
+    pending = {n: p["reviewThreads"]["pageInfo"]["endCursor"] for n, p in prs.items()
+               if p["reviewThreads"]["pageInfo"]["hasNextPage"]}
+    while pending:
+        aliases = "\n".join(
+            f"  p{n}: pullRequest(number: {n}) {{ reviewThreads(first: 100, after: {json.dumps(cursor)}) {{ {THREAD_FIELDS} }} }}"
+            for n, cursor in pending.items())
+        query = f"query($o:String!,$r:String!){{\n repository(owner:$o,name:$r){{\n{aliases}\n }}\n}}"
+        raw = json.loads(gh("api", "graphql", "-f", f"query={query}", "-F", f"o={owner}", "-F", f"r={name}"))["data"]["repository"]
+        following = {}
+        for n in pending:
+            page = raw[f"p{n}"]["reviewThreads"]
+            prs[n]["reviewThreads"]["nodes"].extend(page["nodes"])
+            prs[n]["reviewThreads"]["pageInfo"] = page["pageInfo"]
+            if page["pageInfo"]["hasNextPage"]:
+                following[n] = page["pageInfo"]["endCursor"]
+        pending = following
+    return prs
 
 
 def thread_ids(p):
@@ -115,8 +141,10 @@ def thread_ids(p):
 
 
 def row(p, seen):
-    unresolved = [t for t in p["reviewThreads"]["nodes"] if not t["isResolved"]]
+    threads = p["reviewThreads"]["nodes"]
+    unresolved = [t for t in threads if not t["isResolved"]]
     bot, human, held = ventilate(unresolved, me(), seen)
+    counts = thread_counts(threads)
     commit = (p["commits"]["nodes"] or [{}])[0].get("commit", {}) or {}
     rollup = commit.get("statusCheckRollup") or {}
     return {
@@ -134,7 +162,22 @@ def row(p, seen):
         "unresolved_human": len(human),
         "held": len(held),
         "humans": sorted({a["login"] for a in human}),
+        **counts,
     }
+
+
+def thread_counts(threads):
+    counts = {"threads_bot_open": 0, "threads_bot_closed": 0,
+              "threads_human_open": 0, "threads_human_closed": 0}
+    for t in threads:
+        first = t["comments"]["nodes"]
+        if not first:
+            continue
+        author = first[0]["author"]
+        kind = "bot" if is_bot(author["login"], author["__typename"]) else "human"
+        state = "closed" if t["isResolved"] else "open"
+        counts[f"threads_{kind}_{state}"] += 1
+    return counts
 
 
 def ventilate(unresolved, mine, seen):
@@ -404,6 +447,8 @@ def watch(d, secs, only=None, include_drafts=False):
 
 
 def self_check():
+    global gh
+
     a = {"number": 1, "ci": "SUCCESS", "unresolved_bot": 0, "unresolved_human": 0,
          "held": 0, "merge_state": "CLEAN", "head": "aaaaaaa", "mergeable": "MERGEABLE"}
     assert diff({"1": a}, {1: a}) == [], "no move, no event"
@@ -451,6 +496,28 @@ def self_check():
         th("cursor", "User", tid="T9", cid="ack"),
         dict(th("cursor", "User", tid="T8", cid="x"), isResolved=True)]}}) == {"T9": "ack"}, \
         "a resolved thread needs no memory"
+    counts = thread_counts([
+        th("cursor", "User", tid="B1"), dict(th("cursor", "User", tid="B2"), isResolved=True),
+        th("viclafouch", "User", tid="H1"), dict(th("viclafouch", "User", tid="H2"), isResolved=True)])
+    assert counts == {"threads_bot_open": 1, "threads_bot_closed": 1,
+                      "threads_human_open": 1, "threads_human_closed": 1}, counts
+
+    original_gh = gh
+    calls = []
+    def fake_gh(*args):
+        calls.append(args)
+        assert any('after: "next"' in arg for arg in args), args
+        return json.dumps({"data": {"repository": {"p7": {"reviewThreads": {
+            "nodes": [{"id": "T100"}],
+            "pageInfo": {"hasNextPage": False, "endCursor": None}}}}}})
+    try:
+        gh = fake_gh
+        page = {"reviewThreads": {"nodes": [{"id": f"T{i}"} for i in range(100)],
+                                  "pageInfo": {"hasNextPage": True, "endCursor": "next"}}}
+        paginated = fetch_remaining_threads({7: page}, "owner", "repo")
+    finally:
+        gh = original_gh
+    assert len(paginated[7]["reviewThreads"]["nodes"]) == 101 and len(calls) == 1
     # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own.
     assert not merge_ready(dict(a, merge_state="DRAFT"))
     # A stack: each PR based on the one below it. The join is pure — no API call.

@@ -30,14 +30,15 @@ python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbati
 ```
 
 One pass, one JSON blob: every open PR of the author with `merge_state`, `ci` rollup,
-`unresolved_bot`, `unresolved_human`, `held` (open bot threads that have not moved since an agent
+open/closed bot/human thread counts, `unresolved_bot`, `unresolved_human`, `held` (open bot threads that have not moved since an agent
 last looked — our reply sits last, or the bot's does and an agent already read it; either way they
 wait on the author, not on an agent), `humans`, `head`, `base`, `parent` (the open PR this one is
 stacked on, `null` at the bottom of a stack), the last agent `report`, plus `needs_agent`,
 `waits_on`, `merge_ready` and `status`. It is the **only** reader of GitHub truth in this skill — never
 run `gh pr view`, `gh pr checks`, or a thread query yourself, and never ask an agent for a status
-the script already carries. Two readers produce contradictory status for checks that changed
-minutes ago.
+the script already carries. The initial query is aliased across PRs; only PRs above 100 review
+threads need extra paginated calls. Two readers produce contradictory status for checks that
+changed minutes ago.
 
 The blob opens with `state_dir` — the absolute path where mutes and agent reports live. Every path
 you write into an agent's prompt must be that value expanded, never `$STATE_DIR`: a subagent has no

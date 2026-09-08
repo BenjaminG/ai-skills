@@ -196,6 +196,20 @@ def note(row):
     return " · ".join(parts) or "—"
 
 
+def thread_summary(row):
+    bot_open = row.get(
+        "threads_bot_open", row.get("unresolved_bot", 0) + row.get("held", 0)
+    )
+    bot_closed = row.get("threads_bot_closed", 0)
+    human_open = row.get("threads_human_open", row.get("unresolved_human", 0))
+    human_closed = row.get("threads_human_closed", 0)
+    human = f"👤 {human_open} open · {human_closed} closed"
+    logins = ", ".join(row.get("humans") or [])
+    if logins:
+        human += f" ({logins})"
+    return f"🤖 {bot_open} open · {bot_closed} closed\n{human}"
+
+
 def stack_layout(prs, order):
     children = {number: [] for number in prs}
     for number, row in prs.items():
@@ -253,13 +267,6 @@ def rows(state, directory, scanner):
         row = prs[number]
         issue = issue_key(row)
         label = dashboard_status(number, row, prs, order, running, scanner)
-        humans = row.get("unresolved_human", 0)
-        logins = ", ".join(row.get("humans") or [])
-        threads = f"{row.get('unresolved_bot', 0)} bot, {humans} humain"
-        if humans > 1:
-            threads += "s"
-        if logins:
-            threads += f" ({logins})"
         output.append(
             [
                 stack,
@@ -271,7 +278,7 @@ def rows(state, directory, scanner):
                 "🤖 ACTIVE" if number in running else "·",
                 ci_status(row),
                 merge_status(row),
-                threads,
+                thread_summary(row),
                 note(row),
             ]
         )
@@ -279,8 +286,8 @@ def rows(state, directory, scanner):
 
 
 def widths(columns):
-    terminal = max(116, min(220, shutil.get_terminal_size((180, 24)).columns))
-    fixed = [11, None, 9, 15, 9, 8, 11, 14, None]
+    terminal = max(133, min(220, shutil.get_terminal_size((180, 24)).columns))
+    fixed = [11, None, 9, 15, 9, 8, 11, 20, None]
     available = terminal - 28 - sum(value or 0 for value in fixed)
     flexible = [max(12, available * 44 // 100), max(10, available * 56 // 100)]
     result = []
@@ -293,6 +300,13 @@ def widths(columns):
 
 def wrap(value, width):
     text = value.text if isinstance(value, Cell) else str(value)
+    lines = []
+    for part in text.splitlines() or [""]:
+        lines.extend(wrap_line(part, width))
+    return lines
+
+
+def wrap_line(text, width):
     words = text.split()
     if not words:
         return [""]
@@ -473,6 +487,10 @@ def self_check(scanner):
         "ci": "FAILURE",
         "unresolved_bot": 0,
         "unresolved_human": 0,
+        "threads_bot_open": 0,
+        "threads_bot_closed": 0,
+        "threads_human_open": 0,
+        "threads_human_closed": 0,
         "held": 0,
         "humans": [],
         "report": None,
@@ -484,6 +502,8 @@ def self_check(scanner):
             title="Fix cart [BOF-42]",
             branch="fix/BOF-42-cart",
             parent=None,
+            threads_bot_closed=5,
+            threads_human_closed=2,
             report={"pushed": 1, "blocked": "failing e2e"},
         ),
         "43": dict(
@@ -493,6 +513,9 @@ def self_check(scanner):
             branch="fix/BOF-43-cart",
             parent=42,
             ci="PENDING",
+            threads_bot_open=1,
+            threads_bot_closed=2,
+            threads_human_closed=1,
         ),
         "44": dict(
             base,
@@ -530,7 +553,7 @@ def self_check(scanner):
         "·",
         "❌ FAIL",
         "⛔ BLOCKED",
-        "0 bot, 0 humain",
+        "🤖 0 open · 5 closed\n👤 0 open · 2 closed",
         "✓ 1 fixed · ⛔ failing e2e",
     ]
     assert rendered[1][3:7] == [
@@ -539,6 +562,7 @@ def self_check(scanner):
         "⏳ RUN",
         "⛔ BLOCKED",
     ]
+    assert rendered[1][7] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
     assert rendered[2][3] == "✅ READY"
     assert rendered[3][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
     colored = table(rendered, color=True)
