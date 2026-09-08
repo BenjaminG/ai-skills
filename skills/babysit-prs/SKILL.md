@@ -1,6 +1,6 @@
 ---
 name: babysit-prs
-description: Drive every open PR to merge-ready without polling by hand. Holds a matrix of the author's open PRs, watches GitHub for real transitions through a persistent Monitor, and hands each PR that has bot feedback or a red check to its own subagent, which answers, folds and pushes on its own. Human reviews are counted, never touched. Use when asked to babysit, watch, or surveiller open PRs, or to keep them moving until they can merge.
+description: Drive every open PR to merge-ready without polling by hand. Maintains shared dashboard state, watches GitHub for real transitions through a persistent Monitor, and hands each PR that has bot feedback or a red check to its own subagent, which answers, folds and pushes on its own. Human reviews are counted, never touched. Use when asked to babysit, watch, or surveiller open PRs, or to keep them moving until they can merge.
 argument-hint: "[--once] [--include-drafts] [PR…]"
 ---
 
@@ -9,8 +9,8 @@ argument-hint: "[--once] [--include-drafts] [PR…]"
 Keep open PRs moving without polling them by hand. There is no cadence here: the loop wakes on a
 real change and sleeps otherwise.
 
-Two roles, and they never overlap. **You are the manager**: you hold the matrix, you own every
-objective column, and no thread body, diff, or reply draft ever enters this context. **A subagent
+Two roles, and they never overlap. **You are the manager**: you own orchestration state, and no
+thread body, diff, or reply draft ever enters this context. **A subagent
 owns one PR**: it fetches its own problems, fixes them, answers them, and reports four numbers.
 
 The split that makes it work: everything factual comes from one script, and everything requiring
@@ -36,7 +36,7 @@ wait on the author, not on an agent), `humans`, `head`, `base`, `parent` (the op
 stacked on, `null` at the bottom of a stack), the last agent `report`, plus `needs_agent`,
 `waits_on`, `merge_ready` and `status`. It is the **only** reader of GitHub truth in this skill — never
 run `gh pr view`, `gh pr checks`, or a thread query yourself, and never ask an agent for a status
-the script already carries. Two readers is how a matrix ends up showing a check that went red
+the script already carries. Two readers produce contradictory status for checks that changed
 minutes ago.
 
 The blob opens with `state_dir` — the absolute path where mutes and agent reports live. Every path
@@ -46,7 +46,7 @@ such variable, and a report written to a literal `$STATE_DIR/…` is a report yo
 Two flags shape the scan, and both come from the user, never from you:
 
 - **`--include-drafts`** — by default the scan filters drafts at the source, so a draft never
-  fills a row and never spawns an agent; marking one ready for review brings it in on the next
+  enters the state and never spawns an agent; marking one ready for review brings it in on the next
   pass. With the flag, drafts are babysat like any other PR: bots and CI already run on them,
   and clearing their findings before the PR goes out is the point.
 - **PR numbers** (`123 456`) — a named PR **is** the selection. It is fetched as given, past the
@@ -55,80 +55,35 @@ Two flags shape the scan, and both come from the user, never from you:
 
 Empty PR list? Say so and stop.
 
-## 2. Fill the matrix
+## 2. Use state; leave display to `pr-dash`
 
-One row per PR. The objective columns come from the script, the last three from the PR's agent:
+The JSON is orchestration input. Do not reproduce its PR table in chat. The author gets the current
+view with `pr-dash status` or keeps it open with `pr-dash status --watch`; that dashboard reads the
+state written by the scanner and never scans GitHub, folds reports, changes mutes, or starts agents.
 
-| PR | Issue | Status | Mergeable | CI | Threads | Fixed | Held | Blocked |
-|---|---|---|---|---|---|---|---|---|
-| `[#num title](url)` | `[<KEY> title](https://linear.app/issue/<KEY>)`, `—` if the branch carries no key | the label for `status` | `merge_state` | `ci` | `<bot> bot`, `<human> humain (<login>)` | `report.pushed` | `held`, then `— <report.held_gist>` when `held > 0` | `report.blocked` or `—` |
+An agent report is a snapshot; the scanner is the present. Use the scanner's live `held` count over
+`report.held`. A `report.blocked` suppresses another agent only while the named failure or conflict
+is unchanged; once that condition clears or the head moves, let the current scan decide again.
 
-**Status** answers the only question the author actually has — can this merge, and if not, who
-is holding it. The script decides it; you only render the label:
+Out-of-band work is safe while `held` is non-zero because the scanner will not spawn an agent on
+that PR. A stacked conflict belongs to the agent as a restack. A clean draft waits for the author.
 
-| `status` | Label | Means |
-|---|---|---|
-| `ready` | **READY** | green, mergeable, nothing open. Merge it. |
-| `your-call` | **YOUR CALL** | an agent adjudicated a bot claim and left the decision to you. The thread is open, waiting. |
-| `working` | **WORKING** | bot threads, red CI or a conflict — an agent owns it, nothing for you to do. |
-| `waits` | **WAITS #n** (`n` is `waits_on`) | it has work, but #n holds its stack's single agent. Its turn comes next pass. |
-| `ci` | **CI** | checks still running. |
-| `review` | **REVIEW** | green and quiet, waiting on a human approval or a base bump. |
-| `draft` | **DRAFT** | clean, but still a draft. Marking it ready is yours. |
-
-Take the Linear key from the branch name and the title from `linear-cli` once per PR, then reuse
-it — it does not change between events.
-
-Render it as the markdown table above, always — one row per PR, pipes and header included. Never
-unroll it into a per-PR list or a paragraph: a matrix is read down its columns, and a row that will
-not fit is shortened, not turned into bullets.
-
-Nothing else goes in the table, and nothing goes under it. The `held_gist` is the whole substance
-you get; the thread itself stays open on the PR, so the matrix says a decision is waiting and the
-thread says what it is. One line, no expansion under the table.
-
-**A report is a snapshot; the script is the present.** Every `report.*` field was true when an agent
-stopped, and the world kept moving after that — most of all *you*, in another session: you read the
-held gist, wrote the fix, replied and resolved the thread yourself. The script sees that on its very
-next pass, the report never will. So where the two disagree, the script wins, and the columns you
-render obey it:
-
-- **Held** is the script's `held`, never `report.held`. At `held: 0` the cell is `—` and the
-  `held_gist` is **gone** — no gist, no parenthetical, no "resolved since" note. The gist existed to
-  point at an open thread; there is no thread left to point at.
-- **Fixed** stays `report.pushed`, a tally of what agents pushed. It is history, not state, and
-  nothing out-of-band contradicts it.
-- **Blocked** is the one cell no script can check. Drop `report.blocked` as soon as what it named is
-  green — the check it says keeps failing now passes, or the conflict it gave up on is gone from
-  `merge_state`.
-
-Out-of-band work is *safe*, and that is not a coincidence: `held` is precisely the state where the
-script spawns no agent (`needs_agent` is false on a held thread), so the branch is yours to push on
-while the babysitter watches. Your push moves `head`, the watch emits, and the row corrects itself.
-
-A PR sitting on another open PR shows it under Mergeable — `CONFLICTING (stacked on #12)` — because
-a stacked branch turns conflicting on its own the moment its parent is rewritten under it. The
-remedy there is a restack, not a merge decision.
-
-A draft shows `DRAFT` under Mergeable — `DRAFT (CONFLICTING)` when `mergeable` says so, since
-`merge_state` swallows the conflict on a draft — and can never leave the matrix on its own — passing it
-ready for review is the author's move, not an agent's.
-
-A PR reported `merge_ready` earns a `PushNotification` (`ToolSearch "select:PushNotification"`)
-and leaves the matrix. The merge itself is yours.
+Send a concise notification only for `merge_ready` or `held`; include the PR number and the action
+the author owes. On startup, report how many PRs are watched and mention `pr-dash status --watch`.
 
 ## 3. Spawn an agent, but only where one is needed
 
-For each PR with `needs_agent: true`, **`waits_on: null` and `agent_running: false`** — meaning it has at least one
+For each PR with `needs_agent: true`, **`waits_on: null` and `agent_running: false`**, unless its
+`report.blocked` still names the unchanged failure or conflict — meaning it has at least one
 unresolved **bot** thread, a failing check, or `mergeable: "CONFLICTING"`, and nothing below it in
 its stack is being rewritten right now, and it does not already have an agent — mute it, then spawn its owner. Send them in a single message so they run
-concurrently. A PR that is green, mergeable and free of bot threads gets no agent: its row is already complete,
+concurrently. A PR that is green, mergeable and free of bot threads gets no agent: its state is complete,
 and an agent would have nothing to say that the script has not said.
 
 `agent_running: true` is the mute file still on disk: an agent is alive on that PR and has not
 reported. It keeps `needs_agent: true` the whole time it works — its threads only clear as it
 answers them — so spawning on `needs_agent` alone puts a second agent on a branch the first is
-about to force-push. The row is already accounted for; leave it. A live agent also outranks
+about to force-push. Leave it. A live agent also outranks
 bottom-first: it already holds the branch, so a lower PR waits its turn rather than preempting it.
 A mute nothing has lifted within the hour is a dead agent, and the script drops it on its own.
 
@@ -137,7 +92,7 @@ drained from the bottom** — run two and the child restacks against a base stil
 rebase is either thrown away or lands and buries the parent's fix. The script picks the owner: the
 PR of that stack whose agent is still alive, else the **lowest** one that needs one. Every other PR
 of the stack reads `waits_on: <owner>` — including one *below* the owner, because a rebase anywhere
-in a chain moves every branch above it. Leave those rows as they are and spawn nothing. The owner's
+in a chain moves every branch above it. Spawn nothing for those PRs. The owner's
 push moves `head`, the watch emits, the next PR up becomes the lowest that needs work, and it gets
 its agent on that pass. A five-PR stack therefore takes five passes, in order, never five agents.
 
@@ -207,7 +162,7 @@ Agent({
     memory, or the git history — reply in that bot's thread with your adjudication **and the question
     it leaves open**, **leave the thread open**, and count the item as held with a one-line gist. Do
     not decide for the author, and do not resolve the thread either: a resolved thread is one the
-    author cannot find, and the matrix only carries the gist. Your reply is the last word on it,
+    author cannot find, and the dashboard only carries the gist. Your reply is the last word on it,
     which is what tells the scan this thread waits on a human and stops it spawning an agent here
     forever. Held is for a question, never for an explanation — if your reply ends the matter, resolve.
 
@@ -232,13 +187,13 @@ An agent that finishes writes its report and dies. Its memory is not lost: refut
 dismissals registry (see `pr-feedback` §2), so the next agent on that PR does not re-argue them.
 
 **A reported agent is killed, never reused.** The moment a pass folds a report — the scan prints
-`#<n> report: …` — `TaskStop` that PR's agent (`ToolSearch "select:TaskStop"`) before you re-render.
+`#<n> report: …` — `TaskStop` that PR's agent (`ToolSearch "select:TaskStop"`) before acting again.
 Never `SendMessage` it back to work: its context is a snapshot of a branch that has since moved, and
 a revived agent goes around the mute entirely. Every pass spawns a **fresh** agent that redoes its
 own `pr-feedback` triage on the current state.
 
 Killing it is also what keeps the name honest: `pr-<n>` is one agent per PR, so **a name collision
-means an agent is still alive on that PR** — leave the row alone. Never accept a suffixed name
+means an agent is still alive on that PR** — leave that PR alone. Never accept a suffixed name
 (`pr-<n>b`): that suffix is a second agent about to force-push the branch the first one holds.
 
 At the very first pass — the only moment every PR needs triage at once — spawn in waves of about
@@ -258,8 +213,8 @@ Monitor({
 Substitute the resolved absolute path — shell variables do not survive between Bash calls, so a `$SCAN` left in there arms a monitor that dies on its first poll.
 
 **The watch takes the same arguments as the first pass** — the same PR numbers, the same
-`--include-drafts`. Drop them and the watch surveys a different set of PRs than the matrix
-shows: the drafts you asked for go silent, and PRs you never selected start emitting.
+`--include-drafts`. Drop them and the watch surveys a different selection: the drafts you asked for
+go silent, and PRs you never selected start emitting.
 
 The script emits one line per PR whose CI rollup, unresolved-thread counts, `mergeStateStatus` or
 head sha actually moved — not one line per check, which would be dozens per push and would get the
@@ -270,17 +225,17 @@ Then end the turn. Do not arm a `ScheduleWakeup`, do not poll, do not ask an age
 done: an agent going idle is not a signal, and its report file is. Today's silence is the design
 working.
 
-On each batch of events: re-render the matrix, spawn an agent for any PR that now needs one, and
-end the turn again.
+On each batch of events: run one pass, stop agents whose reports were folded, spawn any PR that now
+needs an agent, notify only author actions or merge-ready PRs, and end the turn again.
 
-`--once` means one pass, one matrix, no monitor and no agents.
+`--once` means one pass, no monitor and no agents. Refresh the dashboard state and reply with one
+line pointing to `pr-dash status`.
 
 ## Stopping
 
 `TaskStop` the monitor when every PR is merged or closed, or when the user says stop. Nothing else
-stops the watch — a held item and a conflict its agent could not resolve both mean report it in the matrix and keep
-watching, and a matrix where everything waits on a human is the cheapest state there is: no
-events, no tokens, no ticks.
+stops the watch. Held items and unresolved conflicts stay visible in `pr-dash`; keep watching. A
+dashboard where everything waits on a human costs no agent work while nothing changes.
 
 ## What lives where
 
@@ -292,4 +247,5 @@ events, no tokens, no ticks.
 | Code changes, replies, reactions, resolving threads | `pr-respond` |
 | Finding the introducing commit, fold, force-push | `fixup` |
 | Restacking children | `gh-stack` |
-| The matrix, spawning, the watch, stopping | here |
+| Terminal dashboard | `pr-dash.py` |
+| Spawning, the watch, stopping | here |
