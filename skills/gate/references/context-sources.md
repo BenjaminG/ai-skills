@@ -11,32 +11,50 @@ The source-by-source freshness model (1 probe → re-fetch only stale sources) i
 ### Discovery (where to find the rules)
 
 ```bash
-# Root CLAUDE.md (always checked when present)
-[ -f "$REPO_ROOT/CLAUDE.md" ] && echo "$REPO_ROOT/CLAUDE.md"
+# Root instruction files. AGENTS.md and .claude/CLAUDE.md are as canonical as CLAUDE.md and were
+# read by nothing — a repo whose AGENTS.md is one line ("Follow @.claude/CLAUDE.md") had its
+# entire rule set invisible to the gate.
+ROOT_RULE_FILES=("CLAUDE.md" "CLAUDE.local.md" "AGENTS.md" ".claude/CLAUDE.md")
+for r in "${ROOT_RULE_FILES[@]}"; do [ -f "$REPO_ROOT/$r" ] && echo "$REPO_ROOT/$r"; done
 
-# Per-touched-directory CLAUDE.md
-# For each directory of every changed file, walk up to repo root
+# Per-touched-directory CLAUDE.md / AGENTS.md — for each changed file, walk up to repo root
 for f in $CHANGED_FILES; do
   dir=$(dirname "$f")
   while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
     [ -f "$REPO_ROOT/$dir/CLAUDE.md" ] && echo "$REPO_ROOT/$dir/CLAUDE.md"
+    [ -f "$REPO_ROOT/$dir/AGENTS.md" ] && echo "$REPO_ROOT/$dir/AGENTS.md"
     dir=$(dirname "$dir")
   done
 done | sort -u
 ```
 
-This produces a unique list of in-scope `CLAUDE.md` files (root + every ancestor dir of each touched file that has a `CLAUDE.md`).
+Then **one level** of `@`-import resolution over that list: a pointer file's targets are rule files
+too. Only `*.md` targets, resolved relative to the repo root — a directory import (`@adr/`,
+`@docs/`) is ADR discovery's job, and recursing past one level pulls a repo's whole doc tree into
+the bundle. Same `@`-path convention as the ADR companion form under F3 Strategy 1.
+
+This produces a unique list of in-scope instruction files: the root set, their one-level `@`-imports,
+and every ancestor dir of each touched file that has a `CLAUDE.md` or `AGENTS.md`.
 
 ### Freshness signal
 
 ```bash
-# Capture the git SHA of the most recent commit touching any in-scope CLAUDE.md
+# Content hash over every in-scope instruction file — NOT `git log`. CLAUDE.local.md and
+# .claude/rules/local/ are git-ignored in most repos, so a git-log fold silently no-ops and a
+# rule edit serves a stale cached verdict. Hashing bytes works tracked or not, and additionally
+# catches uncommitted edits. See SKILL.md Step 1b for the zsh word-splitting caveat.
 CLAUDE_MD_LIST=$(... discovery above ...)
 if [ -n "$CLAUDE_MD_LIST" ]; then
-  CLAUDE_MD_GIT_SHA=$(git log -1 --format=%H -- $CLAUDE_MD_LIST 2>/dev/null | cut -c1-12)
+  CLAUDE_MD_GIT_SHA=$(printf '%s\n' "$CLAUDE_MD_LIST" | while IFS= read -r f; do
+    [ -n "$f" ] && cat -- "$f"
+  done | shasum | cut -c1-12)
 fi
-# null if no in-scope CLAUDE.md
+# null if no in-scope instruction file
 ```
+
+The same applies to `ADR_GIT_SHA`: hash the contents of the `*.md` files under `ADR_ROOTS`, not
+`git log -1 -- "${ADR_ROOTS[@]}"`. A git-ignored rules directory (`.claude/rules/local/`) has no
+commit, so the git-log fold never moves when one of its rules changes.
 
 Stored in `freshness_signals.claude_md_git_sha`. Probed in **Step 1f** alongside the existing 4 probes (parallel, ~free).
 
@@ -71,44 +89,13 @@ The context-fetcher reads each in-scope `CLAUDE.md` verbatim and writes a `## CL
 
 The teammate does not interpret the rules — interpretation is the context-checker's job.
 
-### Enforcement (Step 6)
+### Enforcement
 
-The context-checker prompt is extended (additional instructions appended at the **end** of the existing prompt — append-only for cache safety):
-
-```
-## CLAUDE.md rule enforcement
-
-For each finding in the input list, additionally check the CLAUDE.md
-section of the context bundle:
-
-  - If a CLAUDE.md rule explicitly forbids the pattern in the finding's
-    evidence (rule contains "MUST NOT", "must not", "never", "forbidden"):
-    upgrade the verdict from OK to CONFLICT, set source: "claude-md",
-    citation: the rule verbatim (capped at 240 chars).
-
-  - If a CLAUDE.md rule explicitly permits or recommends the pattern
-    (rule contains "MUST", "always", "required"):
-    if the finding contradicts the rule, set verdict: CONFLICT.
-    Otherwise leave OK.
-
-  - If the rule is silent on the pattern, leave the verdict unchanged.
-
-In addition to per-finding annotation, emit synthesized findings for
-CLAUDE.md rules that the diff itself violates (independent of any
-reviewer finding). Format:
-
-  {
-    "rule_id": "claude-md-violation",
-    "tier": "BLOCKER" if rule contains "MUST NOT", else "MAJOR",
-    "file": <file in diff that violates>,
-    "line": <line where the pattern appears>,
-    "evidence": <code excerpt>,
-    "citation": <rule verbatim, ≤240 chars>,
-    "source": "claude-md"
-  }
-```
-
-Synthesized `claude-md-violation` findings flow through Step 4 verdict counting normally — a `MUST NOT` violation produces a BLOCKER and FAILs the gate.
+`agents/context-checker.md` Part 2 is the single source of truth for how a rule's normative force
+maps to a tier, and for the caps that keep a rule-heavy repo from producing forty findings.
+Nothing appends enforcement instructions to the checker's prompt — do not add a second copy here.
+`claude-md-violation` and `adr-violation` are policy violations, not mechanical edits: both are
+excluded from `--fix`.
 
 ---
 
@@ -127,9 +114,20 @@ ADRs are read from the union of these conventional locations — whichever exist
 
 Each root is walked **recursively**: every `*.md` at any depth under it is a candidate ADR. A repo that files its rules by domain — `.claude/rules/backend/`, `.claude/rules/frontend/`, `.claude/rules/local/` — has them read like any other; a non-recursive walk silently skipped those, which is the common cause of a documented rule that never fires. The applicability filter (below) handles narrowing — generic rules like `search-tools.md` won't surface unless the diff matches their domain via paths/keyword/body-mention.
 
-Recursion plus multiple roots means the same ADR can be reached twice, so **deduplicate before emitting** (see the companion-file form under Strategy 1): a candidate whose body `@`-references another candidate is that ADR's companion, not a second ADR. Merge the pair — the companion supplies `paths:` and the summary, the referenced file supplies the body — and emit one entry under the referenced file's path.
+Recursion plus multiple roots means the same ADR can be reached twice, so **deduplicate before emitting** (see the companion-file form under Strategy 1): a candidate whose body `@`-references another candidate is that ADR's companion, not a second ADR. Merge the pair and emit **one** entry: the companion supplies `paths:`, the summary **and the body**; the referenced file is cited as `full text: <path> (read on demand)`. Emit the companion body, not the referenced one — a companion is the condensed, `paths:`-scoped rule set (a few hundred words) while the ADR it points at is the full record (often several thousand). Inlining the long form spends the checker's whole context on prose that carries no scoping, and buries the enforceable clauses. The checker has `Read` if it needs the full text.
 
 If none of the roots exist, the fetcher emits `## ADR\nnone` and `adr_git_sha: null` (same shape as today).
+
+### Strategy 0 — no `paths:` frontmatter means global
+
+A candidate with no `paths:` array in its frontmatter is an **unscoped** rule file: it applies to
+the whole repo, so it is applicable to every diff and emits `binds: all changed files (no
+`paths:` declared)`. Check this before the strategies below.
+
+This is not a fallback, it is the common case for a repo's top-level style and language rules
+(`code-style.md`, `typescript.md`). Those files carry the naming, structure and reuse rules that
+draw the most review comments, and they scope themselves by being global rather than by listing
+globs — treating a missing `paths:` as "not applicable" is how they end up enforced by nothing.
 
 ### Strategy 1 — frontmatter `paths:` glob
 
@@ -157,7 +155,7 @@ paths:
 
 maps to `docs/adr/0001-*.md`.
 
-A second companion form links by **reference instead of id**: a rule file whose body carries an `@`-path to another candidate — say `.claude/rules/adr/adr-008-solitary-unit-testing.md` containing `@adr/008-solitary-unit-testing.md` — is that ADR's companion. Resolve the `@`-path relative to the repo root and pair the two. Use this form when the companion carries the `paths:` scoping and the referenced file carries the full text.
+A second companion form links by **reference instead of id**: a rule file whose body carries an `@`-path to another candidate — say `.claude/rules/adr/adr-008-solitary-unit-testing.md` containing `@adr/008-solitary-unit-testing.md` — is that ADR's companion. Resolve the `@`-path relative to the repo root and pair the two. Use this form when the companion carries the `paths:` scoping and the digest; the referenced file is cited by path, not inlined.
 
 All forms coexist; any of them marks the ADR applicable, and each pair emits once.
 
@@ -178,62 +176,51 @@ If neither Strategy 1 nor Strategy 2 marks the ADR applicable, the existing v2 b
 
 ### Output
 
-The fetched `## ADR` section in `<TMP_DIR>/context-bundle.md` includes only **applicable** ADRs (full body), plus a one-line index of all ADR paths at the top. Paths are full (not just filenames), since multiple roots may contribute:
+The fetched `## ADR` section in `<TMP_DIR>/context-bundle.md` includes only **applicable** rules,
+plus a one-line index of all candidate paths at the top. Paths are full (not just filenames), since
+multiple roots may contribute. Each applicable entry carries two derived lines before its body:
+
+- `description:` — the rule's own frontmatter summary. One line, and it is the cheapest triage the
+  checker gets before reading the body.
+- `binds:` — the **changed files this rule covers**, i.e. the output of the `paths:` glob evaluation
+  the applicability filter already performed. Emit the result, not the input: `paths:` is a glob
+  list the checker would have to re-evaluate, `binds:` is a lookup. A rule with no `paths:`
+  frontmatter emits `binds: all changed files (no paths: declared)`.
+
+`binds:` is what makes the context-checker's scoping guard enforceable ("the file appears on that
+rule's `binds:` line") and what lets a skeptic refute on "the rule's `paths:` do not cover this file".
 
 ```
 ## ADR
 
 ### Index (all ADRs)
 - docs/adr/0001-graphql-nullability.md
-- docs/adr/0007-error-handling.md
-- .claude/rules/no-direct-prisma.md
+- .claude/rules/code-style.md
+- .claude/rules/backend/guard-resolved-document-reuse.md
 ...
 
 ### Applicable to this diff
 
-#### docs/adr/0001-graphql-nullability.md
+#### .claude/rules/backend/guard-resolved-document-reuse.md
+- description: Reuse documents already fetched by guards — never re-fetch the same document in downstream services or resolvers.
+- binds: packages/wome-api/src/app-event/app-event.resolver.ts, packages/wome-api/src/app-event/app-event.service.ts
 <verbatim body>
 
-#### .claude/rules/no-direct-prisma.md
+#### .claude/rules/code-style.md
+- description: Code style rules — naming, structure, abstractions, reuse, lint disables.
+- binds: all changed files (no `paths:` declared)
 <verbatim body>
+
+#### .claude/rules/adr/adr-028-hexagonal-architecture.md
+- description: Hexagonal architecture — CQRS dispatch, layers, entity rules, ports/DI, events.
+- binds: packages/wome-api/src/contexts/fintech/quote/domain/quote.entity.ts
+- full text: adr/028-hexagonal-architecture.md (read on demand)
+<verbatim body of the companion>
 ```
 
-### Enforcement (Step 6)
+### Enforcement
 
-The context-checker prompt is extended (append-only):
-
-```
-## ADR enforcement
-
-For each finding, additionally check the ADR section of the context bundle.
-Only the "Applicable to this diff" subsection contains relevant ADRs;
-the index is for reference.
-
-For each applicable ADR:
-
-  - Search for "MUST", "MUST NOT", "SHALL", "SHALL NOT" clauses.
-  - If a clause's subject pattern matches the finding's evidence:
-    set verdict: CONFLICT, source: "adr",
-    citation: "ADR-<id>: <clause verbatim, ≤240 chars>" for numbered ADRs
-    under docs/adr/, or "<ADR full path>: <clause verbatim, ≤240 chars>"
-    for unnumbered files (e.g. .claude/rules/<name>.md).
-
-  - If a clause "SHOULD" / "RECOMMENDED" pattern matches but the finding
-    is not blocking-severity, set verdict: OK (informational only).
-
-Synthesized findings for ADR-violating diffs:
-
-  {
-    "rule_id": "adr-violation",
-    "tier": "BLOCKER" if clause contains "MUST" or "SHALL",
-            "MAJOR"   if clause contains "SHOULD" or "RECOMMENDED",
-    "file": <file in diff that violates>,
-    "line": <line where the pattern appears>,
-    "evidence": <code excerpt>,
-    "citation": "ADR-<id>: <clause verbatim, ≤240 chars>",
-    "source": "adr"
-  }
-```
+Same as F2: `agents/context-checker.md` Part 2 owns the force-to-tier mapping and the caps.
 
 ---
 

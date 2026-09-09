@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `7`. Cache entries are keyed on this — bumping invalidates all caches at once. v7: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
+**Skill version**: `8`. Cache entries are keyed on this — bumping invalidates all caches at once. v8: `context-checker` infers a rule's normative force from its phrasing instead of keying off MUST/SHOULD — a repo whose rule files are bare imperatives ("Never call `findById` for a document already available in the request pipeline") had its entire rule set produce nothing, and only 5 of 48 files in the case that motivated this mention `MUST` at all. It runs on `opus` with a ≤25-call budget in `MODE: synthesize` (documented-rule enforcement was the cheapest agent in the pipeline while being the most-reported class of review comment) and stays on sonnet for `MODE: annotate`. Discovery reaches `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `AGENTS.md`, and one level of `@`-imports — a repo whose `AGENTS.md` is a one-line pointer had no root `CLAUDE.md` and so no rules at all. An unscoped rule file (no `paths:`) is now applicable to every diff instead of falling through all three strategies. The `## ADR` bundle section names which changed files each rule `binds:`, and a companion ADR contributes its own condensed body rather than inlining the multi-thousand-word record it points at. Synthesized findings go through the same dedup + adversarial verify as reviewer findings — a cited-rule BLOCKER was the only unrefutable finding in the gate and double-counted any line a reviewer already owned — with `agents/skeptic.md` told that a citation-backed finding is refutable only three ways. The ADR freshness fold hashes file contents instead of `git log`: a git-ignored rules dir (`.claude/rules/local/`) never invalidated the cache. v7: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
 
 ## Prerequisites
 
@@ -156,17 +156,41 @@ for d in "${ADR_ROOT_CANDIDATES[@]}"; do
   [ -d "$REPO_ROOT/$d" ] && ADR_ROOTS+=("$d")
 done
 
+# Root instruction files. AGENTS.md and .claude/CLAUDE.md are as canonical as CLAUDE.md and were
+# read by nothing — a repo whose AGENTS.md is one line ("Follow @.claude/CLAUDE.md") had its
+# entire rule set invisible to the gate.
+ROOT_RULE_FILES=("CLAUDE.md" "CLAUDE.local.md" "AGENTS.md" ".claude/CLAUDE.md")
 CLAUDE_MD_LIST=$( {
-  [ -f "$REPO_ROOT/CLAUDE.md" ] && echo "$REPO_ROOT/CLAUDE.md"
-  [ -f "$REPO_ROOT/CLAUDE.local.md" ] && echo "$REPO_ROOT/CLAUDE.local.md"
+  for r in "${ROOT_RULE_FILES[@]}"; do [ -f "$REPO_ROOT/$r" ] && echo "$REPO_ROOT/$r"; done
   for f in "${CHANGED_FILES_ARR[@]}"; do
     dir=$(dirname -- "$f")
     while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
       [ -f "$REPO_ROOT/$dir/CLAUDE.md" ] && echo "$REPO_ROOT/$dir/CLAUDE.md"
+      [ -f "$REPO_ROOT/$dir/AGENTS.md" ] && echo "$REPO_ROOT/$dir/AGENTS.md"
       dir=$(dirname -- "$dir")
     done
   done
 } | sort -u)
+
+# One level of @-import resolution: a pointer file's targets are rule files too. Only .md targets
+# — a directory import (@adr/, @docs/) is ADR discovery's job, and recursing past one level pulls
+# the whole doc tree into the bundle.
+CLAUDE_MD_LIST=$( {
+  printf '%s\n' "$CLAUDE_MD_LIST"
+  printf '%s\n' "$CLAUDE_MD_LIST" | while IFS= read -r f; do
+    [ -n "$f" ] && grep -ohE '@[A-Za-z0-9._/-]+\.md' -- "$f" 2>/dev/null
+  done | sed 's|^@||' | sort -u | while IFS= read -r rel; do
+    if [ -n "$rel" ] && [ -f "$REPO_ROOT/$rel" ]; then
+      # Skip imports landing under an ADR root: already discovered there, with `paths:`
+      # applicability on top. Inlining them here too duplicates them verbatim in the bundle.
+      in_adr=0
+      for d in "${ADR_ROOTS[@]}"; do
+        [ "${rel#$d/}" != "$rel" ] && in_adr=1
+      done
+      [ $in_adr -eq 0 ] && echo "$REPO_ROOT/$rel"
+    fi
+  done
+} | sed '/^$/d' | sort -u)
 set +f
 
 if [ -n "$CLAUDE_MD_LIST" ]; then
@@ -182,11 +206,16 @@ if [ -n "$CLAUDE_MD_LIST" ]; then
   WT_HASH=$(echo "${WT_HASH} ${CLAUDE_MD_GIT_SHA}" | shasum | cut -c1-12)
 fi
 if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
-  ADR_GIT_SHA=$(git log -1 --format=%H -- "${ADR_ROOTS[@]}" 2>/dev/null | cut -c1-12)
+  # Content hash, not `git log` — same bug class the CLAUDE.md fold hit in v7. A rules dir can be
+  # git-ignored (`.claude/rules/local/`) or edited without committing; a git-log fold then silently
+  # no-ops and a rule edit serves a stale cached verdict. Name kept as ADR_GIT_SHA: the Step 1d
+  # probe and freshness_signals.adr_git_sha both read it.
+  ADR_GIT_SHA=$(find "${ADR_ROOTS[@]/#/$REPO_ROOT/}" -name '*.md' -type f -print0 2>/dev/null \
+    | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -c1-12)
   [ -n "$ADR_GIT_SHA" ] && WT_HASH=$(echo "${WT_HASH} ${ADR_GIT_SHA}" | shasum | cut -c1-12)
 fi
 
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v4"
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v5"
 STATE_DIR="$HOME/.claude/gate-wf-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
@@ -244,8 +273,8 @@ For each stale source, fetch:
 
   Emit these under a `### Review threads` subsection of the `## PR` bundle section (one entry per thread: `isResolved`, `path`, `line`, and each comment's `author` + `body`). The context-checker reads this to dismiss findings the author rejected (see `references/dismissals.md` and `agents/context-checker.md` Part 3). Resolving a thread bumps the PR `updatedAt`, so this rides the existing PR freshness probe — no new probe needed.
 
-- **ADR** (if stale): walk `ADR_ROOTS`, determine applicability via frontmatter `paths:` glob, filename keyword match, or body mention. See `references/context-sources.md` § F3.
-- **CLAUDE.md** (if stale): emit each `$CLAUDE_MD_LIST` file verbatim under a `### <path>` heading. See `references/context-sources.md` § F2.
+- **ADR** (if stale): walk `ADR_ROOTS`, determine applicability — an unscoped rule (no `paths:`) is global, otherwise frontmatter `paths:` glob, filename keyword match, or body mention. Emit each applicable rule with its `description:` and a `binds:` line naming the changed files it covers. See `references/context-sources.md` § F3.
+- **CLAUDE.md** (if stale): emit each `$CLAUDE_MD_LIST` file verbatim under a `### <path>` heading — the list covers `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `CLAUDE.md`/`AGENTS.md`, and one level of `@`-imports. See `references/context-sources.md` § F2.
 - **devsql** (if stale): per changed file, last 10 history/jhistory rows. Cap at 80 total.
 
 Merge fetched + cached portions into `$TMP_DIR/context-bundle.md` with the section headers from `references/context-sources.md`. Write the new freshness signals to `$TMP_DIR/freshness-signals.json`.
@@ -406,7 +435,11 @@ modes all live in `scripts/workflow.js` and the `agents/*.md` system prompts). I
 `context_verdict`/`context_source`/`context_citation`/`context_reason` (and
 `dismiss_confidence` when DISMISSED), `reviewer`, and `also_flagged_by` for deduped
 duplicates. Synthesized `claude-md-violation`/`adr-violation` findings carry
-`reviewer: "context-checker"` with empty `verifications[]`.
+`reviewer: "context-checker"` plus `citation`/`source`, and go through the same
+tier-scaled verify and `(file,line)` dedup as reviewer findings — so they carry real
+`verifications[]`. When a synthesized finding lands on a line a reviewer already claimed,
+the citation-backed tier wins: the primary is promoted and the rule finding merges in as
+`also_flagged_by`.
 
 After the run, capture the `runId` from `/workflows` (task panel). Pass it to Step 5 for
 caching and to the verdict footer.
@@ -507,7 +540,7 @@ Then list findings grouped by tier, then by reviewer:
   context: Linear NAB-204 mentions "BookingService is the gateway, by design"
 ```
 
-Display `[refute votes: K/N]` where N = `verifications.length` and K is the count of skeptics who refuted. Verify is tier-scaled: BLOCKER runs 3 skeptics (`K/3`, survives iff K < 2), MAJOR runs 1 (`K/1`, survives iff K = 0), NIT runs 0 — render `[unverified]` instead of a vote count (NITs never affect the verdict, so they are shown but not adversarially checked). A deduped duplicate (`also_flagged_by` present) appends `(also: <reviewer>)`.
+Display `[refute votes: K/N]` where N = `verifications.length` and K is the count of skeptics who refuted. Verify is tier-scaled: BLOCKER runs 3 skeptics (`K/3`, survives iff K < 2), MAJOR runs 1 (`K/1`, survives iff K = 0), NIT runs 0 — render `[unverified]` instead of a vote count (NITs never affect the verdict, so they are shown but not adversarially checked). A deduped duplicate (`also_flagged_by` present) appends `(also: <reviewer>)`. A finding carrying `citation` renders it on its own `rule reference:` line — that citation is why the finding has the tier it has.
 
 For `context_verdict`:
 
@@ -565,7 +598,7 @@ Write `$CONTEXT_CACHE_FILE`:
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v2",
+  "key": "<BRANCH_SAFE>_v3",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": { ... from $TMP_DIR/freshness-signals.json ... },
   "bundle_sources": {
@@ -606,9 +639,9 @@ done
 
 - **Requires**: `CLAUDE_CODE_WORKFLOWS=1` in `settings.json`.
 - **Static script**: the orchestration is `scripts/workflow.js` (shipped with the plugin), invoked via `Workflow({scriptPath, args})`. It is NOT model-generated, so the shape is fixed run-to-run — no drift (double context-checker, stray extra reviewers), and `--resume` caches reliably.
-- **Pipeline shape**: the script uses `pipeline()` over reviewers — each reviewer's findings stream into per-finding verify the moment its review returns. No barrier between review and verify. CLAUDE.md/ADR synthesis (`context-checker` in `MODE: synthesize`) runs alongside the reviewers; the single annotation pass (`MODE: annotate`) runs once at the end over survivors.
+- **Pipeline shape**: the script uses `pipeline()` over reviewers — each reviewer's findings stream into per-finding verify the moment its review returns. No barrier between review and verify. CLAUDE.md/ADR synthesis (`context-checker` in `MODE: synthesize`) runs alongside the reviewers, then its findings go through the same verify round; the single annotation pass (`MODE: annotate`) runs once at the end over every survivor, synthesized ones included, so a PR-thread rejection can dismiss a rule violation. Annotate is `(file,line,rule_id)` matching, not investigation, so the script pins it to sonnet while `synthesize` runs on the agent's own model.
 - **Tier-scaled verify**: BLOCKER → 3 independent skeptics (drop if ≥2 refute), MAJOR → 1 skeptic (drop if it refutes), NIT → 0 (shown, unverified — NITs never affect the verdict, so verifying them was pure cost). Skeptics are refute-prompted (default refuted=true if uncertain) with a ≤6 tool-call budget.
-- **Dedup**: findings are claimed per `(file,line)`; the first reviewer to claim a line owns it, later duplicates merge in as `also_flagged_by` without spawning their own skeptics.
+- **Dedup**: findings are claimed per `(file,line)`; the first reviewer to claim a line owns it, later duplicates merge in as `also_flagged_by` without spawning their own skeptics. Exception: a citation-backed finding (`claude-md-violation`/`adr-violation`) promotes the primary's tier when it is higher — a NIT that claimed the line first must not swallow a documented-rule BLOCKER. The promoted finding keeps the votes it earned at its old tier, so it can render `[refute votes: K/1]` at BLOCKER.
 - **Concurrency cap**: workflow runtime caps at 16 parallel agents. Reviewers + skeptics beyond that queue automatically.
 - **No `Date.now()`/`Math.random()` in the workflow**: all timestamps are stamped in this skill (bash + post-workflow). The script is deterministic so resume works.
 - **Resume**: `--resume <runId>` → `Workflow({scriptPath, resumeFromRunId})`. Same session, same args → unchanged `agent()` calls return cached results; editing one `agents/*.md` re-runs only that agent's calls.

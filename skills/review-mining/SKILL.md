@@ -69,14 +69,12 @@ Each recurring theme gets one destination, one draft, evidence, and a coverage v
 |---|---|---|
 | already `covered` and still recurring | wherever the enforcer looks, or a higher tier | no new rule. Either move the existing line into the file the agent loads, or raise the tier of the reviewer rule that already fires and gets ignored. Say which, and quote the line you are moving. |
 | objective | a lefthook or lint rule in the target repo; a Danger rule only if it already has a `Dangerfile` | 5 to 10 lines, warning by default. Failing the build takes evidence that the team treats it as a blocker. |
-| subjective, applies to any diff | a line in the `CLAUDE.md` the agent actually loads | `MUST …` when the repo already phrases the rule absolutely ("forbidden", "banned", "never"), else `SHOULD …` |
+| subjective, applies to any diff | a line in the `CLAUDE.md` the agent actually loads | a line phrased the way this repo phrases rules — a prohibition for an absolute rule, a bare imperative for a convention. No modal verb needed; the enforcer infers force from phrasing. |
 | subjective, one domain | a rule row in one `agents/<x>-reviewer.md` of this repo | the three edits: the `rule_id` in the enum, the "what to look for" row, the tier row |
 
 Which reviewer owns a domain: bugs and parity go to `bug-reviewer`, layering, boundaries and coupling to `solid-reviewer`, dead and speculative code to `ponytail-reviewer`, extraction and duplication to `simplify-reviewer`, comment noise and defensive junk to `slop-reviewer`. A theme that is really an ADR violation goes to the ADR, not to a reviewer.
 
-`agents/context-checker.md` maps a **MUST** to BLOCKER and a **SHOULD** to MAJOR, and it reads only a `CLAUDE.md` or an ADR. A rule sitting in a rules directory the enforcer never opens is the most common cause of a covered-and-recurring theme, so name the file the agent loads: follow the repo's `AGENTS.md` or `CLAUDE.md` pointer rather than assuming the root.
-
-Picking the modal verb needs evidence the corpus does not hold. GitHub's resolved flag is true on almost every thread and says nothing about whether code changed, so it cannot carry an 80% test. Read the repo's own wording instead: absolute phrasing earns MUST, everything else SHOULD. Upgrading past that needs the script to record whether a commit followed the thread, which it does not yet do.
+`agents/context-checker.md` infers a rule's normative force from its phrasing — a prohibition ("Never …", "Do not …", "the ONLY …") blocks, a directive or bare imperative is MAJOR, a hedged preference is MAJOR — so a rule draft does not need a modal verb. It reads root `CLAUDE.md` / `CLAUDE.local.md` / `AGENTS.md` / `.claude/CLAUDE.md`, their one-level `@`-imports, per-directory `CLAUDE.md` and `AGENTS.md`, and every rule/ADR file under `docs/adr/`, `adr/`, `docs/architecture/decisions/` and `.claude/rules/` (recursive). A rule that still does not fire is one whose `paths:` frontmatter excludes the changed files, or one the diff does not break on a `+` line — check those before concluding the rule is parked in the wrong file.
 
 **Coverage** is grep, not judgement. Take two or three keywords from the theme and search `agents/*.md` here, plus in the target checkout: every `CLAUDE.md` and `AGENTS.md` including per-package ones, `.claude/rules/`, `.cursor/*.md` (a `BUGBOT.md` is often the richest checklist in a repo), `adr/`, `lefthook.yml`, `Dangerfile*`, `.eslintrc*` and `**/oxlint.config.*`. Report `none`, `partial (file:line)`, `covered (file:line)`, or `n/a` with no local checkout, and list which paths were missing. **A covered theme that still recurs is the headline finding**: the rule exists and is not firing. Lead the report with it and say what stops it firing.
 
@@ -97,12 +95,12 @@ Recurring themes: 7 (objective 3 · subjective 4) · one-shot: 41
 
 | # | Theme | PRs | Bucket | Destination | Coverage | Δ prev |
 |---|-------|-----|--------|-------------|----------|--------|
-| 1 | Guard nullable Prisma results | 9 | subjective | CLAUDE.md MUST | none | new |
+| 1 | Guard nullable Prisma results | 9 | subjective | CLAUDE.md prohibition | none | new |
 | 2 | Migration without a down() | 4 | objective | lefthook warn | partial agents/migration-reviewer.md:31 | 6 → 4 |
 
 ## 1. Guard nullable Prisma results — 9 PRs, 4 reviewers
-**Rule draft:** MUST null-check `findUnique` / `findFirst` results before dereferencing.
-**Why here:** 8 of 9 threads ended in a code change, so reviewers block on it — MUST, which context-checker raises as a BLOCKER.
+**Rule draft:** Never dereference a `findUnique` / `findFirst` result without a null check.
+**Why here:** 8 of 9 threads ended in a code change, so reviewers block on it — phrase it as a prohibition, which context-checker reads as a BLOCKER.
 **Evidence:**
 - PR #412 · src/booking.ts:42 · @alice: "this can be null when the cart expired" · resolved by commit
 - PR #398 · src/quote.ts:88 · @bob: "same null case as last week" · resolved by commit

@@ -50,7 +50,10 @@ const CONTEXT_SCHEMA = {
       },
     } },
     synthesized: { type: 'array', items: {
-      type: 'object', required: ['rule_id', 'file', 'line', 'tier', 'message'],
+      type: 'object',
+      // Same required set as reviewer findings: synthesized findings now flow through the same
+      // dedup + verify path, and skepticPrompt reads location/evidence/suggested_fix directly.
+      required: ['rule_id', 'file', 'line', 'location', 'tier', 'message', 'evidence', 'suggested_fix', 'citation', 'source'],
       properties: { ...FINDING_PROPS, citation: { type: 'string' }, source: { type: 'string' } },
     } },
   },
@@ -89,7 +92,7 @@ FINDING:
 - message: ${f.message}
 - evidence: ${f.evidence}
 - suggested_fix: ${f.suggested_fix}
-
+${f.citation ? `- citation (documented project rule — ${f.source}): ${f.citation}\n` : ''}
 Read the cited region (±40 lines) and every other file the finding cites. Budget ≤6 tool calls. Return { refuted, reason }.`
 
 const synthesizePrompt = () => `MODE: synthesize
@@ -107,7 +110,7 @@ Context bundle: ${A.tmpDir}/context-bundle.md
 Annotate each of these ${survivors.length} surviving findings with a verdict (OK/CONFLICT/UNCERTAIN/DISMISSED) per your instructions. Do NOT synthesize new findings (synthesis already ran). Return { annotations: [...], synthesized: [] }.
 
 FINDINGS:
-${JSON.stringify(survivors.map((f) => ({ file: f.file, line: f.line, rule_id: f.rule_id, tier: f.tier, message: f.message })), null, 1)}`
+${JSON.stringify(survivors.map((f) => ({ file: f.file, line: f.line, rule_id: f.rule_id, tier: f.tier, message: f.message, evidence: f.evidence })), null, 1)}`
 
 // --- orchestration ---
 
@@ -152,6 +155,13 @@ const verifyStage = async (review, reviewer) => {
     if (claimed.has(key)) {
       const primary = claimed.get(key)
       ;(primary.also_flagged_by = primary.also_flagged_by || []).push({ reviewer, rule_id: f.rule_id })
+      // A cited rule outranks a reviewer's judgment on the same line. Without this, a NIT that
+      // claimed the line first silently swallows an adr-violation BLOCKER.
+      // ponytail: the promoted finding keeps the votes it earned at its old tier, so a promoted
+      // BLOCKER renders [refute votes: K/1]. Honest, and cheaper than re-verifying.
+      if (f.citation && tierVotes(f.tier) > tierVotes(primary.tier)) {
+        primary.tier = f.tier; primary.citation = f.citation; primary.source = f.source
+      }
       continue
     }
     f.reviewer = reviewer.replace('ai-skills:', '')
@@ -163,20 +173,32 @@ const verifyStage = async (review, reviewer) => {
 
 log(`Reviewing with ${A.reviewers.length} reviewers`)
 const streamed = await pipeline(A.reviewers, reviewStage, verifyStage)
-const survivors = streamed.filter(Boolean).flat()
+
+// Synthesized rule findings join the same dedup + verify path as reviewer findings. Skipping
+// verify made a cited-rule BLOCKER the only unrefutable finding in the gate, double-counted any
+// line a reviewer already owned, and rendered [refute votes: 0/0]. agents/skeptic.md tells the
+// skeptic a citation-backed finding is refutable only three ways, so the refute bias can't eat
+// them. Synthesis still runs parallel to the reviewers — only its verify round is serial.
+const synth = await synthP
+const synthSurvivors = await verifyStage(
+  { findings: synth?.synthesized || [] },
+  'ai-skills:context-checker',
+)
+
+const survivors = [...streamed.filter(Boolean).flat(), ...synthSurvivors]
 log(`${survivors.length} findings survived verify; annotating against context`)
 
-// Annotate survivors (single call). Synthesis result is already in flight.
-const [annotated, synth] = await Promise.all([
-  survivors.length
-    ? agent(annotatePrompt(survivors), {
-        agentType: 'ai-skills:context-checker', phase: 'Context', label: 'annotate', schema: CONTEXT_SCHEMA,
-      })
-    : Promise.resolve({ annotations: [], synthesized: [] }),
-  synthP,
-])
+// Annotate everything, synthesized included — that is what lets a PR-thread rejection dismiss a
+// rule violation instead of forcing the author to reach for --dismiss. Annotate is (file,line,
+// rule_id) matching, not investigation, so it runs on sonnet regardless of the agent's default.
+const annotated = survivors.length
+  ? await agent(annotatePrompt(survivors), {
+      agentType: 'ai-skills:context-checker', phase: 'Context', label: 'annotate',
+      schema: CONTEXT_SCHEMA, model: 'sonnet',
+    })
+  : { annotations: [], synthesized: [] }
 
-// Merge annotations onto survivors by (file, line, rule_id).
+// Merge annotations onto findings by (file, line, rule_id).
 const annByKey = new Map((annotated?.annotations || []).map((a) => [`${a.file}:${a.line}:${a.rule_id}`, a]))
 for (const f of survivors) {
   const a = annByKey.get(`${f.file}:${f.line}:${f.rule_id}`)
@@ -188,9 +210,4 @@ for (const f of survivors) {
   if (a.dismiss_confidence) f.dismiss_confidence = a.dismiss_confidence
 }
 
-// Synthesized findings (claude-md/adr) skip verify — empty verifications, tagged reviewer.
-const synthesized = (synth?.synthesized || []).map((f) => ({
-  ...f, reviewer: 'context-checker', verifications: [],
-}))
-
-return { findings: [...survivors, ...synthesized] }
+return { findings: survivors }

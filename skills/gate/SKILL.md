@@ -12,7 +12,7 @@ This skill is a **gate**, not a fixer. It returns a verdict; it does not modify 
 
 It orchestrates with a single primitive every agent harness has: **spawn a subagent, read its result**. No Workflow tool, no agent teams — so it runs unchanged on Claude Code and Codex. The companion `gate-wf` skill runs the same review logic on the Claude Code `Workflow` engine (deterministic static script, `--resume` caching); prefer it when Workflows are enabled.
 
-**Skill version**: `8`. Cache entries are keyed on this — bumping invalidates all caches at once. v8: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v7: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v6: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive.
+**Skill version**: `9`. Cache entries are keyed on this — bumping invalidates all caches at once. v9: `context-checker` infers a rule's normative force from its phrasing instead of keying off MUST/SHOULD, runs on `opus` with a ≤25-call budget in `MODE: synthesize`, and treats a bare imperative in a rules file as normative — see `agents/context-checker.md` Part 2, shared with `gate-wf`. Discovery reaches `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `AGENTS.md`, and one level of `@`-imports; an unscoped rule file (no `paths:`) is applicable to every diff; the `## ADR` bundle section names which changed files each rule `binds:` and a companion ADR contributes its own condensed body instead of inlining the record it points at. The ADR freshness fold hashes file contents instead of `git log` — a git-ignored rules dir (`.claude/rules/local/`) never invalidated the cache. **Divergence from `gate-wf` v8, deliberate**: there, synthesized findings go through the same dedup + adversarial verify as reviewer findings; here they still skip verify (Step 3f), because that routing lives in `scripts/workflow.js`, which this skill does not use. A cited-rule BLOCKER is therefore still unrefutable in this gate — prefer `gate-wf` on rule-heavy repos. v8: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v7: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v6: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive.
 
 ## Prerequisites
 
@@ -151,17 +151,41 @@ for d in "${ADR_ROOT_CANDIDATES[@]}"; do
   [ -d "$REPO_ROOT/$d" ] && ADR_ROOTS+=("$d")
 done
 
+# Root instruction files. AGENTS.md and .claude/CLAUDE.md are as canonical as CLAUDE.md and were
+# read by nothing — a repo whose AGENTS.md is one line ("Follow @.claude/CLAUDE.md") had its
+# entire rule set invisible to the gate.
+ROOT_RULE_FILES=("CLAUDE.md" "CLAUDE.local.md" "AGENTS.md" ".claude/CLAUDE.md")
 CLAUDE_MD_LIST=$( {
-  [ -f "$REPO_ROOT/CLAUDE.md" ] && echo "$REPO_ROOT/CLAUDE.md"
-  [ -f "$REPO_ROOT/CLAUDE.local.md" ] && echo "$REPO_ROOT/CLAUDE.local.md"
+  for r in "${ROOT_RULE_FILES[@]}"; do [ -f "$REPO_ROOT/$r" ] && echo "$REPO_ROOT/$r"; done
   for f in "${CHANGED_FILES_ARR[@]}"; do
     dir=$(dirname -- "$f")
     while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
       [ -f "$REPO_ROOT/$dir/CLAUDE.md" ] && echo "$REPO_ROOT/$dir/CLAUDE.md"
+      [ -f "$REPO_ROOT/$dir/AGENTS.md" ] && echo "$REPO_ROOT/$dir/AGENTS.md"
       dir=$(dirname -- "$dir")
     done
   done
 } | sort -u)
+
+# One level of @-import resolution: a pointer file's targets are rule files too. Only .md targets
+# — a directory import (@adr/, @docs/) is ADR discovery's job, and recursing past one level pulls
+# the whole doc tree into the bundle.
+CLAUDE_MD_LIST=$( {
+  printf '%s\n' "$CLAUDE_MD_LIST"
+  printf '%s\n' "$CLAUDE_MD_LIST" | while IFS= read -r f; do
+    [ -n "$f" ] && grep -ohE '@[A-Za-z0-9._/-]+\.md' -- "$f" 2>/dev/null
+  done | sed 's|^@||' | sort -u | while IFS= read -r rel; do
+    if [ -n "$rel" ] && [ -f "$REPO_ROOT/$rel" ]; then
+      # Skip imports landing under an ADR root: already discovered there, with `paths:`
+      # applicability on top. Inlining them here too duplicates them verbatim in the bundle.
+      in_adr=0
+      for d in "${ADR_ROOTS[@]}"; do
+        [ "${rel#$d/}" != "$rel" ] && in_adr=1
+      done
+      [ $in_adr -eq 0 ] && echo "$REPO_ROOT/$rel"
+    fi
+  done
+} | sed '/^$/d' | sort -u)
 set +f
 
 if [ -n "$CLAUDE_MD_LIST" ]; then
@@ -177,11 +201,16 @@ if [ -n "$CLAUDE_MD_LIST" ]; then
   WT_HASH=$(echo "${WT_HASH} ${CLAUDE_MD_GIT_SHA}" | shasum | cut -c1-12)
 fi
 if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
-  ADR_GIT_SHA=$(git log -1 --format=%H -- "${ADR_ROOTS[@]}" 2>/dev/null | cut -c1-12)
+  # Content hash, not `git log` — same bug class the CLAUDE.md fold hit in v7. A rules dir can be
+  # git-ignored (`.claude/rules/local/`) or edited without committing; a git-log fold then silently
+  # no-ops and a rule edit serves a stale cached verdict. Name kept as ADR_GIT_SHA: the Step 1d
+  # probe and freshness_signals.adr_git_sha both read it.
+  ADR_GIT_SHA=$(find "${ADR_ROOTS[@]/#/$REPO_ROOT/}" -name '*.md' -type f -print0 2>/dev/null \
+    | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -c1-12)
   [ -n "$ADR_GIT_SHA" ] && WT_HASH=$(echo "${WT_HASH} ${ADR_GIT_SHA}" | shasum | cut -c1-12)
 fi
 
-CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v5"
+CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v6"
 STATE_DIR="$HOME/.claude/gate-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
@@ -239,8 +268,8 @@ For each stale source, fetch:
 
   Emit these under a `### Review threads` subsection of the `## PR` bundle section (one entry per thread: `isResolved`, `path`, `line`, and each comment's `author` + `body`). The context-checker reads this to dismiss findings the author rejected (see `references/dismissals.md` and `agents/context-checker.md` Part 3). Resolving a thread bumps the PR `updatedAt`, so this rides the existing PR freshness probe — no new probe needed.
 
-- **ADR** (if stale): walk `ADR_ROOTS`, determine applicability via frontmatter `paths:` glob, filename keyword match, or body mention. See `references/context-sources.md` § F3.
-- **CLAUDE.md** (if stale): emit each `$CLAUDE_MD_LIST` file verbatim under a `### <path>` heading. See `references/context-sources.md` § F2.
+- **ADR** (if stale): walk `ADR_ROOTS`, determine applicability — an unscoped rule (no `paths:`) is global, otherwise frontmatter `paths:` glob, filename keyword match, or body mention. Emit each applicable rule with its `description:` and a `binds:` line naming the changed files it covers. See `references/context-sources.md` § F3.
+- **CLAUDE.md** (if stale): emit each `$CLAUDE_MD_LIST` file verbatim under a `### <path>` heading — the list covers `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `CLAUDE.md`/`AGENTS.md`, and one level of `@`-imports. See `references/context-sources.md` § F2.
 - **devsql** (if stale): per changed file, last 10 history/jhistory rows. Cap at 80 total.
 
 Merge fetched + cached portions into `$TMP_DIR/context-bundle.md` with the section headers from `references/context-sources.md`. Write the new freshness signals to `$TMP_DIR/freshness-signals.json`.
@@ -447,7 +476,7 @@ Skip this call if there are no survivors.
 ### 3f. Merge
 
 - Merge `context-annotate.json` annotations onto survivors by `(file, line, rule_id)`: copy `verdict → context_verdict`, `source → context_source`, `citation → context_citation`, `reason → context_reason`, and `dismiss_confidence` when present.
-- Read `context-synth.json`; each synthesized finding gets `reviewer: "context-checker"`, `verifications: []`, and joins the finding set (it skips verify — a documented-rule violation is not a judgment call).
+- Read `context-synth.json`; each synthesized finding gets `reviewer: "context-checker"`, `verifications: []`, and joins the finding set. It skips verify here — not because a documented-rule violation is beyond judgment (force is now *inferred* from phrasing, so it plainly is a judgment), but because the verify routing lives in `gate-wf`'s `scripts/workflow.js`. Consequence: a cited-rule BLOCKER FAILs this gate unrefuted. On a rule-heavy repo, run `gate-wf` instead.
 
 The finding set flowing into Step 4 is `[...survivors, ...synthesized]`.
 
@@ -595,7 +624,7 @@ Write `$CONTEXT_CACHE_FILE`:
 
 ```json
 {
-  "key": "<BRANCH_SAFE>_v5",
+  "key": "<BRANCH_SAFE>_v6",
   "fetched_at": "<ISO timestamp>",
   "freshness_signals": { ... from $TMP_DIR/freshness-signals.json ... },
   "bundle_sources": {
