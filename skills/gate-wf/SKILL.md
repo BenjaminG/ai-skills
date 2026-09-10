@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--force-fresh] [--ignore-scope-gate] [--resume <r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `8`. Cache entries are keyed on this — bumping invalidates all caches at once. v8: `context-checker` infers a rule's normative force from its phrasing instead of keying off MUST/SHOULD — a repo whose rule files are bare imperatives ("Never call `findById` for a document already available in the request pipeline") had its entire rule set produce nothing, and only 5 of 48 files in the case that motivated this mention `MUST` at all. It runs on `opus` with a ≤25-call budget in `MODE: synthesize` (documented-rule enforcement was the cheapest agent in the pipeline while being the most-reported class of review comment) and stays on sonnet for `MODE: annotate`. Discovery reaches `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `AGENTS.md`, and one level of `@`-imports — a repo whose `AGENTS.md` is a one-line pointer had no root `CLAUDE.md` and so no rules at all. An unscoped rule file (no `paths:`) is now applicable to every diff instead of falling through all three strategies. The `## ADR` bundle section names which changed files each rule `binds:`, and a companion ADR contributes its own condensed body rather than inlining the multi-thousand-word record it points at. Synthesized findings go through the same dedup + adversarial verify as reviewer findings — a cited-rule BLOCKER was the only unrefutable finding in the gate and double-counted any line a reviewer already owned — with `agents/skeptic.md` told that a citation-backed finding is refutable only three ways. The ADR freshness fold hashes file contents instead of `git log`: a git-ignored rules dir (`.claude/rules/local/`) never invalidated the cache. v7: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
+**Skill version**: `9`. Cache entries are keyed on this — bumping invalidates all caches at once. v9: the report is rendered by `scripts/render.py`, not transcribed by the model. Verdict math, ID assignment, the dismissal partition, refute-vote counts and the `--dismiss`/`--undismiss`/`--show-dismissed` flags all moved out of prose-and-`jq` into Python (`scripts/findings.py`, shared with `triage-findings`) — a model retyping 18 findings by hand was cutting identifiers mid-word (`…INITIATED_POundefined`), mangling badges (`[uns` for `[unverified]`) and truncating the closing tips, and no amount of format spec fixes a transcription problem. The report is now two levels: one scannable line per finding in the terminal, full detail in `$STATE_DIR/<branch>.report.md`. The model's only writing job is a 5-line French summary handed in via `--summary-file`, so it lands above the table instead of below it. v8: `context-checker` infers a rule's normative force from its phrasing instead of keying off MUST/SHOULD — a repo whose rule files are bare imperatives ("Never call `findById` for a document already available in the request pipeline") had its entire rule set produce nothing, and only 5 of 48 files in the case that motivated this mention `MUST` at all. It runs on `opus` with a ≤25-call budget in `MODE: synthesize` (documented-rule enforcement was the cheapest agent in the pipeline while being the most-reported class of review comment) and stays on sonnet for `MODE: annotate`. Discovery reaches `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `AGENTS.md`, and one level of `@`-imports — a repo whose `AGENTS.md` is a one-line pointer had no root `CLAUDE.md` and so no rules at all. An unscoped rule file (no `paths:`) is now applicable to every diff instead of falling through all three strategies. The `## ADR` bundle section names which changed files each rule `binds:`, and a companion ADR contributes its own condensed body rather than inlining the multi-thousand-word record it points at. Synthesized findings go through the same dedup + adversarial verify as reviewer findings — a cited-rule BLOCKER was the only unrefutable finding in the gate and double-counted any line a reviewer already owned — with `agents/skeptic.md` told that a citation-backed finding is refutable only three ways. The ADR freshness fold hashes file contents instead of `git log`: a git-ignored rules dir (`.claude/rules/local/`) never invalidated the cache. v7: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
 
 ## Prerequisites
 
@@ -113,7 +113,13 @@ for i in "${!TOKENS[@]}"; do
 done
 ```
 
-If `--dismiss`, `--undismiss`, or `--show-dismissed` is set, **do not run the gate** — after computing identifiers (Step 1b, for `$STATE_DIR` / `$STATE_FILE` / `$DISMISS_FILE`), jump straight to the manual-flag handling in `references/dismissals.md` (Manual flags), then Step 4 render, then exit.
+If `--dismiss`, `--undismiss`, or `--show-dismissed` is set, **do not run the gate**. Resolve `render.py` (Step 4) and hand the flag straight to it — it mutates the registry and re-renders from `$STATE_FILE` in one call — then exit:
+
+```bash
+python3 "$RENDER" dismiss "$DISMISS_IDS"       # or: undismiss "$UNDISMISS_IDS" / show-dismissed
+```
+
+These require a prior run on the branch; the script says so and exits non-zero if `$STATE_FILE` is missing. The re-render carries no `En clair` summary (the finding set barely moved); to refresh it, follow Step 4b–4c.
 
 ### 1b. Compute identifiers
 
@@ -231,7 +237,7 @@ mkdir -p "$STATE_DIR"
 If `FORCE_FRESH=0` and `RESUME_ID=""`:
 
 1. Read `$STATE_FILE`.
-2. If `cache_key == CACHE_KEY` AND `cached_at` is within 7 days, **cache hit**: skip the workflow, but **still run the Step 4 render core** over the cached `findings[] + dismissed[]` — the dismissal registry is independent of `CACHE_KEY`, so a dismissal added since the cached run (e.g. via `--dismiss`, or a newly-resolved thread on a prior full run) must apply. Re-partition, recompute IDs, render, then exit.
+2. If `cache_key == CACHE_KEY` AND `cached_at` is within 7 days, **cache hit**: skip the workflow and skip Step 4a (`ingest`) — go straight to Step 4b (`brief`) and 4c (`show`). Both re-partition against the registry before printing, so a dismissal added since the cached run (via `--dismiss`, or a newly-resolved thread) applies even though `CACHE_KEY` is unchanged. Then exit.
 3. Otherwise: cache miss, proceed.
 
 `CACHE_KEY` includes `WT_HASH`, so any working-tree change invalidates the cache.
@@ -286,6 +292,13 @@ Merge fetched + cached portions into `$TMP_DIR/context-bundle.md` with the secti
 ```bash
 git diff $BASE_SHA...HEAD --name-only > "$TMP_DIR/diff-summary.txt"
 git diff $BASE_SHA...HEAD              > "$TMP_DIR/diff-full.txt"
+
+# Diff stats for the report header (Step 4a). --shortstat over parsing the diff.
+read -r DIFF_FILES DIFF_ADD DIFF_DEL <<<"$(git diff $BASE_SHA...HEAD --shortstat \
+  | awk '{f=0;a=0;d=0; for(i=1;i<NF;i++){ if($(i+1)~/^file/) f=$i;
+      else if($(i+1)~/^insertion/) a=$i; else if($(i+1)~/^deletion/) d=$i }
+      print f+0, a+0, d+0}')"
+DIFF_FILES=${DIFF_FILES:-0}; DIFF_ADD=${DIFF_ADD:-0}; DIFF_DEL=${DIFF_DEL:-0}
 
 # plus-lines: `+` lines per file. Reused for every scoped variant below.
 plus_lines() {  # $1 = diff file → stdout
@@ -441,8 +454,9 @@ tier-scaled verify and `(file,line)` dedup as reviewer findings — so they carr
 the citation-backed tier wins: the primary is promoted and the rule finding merges in as
 `also_flagged_by`.
 
-After the run, capture the `runId` from `/workflows` (task panel). Pass it to Step 5 for
-caching and to the verdict footer.
+After the run, capture the `runId` from `/workflows` (task panel) into `RUN_ID`, and write
+the returned `findings` array verbatim to `$TMP_DIR/findings.json`. Both feed Step 4a.
+`PR_NUMBER` is the PR number resolved in Step 1d, or empty when the branch has no PR.
 
 To re-run after editing an `agents/*.md`, invoke `Workflow({scriptPath: <WF_SCRIPT>,
 resumeFromRunId: <runId>})` (same session) — unchanged agent calls return cached results;
@@ -456,128 +470,95 @@ only the edited agent's calls re-run.
   Step 0 dependencies passed and the plugin is loaded.
 - **`workflow.js` not found**: Step 3b exits — reinstall the plugin.
 
-## Step 4: Compute verdict
+## Step 4: Render the report
 
-### 4a. Banners
+Everything deterministic — the active/dismissed partition, verdict math, ID
+assignment, refute-vote counts, both outputs — is done by `scripts/render.py`.
+Do not compute or transcribe any of it by hand: a model retyping a finding set
+truncates lines mid-word and drops fields, which is exactly the failure this
+step was written to remove.
 
-Emit any non-empty banner verbatim, in this order:
+Resolve the script next to `workflow.js` (same plugin-root → cache → global
+fallback as Step 3b), then:
 
-- `WRONG_BASE_BANNER`
-- `FILE_COUNT_BANNER` (only when `--ignore-scope-gate` bypassed a >200 hard-stop)
-- `SUSPICIOUS_BANNER` (soft-warn or bypassed hard-stop)
-
-If none fired, skip this sub-step.
-
-### 4a-bis. Apply the dismissal registry (partition active vs dismissed)
-
-Before counting, partition the finding set into **active** and **dismissed** using the dismissal registry. This is the shared render core — it runs on every output path (fresh run, cache-hit replay, manual flag). On a fresh run, first **upsert** any context-checker `DISMISSED` annotations into the registry. Full spec — anchor computation, upsert, and `--dismiss/--undismiss/--show-dismissed` handling — in `references/dismissals.md`.
-
-In short: for each finding compute its content-anchor `gatewf_anchor "$rule_id" "$file" "$line"`; if the anchor is in `$DISMISS_FILE` → **dismissed**, else → **active**. Only **active** findings flow into verdict math and the `B/M/N` lists; dismissed ones get `D1, D2, …` and a separate section.
-
-### 4b. Verdict math
-
-Count **active** findings by tier (dismissed findings never count):
-
-| Verdict             | Condition                  |
-| ------------------- | -------------------------- |
-| **PASS**            | 0 BLOCKER, 0 MAJOR, 0 NIT  |
-| **PASS WITH NOTES** | 0 BLOCKER, ≥1 MAJOR or NIT |
-| **FAIL**            | ≥1 BLOCKER                 |
-
-### 4c. Assign stable IDs
-
-Sort findings by tier (BLOCKER → MAJOR → NIT), then by reviewer, then by `(file, line)`. Within each tier walk in order:
-
-- BLOCKERs → `B1, B2, ...`
-- MAJORs → `M1, M2, ...`
-- NITs → `N1, N2, ...`
-
-Persist IDs on each finding so a cache-hit re-render is byte-stable.
-
-### 4d. Render
-
-```
-### Gate-WF Verdict: <PASS | PASS WITH NOTES | FAIL>
-
-Diff: <N> files, +<add>/-<del>
-Run: <runId>
-
-BLOCKER: <N>
-MAJOR:   <N>
-NIT:     <N>
+```bash
+RENDER="$(dirname "$WF_SCRIPT")/render.py"
 ```
 
-For PASS / PASS WITH NOTES:
+### 4a. Ingest the workflow result
 
-```
-→ This PR meets the merge bar. MAJOR and NIT items are informational only.
-```
+Write the workflow's `findings` array to `$TMP_DIR/findings.json` verbatim (no
+edits, no re-ordering), then:
 
-For FAIL:
-
-```
-→ This PR cannot merge until BLOCKER items are resolved.
-```
-
-Then list findings grouped by tier, then by reviewer:
-
-```
-## BLOCKER
-
-### B1 — [security-reviewer] security-sql-injection
-- `src/db/users.ts:42` (diff-line) [refute votes: 0/3]
-  message: User input concatenated into raw SQL query
-  evidence: `db.query("SELECT * FROM users WHERE id = " + req.params.id)`
-  fix: Use parameterized query: `db.query("SELECT * FROM users WHERE id = $1", [req.params.id])`
-
-## MAJOR
-
-### M1 — [solid-reviewer] solid-srp
-- `src/services/booking.ts:120` (diff-line) [refute votes: 0/1] ❔ ambiguous historical context
-  message: BookingService now handles 4 unrelated responsibilities
-  evidence: …
-  fix: Extract pricing logic into PricingCalculator
-  context: Linear NAB-204 mentions "BookingService is the gateway, by design"
+```bash
+python3 "$RENDER" ingest \
+  --findings "$TMP_DIR/findings.json" \
+  --run-id "$RUN_ID" --cache-key "$CACHE_KEY" \
+  --files "$DIFF_FILES" --add "$DIFF_ADD" --del "$DIFF_DEL" \
+  --base-banner "$WRONG_BASE_BANNER" ${PR_NUMBER:+--pr "$PR_NUMBER"}
 ```
 
-Display `[refute votes: K/N]` where N = `verifications.length` and K is the count of skeptics who refuted. Verify is tier-scaled: BLOCKER runs 3 skeptics (`K/3`, survives iff K < 2), MAJOR runs 1 (`K/1`, survives iff K = 0), NIT runs 0 — render `[unverified]` instead of a vote count (NITs never affect the verdict, so they are shown but not adversarially checked). A deduped duplicate (`also_flagged_by` present) appends `(also: <reviewer>)`. A finding carrying `citation` renders it on its own `rule reference:` line — that citation is why the finding has the tier it has.
+`ingest` writes `$STATE_FILE` (Step 5a is done — nothing else writes it),
+upserts any context-checker `DISMISSED` annotation into the registry, partitions
+active vs dismissed against the content anchors, assigns `B1/M1/N1/D1` ids, and
+computes the verdict.
 
-For `context_verdict`:
+`WRONG_BASE_BANNER` is empty on a standard base, and the renderer prints nothing
+when it is empty. `FILE_COUNT_BANNER` and `SUSPICIOUS_BANNER` (Step 2c), when
+non-empty, are printed by you verbatim **before** the render output.
 
-- `OK` → no badge
-- `UNCERTAIN` → `❔ ambiguous historical context` + cite `context_citation`
-- `CONFLICT` → `⚠️ conflicts with past decision` + cite `context_citation`
+### 4b. Write the summary
 
-For synthesized `claude-md-violation` / `adr-violation`, render the citation as the `rule reference:` line.
-
-After the active findings, render the `Dismissed` section (omit if there are no dismissed findings). Full format in `references/dismissals.md`:
-
-```
-## Dismissed (suppressed — not counted toward the verdict)
-
-### D1 — [security-reviewer] security-sql-injection
-- `src/db/users.ts:42` · resolved · PR thread by @author
-  was: User input concatenated into raw SQL query
-  citation: "id is validated upstream — see middleware/auth.ts:30"
+```bash
+python3 "$RENDER" brief
 ```
 
-Render `· resolved` for `confidence: resolved`/`manual`, and `· rebutted (thread still open)` for `rebutted`.
+This prints one compact line per finding — id, tier, rule, location, message,
+without `evidence`/`suggested_fix`/`citation`. Read it, then write a summary to
+`$TMP_DIR/summary.md`:
 
-After the last finding (active or dismissed), append:
+- **In French**, at most 5 lines, no heading (the renderer adds `En clair`).
+- Three things in order: what blocks, what deserves a real look, what is cleanup.
+- Name findings by id (`B1`, `M1 et M2`, `les 9 NIT`).
+- Say what a finding *means*, not what tier it has — the table already shows the tier.
+- Where two findings contradict each other, or a finding is a code/spec
+  disagreement only the author can settle, say so.
+
+Example, for the run rendered in the sample above:
 
 ```
-Tip: reference findings by ID to target follow-up fixes — e.g. "fix B1, M1 and N1".
-Tip: edit any agents/*.md, then re-run with --resume <runId> to skip unchanged agent calls.
-Tip: reviewing someone else's PR? Invoke the `pr-comment` skill to post these findings as a review (drafted via humanizer).
-Tip: a dismissed finding reappears automatically if its code is edited (the dismissal is keyed on the code, not the line).
-Tip: --dismiss <ids> to suppress a false-positive; --undismiss <Dn> to bring one back; --show-dismissed to list them.
+B1 — trois `?? 0` interdits par packages/wome-api/CLAUDE.md:38 ; un document sans total devient un total de 0 €. À corriger.
+M1 et M2 sont les deux vrais bugs. M2 est peut-être la spec qui a bougé — à toi de dire lequel est faux.
+Les 9 NIT sont du ménage : /triage-findings nits.
 ```
+
+### 4c. Print it
+
+```bash
+python3 "$RENDER" show --summary-file "$TMP_DIR/summary.md"
+```
+
+Emit the script's stdout as-is. Do not re-format it, do not re-list findings
+under it, do not append a prose recap — the summary you just wrote is the recap,
+and it is already at the top.
+
+The report has two levels by design. The terminal gets the verdict, the summary,
+the tier counts and **one line per finding** (`id`, tier, `basename:line`,
+`rule_id`, message clipped with an explicit `…`, plus `!` for a context conflict
+and `?` for an unverified finding). Full detail — evidence, fix, citation,
+refute votes, full paths, the dismissed section — goes to
+`$STATE_DIR/${BRANCH_SAFE}.report.md`, whose path is the last line before the
+tips. On a PASS with no findings the whole report is three lines.
 
 ## Step 5: Persist state
 
 ### 5a. Findings cache
 
-Write `$STATE_FILE`:
+Already written — `render.py ingest` (Step 4a) owns `$STATE_FILE`, and every
+`show`/`dismiss`/`undismiss` rewrites it after re-partitioning. Nothing to do
+here.
+
+Its shape, for readers (`triage-findings` and `pr-comment` consume it):
 
 ```json
 {
@@ -585,6 +566,9 @@ Write `$STATE_FILE`:
   "cached_at": "<ISO timestamp>",
   "verdict": "PASS | PASS WITH NOTES | FAIL",
   "run_id": "<wf_...>",
+  "pr": "<number or empty>",
+  "diff": { "files": 12, "add": 998, "del": 3 },
+  "base_banner": "<banner or empty>",
   "findings": [ { "id": "B1", ... }, ... ],
   "dismissed": [ { "id": "D1", "anchor": "<sha>", "source": "pr-thread|manual", "confidence": "resolved|rebutted|manual", "citation": "...", ... full finding payload ... }, ... ]
 }
@@ -631,7 +615,8 @@ for f in "$STATE_DIR"/*.dismissed.json; do
   [ -e "$f" ] || continue
   b=$(basename "$f" .dismissed.json)
   [ -f "$STATE_DIR/$b.json" ] && continue
-  git show-ref --verify --quiet "refs/heads/$(echo "$b" | tr '_' '/')" || rm -f "$f"
+  git show-ref --verify --quiet "refs/heads/$(echo "$b" | tr '_' '/')" \
+    || rm -f "$f" "$STATE_DIR/$b.report.md"
 done
 ```
 
@@ -648,7 +633,8 @@ done
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate.
 - **Tier semantics**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
 - **Dismissals**: false-positives are suppressed via a per-branch registry kept _outside_ `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
-- **No auto-fix in v1**: v1 is read-only review. `--fix` mode is reserved for v2.
+- **No auto-fix**: this skill is read-only review. Acting on findings is `triage-findings`, which reads the same `$STATE_FILE` through `scripts/findings.py`.
+- **Rendering is code, not prose**: `scripts/render.py` owns the verdict, the ids, the partition and both outputs. Never recompute or re-list any of it by hand. `scripts/test_render.py` is its self-check (`python3 scripts/test_render.py`); the anchor test pins byte-compatibility with the bash implementation it replaced, so existing dismissal registries keep matching.
 - **Coexists** with the legacy `gate` skill during migration.
 
 ## References
@@ -656,3 +642,5 @@ done
 - `references/context-sources.md` — CLAUDE.md (F2) + ADR (F3) discovery and enforcement
 - `references/scope-gate.md` — file-count + suspicious-files classifier (Step 2c)
 - `references/dismissals.md` — dismissal registry: content-anchor identity, PR-thread + manual populators, render core, `--dismiss`/`--undismiss`/`--show-dismissed`
+- `scripts/render.py` — report renderer + registry CLI (`ingest`, `brief`, `show`, `dismiss`, `undismiss`, `show-dismissed`)
+- `scripts/findings.py` — state access, content anchors, partition, verdict, ids, selectors (shared with `triage-findings`)
