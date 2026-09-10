@@ -62,4 +62,18 @@ Done when every key term of §5 has been searched by at least one agent.
 
 ## 7. Synthesize and plan
 
-Merge both syntheses into one picture. If the issue is clear and actionable, switch to plan mode with the code changes, tests and docs to touch. Otherwise, name the precise areas to dig next round.
+Merge both syntheses into one picture, then report it in two blocks — plain
+language first, technical detail second. Answer in the user's language.
+
+**What is happening** — apply the `explain-plainly` skill to your own conclusion:
+open with the purpose and the user-visible symptom in two sentences with zero
+jargon, add one worked example with real numbers (invent plausible ones and say
+so if the real ones aren't at hand), then a one-row-per-term table mapping every
+identifier, field name and domain word to everyday words. No term you use below
+is left undefined, and old-vs-new fields are flagged as such.
+
+**Technical detail** — root cause with `file:line`, the evidence behind it, and
+the files, tests and docs to touch.
+
+If the issue is clear and actionable, switch to plan mode with those code
+changes. Otherwise, name the precise areas to dig next round.
