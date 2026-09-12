@@ -6,10 +6,12 @@ follows from that.
 
 ## The eleven rules
 
-1. **Open with the question.** Not with context, not with what you noticed, not with what the diff
-   does. The author is looking at the diff; they know what it does. First four words carry the ask.
-2. **One or two sentences, under about 35 words.** A person typing into a 300px box writes short.
-   Length is the most reliable tell there is.
+1. **Open with the question, and let it stand alone.** Not with context, not with what you noticed,
+   not with what the diff does. The author is looking at the diff; they know what it does. First four
+   words carry the ask, and the first sentence ends at the question mark — evidence, if any, waits for
+   the second sentence.
+2. **One or two sentences, under about 35 words — thirteen is the real median.** A person typing into
+   a 300px box writes short. Length is the most reliable tell there is.
 3. **Name the thing by path.** `utils/money.ts:12` or `formatCurrency` makes a question answerable
    in one sentence. "There may be an existing utility" makes it unanswerable, and reads as a guess —
    because it is one.
@@ -70,6 +72,15 @@ follows from that.
   the repository pattern, as demonstrated in several existing files.`
 - ✓ `The other services go through `UserRepository` for this — `orders.ts:40`, `quotes.ts:31`. Any
   reason to hit Prisma directly here?`
+
+**Chained evidence** — the failure mode this file exists to stop. Same content, same facts; the ✗
+front-loads three clauses of proof and lands the question last, and nobody can act on it.
+
+- ✗ `markEmitted disparaît sur toutes les payouts CARD ici, avant le gate du flag, alors que
+  eligible-actions le propose encore et que le write path l'accepte toujours. est-ce qu'on considère
+  que c'est un choix produit acté, ou quelque chose que le serveur devrait arrêter de donner ?`
+- ✓ `c'est voulu de retirer `markEmitted` sur les payouts CARD ? `eligible-actions` le propose
+  encore.`
 
 **`nit`** — kept, and marked as cheap.
 

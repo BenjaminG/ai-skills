@@ -58,12 +58,14 @@ Then, for the files the diff touches:
 
 Each pass produces candidates. A candidate carries a `kind`, a `file:line` on the diff, the question in one clause, and its **evidence** — and a candidate with no evidence is not a candidate.
 
-| Pass | Asks | Evidence it must carry |
-|---|---|---|
-| `intent` | what is this for? why is it needed? | the thing that is missing: the diff shows *what*, and neither the diff nor the PR body nor the linked ticket shows *why* |
-| `exists` | why not reuse what we have? | `path:symbol` of the existing thing, read in §2, doing the same job |
-| `simpler` | why not the shorter shape? | the replacement named in one clause — the shape, not "consider simplifying" |
-| `scope` | is this in this PR? | the stated goal from §1, and the lines that fall outside it |
+**Evidence is what admits a candidate, not what the comment says.** It is held here, in your notes, so that §4 can cut on it; §5 spends at most one clause of it, usually just a cited path or symbol. A candidate whose evidence cannot survive that compression is a defect report wearing a question mark — §6's other door.
+
+| Pass | Asks | Evidence that admits it (held, not written out) | What survives into the comment |
+|---|---|---|---|
+| `intent` | what is this for? why is it needed? | the thing that is missing: the diff shows *what*, and neither the diff nor the PR body nor the linked ticket shows *why* | nothing — the question stands alone |
+| `exists` | why not reuse what we have? | `path:symbol` of the existing thing, read in §2, doing the same job | the `path:symbol`, cited |
+| `simpler` | why not the shorter shape? | the replacement named in one clause — the shape, not "consider simplifying" | the shape, named |
+| `scope` | is this in this PR? | the stated goal from §1, and the lines that fall outside it | the stated goal, in a half-sentence |
 
 A fifth kind is allowed where §2 found it: `convention` — this repo does this differently, with **two or more** existing call sites as evidence. One counter-example is not a convention.
 
@@ -97,11 +99,19 @@ Read `references/voice.md` before writing the first comment — it holds the rul
 
 Pick the language first: `--lang` if given, else the language of this PR's existing human `threads`, else the majority language of `language_sample`, else the PR body's. Never the language of this conversation — the comment is read by the author and their team, not by the user.
 
-Then draft each surviving candidate as **one or two sentences**, and route every one through the `humanizer` skill. That dependency is mandatory, not optional: humanizer strips the tells (the rule of three, the signposting, "Consider…", the hedged parallelism) and applies the user's `STYLE.md`.
+Then draft each surviving candidate into this shape, which is the one thing in this skill that does not bend:
+
+- **First sentence: the ask, alone.** The question and nothing else — no premise before it, no clause chained on with "alors que" / "whereas" / "donc" / "so". It ends at the question mark.
+- **Second sentence: optional, one clause at most**, and it is the §3 evidence compressed to the path or symbol that makes the question answerable — `convertBookingPrice` in `convert-booking-price.ts`, `orders.ts:40`. Never two clauses, never a re-derivation of what the diff does.
+- **Under 35 words all in**, and aim at half that: the human comments this is drafted against run about thirteen.
+
+A draft whose first sentence carries a premise before the question is not a comment yet — move the premise into sentence two, or drop it. A question that needs two chained premises to be understood is a defect report, not a question; it leaves through §6's other door.
+
+Route every comment through the `humanizer` skill. That dependency is mandatory, not optional: humanizer strips the tells (the rule of three, the signposting, "Consider…", the hedged parallelism) and applies the user's `STYLE.md`. Re-check the shape after humanizer runs — it rewrites sentences, and a rewrite that buries the question fails this step.
 
 With `--label`, prefix the humanized body: `question: ` for `intent`, `suggestion: ` for `exists` / `simpler` / `convention`, `nit: ` for a kept nit, and `scope` takes `question: `. Without it, post bare — except a nit, which keeps `nit: ` always, because that prefix is how a person says "do not block on this".
 
-**Done when**: every comment is one or two sentences, in the PR's language, through humanizer, and carries no tier marker. A `**blocker:**` or `**major:**` in this set is a bug — those belong to `pr-comment`'s findings mode, and their presence here means a defect leaked in from §2.
+**Done when**: every comment opens on its question, keeps at most one clause of evidence behind it, sits under 35 words, is in the PR's language, has been through humanizer, and carries no tier marker. A `**blocker:**` or `**major:**` in this set is a bug — those belong to `pr-comment`'s findings mode, and their presence here means a defect leaked in from §2.
 
 ## 6. Hand off to pr-comment
 
