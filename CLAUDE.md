@@ -56,7 +56,7 @@ claude --plugin-dir .
 
 - **Daily workflow** (`daily-update`): Standup compilation from Linear/Slack.
 - **Code quality** (`gate`, `gate-wf`, `quality-gate`, `triage-findings`, `code-slop`, `applying-solid-principles`, `second-pass`): Review and auto-fix workflows using agent teams. `gate-wf` reviews and renders a verdict; `triage-findings` acts on what it found (both share `skills/gate-wf/scripts/findings.py`).
-- **Review & PR** (`pr-create`, `pr-feedback`, `pr-respond`, `pr-comment`, `fixup`, `ci-watch`, `babysit-prs`, `review-mining`, `qa-plan`, `qa-run`, `consensus`): Git/GitHub and review automation.
+- **Review & PR** (`pr-create`, `pr-challenge`, `pr-feedback`, `pr-respond`, `pr-comment`, `fixup`, `ci-watch`, `babysit-prs`, `review-mining`, `qa-plan`, `qa-run`, `consensus`): Git/GitHub and review automation. `pr-challenge` reviews someone else's PR as a colleague would (questions, not findings) and hands its drafts to `pr-comment`, which also posts `gate-wf` findings.
 - **CLI integrations** (`acli`, `confluence-cli`, `codex-cli`, `chrome-cdp`): Wrappers for external CLI tools.
 - **Investigation & planning** (`interview`, `investigate`, `elevate`, `innovate`, `retrospective`, `ralph-loop`, `skill-creator`): Structured thinking workflows.
 - **Specialist agents** (`backend-developer`, `frontend-developer`, `swiftui-performance`): Domain-specific subagent definitions.
