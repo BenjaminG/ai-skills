@@ -14,6 +14,7 @@ of threads, the previous state on disk, the diff, and the emit filter. Owns no j
 never decides whether a thread deserves an action.
 """
 import argparse
+import fcntl
 import json
 import os
 import subprocess
@@ -21,6 +22,7 @@ import time
 
 POLL_DEFAULT = 60
 MUTE_TTL = 3600
+STATE_SCHEMA_VERSION = 2
 # Same list as pr-feedback/scripts/fetch-pr.py — a machine account posting with a PAT
 # reads as `User`, so __typename alone is not enough.
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
@@ -267,8 +269,8 @@ def needs_agent(r):
 
 
 def merge_ready(r):
-    return (r["merge_state"] == "CLEAN" and r["ci"] == "SUCCESS"
-            and not r["unresolved_bot"] and not r["unresolved_human"] and not r["held"])
+    return (r.get("merge_state") == "CLEAN" and r.get("ci") == "SUCCESS"
+            and not r.get("unresolved_bot") and not r.get("unresolved_human") and not r.get("held"))
 
 
 def status(r, prs, order, running):
@@ -290,16 +292,19 @@ def status(r, prs, order, running):
 
 
 def diff(old, new):
-    """One line per PR whose watched fields moved. Pure — the self-check drives it."""
+    """One line per PR whose watched fields moved, plus MERGE-READY once, on the transition
+    into it — not every poll. Pure — the self-check drives it."""
     lines = []
     for n, r in sorted(new.items()):
         prev = old.get(str(n)) or old.get(n)
         if not prev:
             lines.append(f"#{n} new: ci {r['ci']}, {r['merge_state']}, bot {r['unresolved_bot']}, human {r['unresolved_human']}")
-            continue
-        moved = [f"{f} {prev[f]}→{r[f]}" for f in WATCHED if prev.get(f) != r[f]]
-        if moved:
-            lines.append(f"#{n} " + ", ".join(moved))
+        else:
+            moved = [f"{f} {prev[f]}→{r[f]}" for f in WATCHED if prev.get(f) != r[f]]
+            if moved:
+                lines.append(f"#{n} " + ", ".join(moved))
+        if merge_ready(r) and not (prev and merge_ready(prev)):
+            lines.append(f"#{n} MERGE-READY — {r['url']}")
     for n in sorted(set(int(k) for k in old) - set(new)):
         lines.append(f"#{n} gone (merged or closed)")
     return lines
@@ -314,7 +319,8 @@ def load_state(d):
 
 
 def save_state(d, prs, reports, seen):
-    blob = {str(n): dict(r, report=reports.get(str(n)), seen=seen.get(n, {}))
+    blob = {str(n): dict(r, schema_version=STATE_SCHEMA_VERSION,
+                        report=reports.get(str(n)), seen=seen.get(n, {}))
             for n, r in prs.items()}
     tmp = os.path.join(d, "state.json.tmp")
     with open(tmp, "w") as f:
@@ -429,38 +435,64 @@ def once(d, only=None, include_drafts=False):
     }, indent=2))
 
 
+def acquire_watch_lock(d):
+    lock = open(os.path.join(d, "watch.lock"), "a+")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.seek(0)
+        owner = lock.read().strip() or "unknown"
+        lock.close()
+        raise RuntimeError(f"watcher already active (pid {owner})")
+    lock.seek(0)
+    lock.truncate()
+    lock.write(str(os.getpid()))
+    lock.flush()
+    return lock
+
+
 def watch(d, secs, only=None, include_drafts=False):
-    while True:
-        try:
-            prs, reports, lines, seen, prev = scan(d, only, include_drafts)
-            visible = {n: r for n, r in prs.items() if not muted(d, n)}
-            lines += diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
-            for n, r in sorted(prs.items()):
-                if merge_ready(r):
-                    lines.append(f"#{n} MERGE-READY — {r['url']}")
-            save_state(d, prs, carry(prev, reports, prs), seen)
-            for line in lines:
-                print(line, flush=True)
-        except Exception as e:  # a transient gh failure must not kill the watch
-            print(f"scan error: {e}", flush=True)
-        time.sleep(secs)
+    try:
+        lock = acquire_watch_lock(d)
+    except RuntimeError as e:
+        print(f"scan error: {e}", flush=True)
+        return
+    try:
+        while True:
+            try:
+                prs, reports, lines, seen, prev = scan(d, only, include_drafts)
+                visible = {n: r for n, r in prs.items() if not muted(d, n)}
+                lines += diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
+                save_state(d, prs, carry(prev, reports, prs), seen)
+                for line in lines:
+                    print(line, flush=True)
+            except Exception as e:  # a transient gh failure must not kill the watch
+                print(f"scan error: {e}", flush=True)
+            time.sleep(secs)
+    finally:
+        lock.close()
 
 
 def self_check():
     global gh
 
     a = {"number": 1, "ci": "SUCCESS", "unresolved_bot": 0, "unresolved_human": 0,
-         "held": 0, "merge_state": "CLEAN", "head": "aaaaaaa", "mergeable": "MERGEABLE"}
+         "held": 0, "merge_state": "CLEAN", "head": "aaaaaaa", "mergeable": "MERGEABLE",
+         "url": "u"}
     assert diff({"1": a}, {1: a}) == [], "no move, no event"
     assert diff({"1": a}, {1: dict(a, ci="FAILURE")}) == ["#1 ci SUCCESS→FAILURE"]
     two = diff({"1": a}, {1: dict(a, ci="PENDING", head="bbbbbbb")})
     assert two == ["#1 ci SUCCESS→PENDING, head aaaaaaa→bbbbbbb"], two
     # A push flips head + ci only: 2 fields, one line — not one line per check.
     assert len(two) == 1
-    assert diff({}, {1: a})[0].startswith("#1 new:")
+    assert diff({}, {1: dict(a, ci="PENDING")})[0].startswith("#1 new:")
     assert diff({"1": a}, {}) == ["#1 gone (merged or closed)"]
     # Churn that must stay silent: a thread gets resolved, counts unchanged.
     assert diff({"1": a}, {1: dict(a, mergeable="UNKNOWN")}) == [], "mergeable is not watched"
+    ready = a
+    assert diff({"1": dict(ready, ci="PENDING")}, {1: ready})[-1] == "#1 MERGE-READY — u"
+    assert diff({"1": ready}, {1: ready}) == [], "MERGE-READY fires on the transition, not every poll"
+    assert diff({}, {1: ready})[-1] == "#1 MERGE-READY — u", "a PR born ready still announces once"
     assert needs_agent(dict(a, unresolved_bot=1)) and needs_agent(dict(a, ci="FAILURE"))
     assert not needs_agent(a), "green PR with no bot thread needs no agent"
     assert needs_agent(dict(a, mergeable="CONFLICTING", merge_state="DRAFT")), \
@@ -578,6 +610,16 @@ def self_check():
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.
     import tempfile
     with tempfile.TemporaryDirectory() as d:
+        lock = acquire_watch_lock(d)
+        try:
+            try:
+                acquire_watch_lock(d)
+                assert False, "a second watcher acquired the same state"
+            except RuntimeError as e:
+                assert "watcher already active" in str(e)
+        finally:
+            lock.close()
+        acquire_watch_lock(d).close()
         open(os.path.join(d, "42.muted"), "w").close()
         with open(os.path.join(d, "42.report.json"), "w") as f:
             json.dump({"pushed": 2, "inflight": 0, "held": 3, "blocked": None}, f)

@@ -196,7 +196,17 @@ def note(row):
     return " · ".join(parts) or "—"
 
 
-def thread_summary(row):
+def thread_summary(row, expected_schema):
+    fields = (
+        "threads_bot_open",
+        "threads_bot_closed",
+        "threads_human_open",
+        "threads_human_closed",
+    )
+    if row.get("schema_version") != expected_schema or not all(
+        key in row for key in fields
+    ):
+        return "⚠ scanner outdated"
     bot_open = row.get(
         "threads_bot_open", row.get("unresolved_bot", 0) + row.get("held", 0)
     )
@@ -278,7 +288,7 @@ def rows(state, directory, scanner):
                 "🤖 ACTIVE" if number in running else "·",
                 ci_status(row),
                 merge_status(row),
-                thread_summary(row),
+                thread_summary(row, scanner.STATE_SCHEMA_VERSION),
                 note(row),
             ]
         )
@@ -494,6 +504,7 @@ def self_check(scanner):
         "held": 0,
         "humans": [],
         "report": None,
+        "schema_version": scanner.STATE_SCHEMA_VERSION,
     }
     sample = {
         "42": dict(
@@ -563,6 +574,10 @@ def self_check(scanner):
         "⛔ BLOCKED",
     ]
     assert rendered[1][7] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
+    assert (
+        thread_summary({"unresolved_bot": 3}, scanner.STATE_SCHEMA_VERSION)
+        == "⚠ scanner outdated"
+    )
     assert rendered[2][3] == "✅ READY"
     assert rendered[3][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
     colored = table(rendered, color=True)

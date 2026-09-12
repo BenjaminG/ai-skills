@@ -29,7 +29,7 @@ done
 python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbatim
 ```
 
-One pass, one JSON blob: every open PR of the author with `merge_state`, `ci` rollup,
+One pass, one JSON blob: every open PR of the author with `schema_version`, `merge_state`, `ci` rollup,
 open/closed bot/human thread counts, `unresolved_bot`, `unresolved_human`, `held` (open bot threads that have not moved since an agent
 last looked — our reply sits last, or the bot's does and an agent already read it; either way they
 wait on the author, not on an agent), `humans`, `head`, `base`, `parent` (the open PR this one is
@@ -221,6 +221,9 @@ The script emits one line per PR whose CI rollup, unresolved-thread counts, `mer
 head sha actually moved — not one line per check, which would be dozens per push and would get the
 monitor shut down as a firehose. Muted PRs emit nothing. A dropped report is folded in and lifts
 its own mute — `TaskStop` its agent then, in the same pass, before spawning anything.
+
+The watch holds `<state_dir>/watch.lock` for its lifetime. If startup reports an active watcher,
+keep that watcher and stop; retrying would create competing writers for the same state.
 
 Then end the turn. Do not arm a `ScheduleWakeup`, do not poll, do not ask an agent whether it is
 done: an agent going idle is not a signal, and its report file is. Today's silence is the design
