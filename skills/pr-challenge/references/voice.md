@@ -47,6 +47,19 @@ follows from that.
 - ✓ `Why not `formatCurrency` from `utils/money.ts`? Looks like the same job unless the rounding
   needs to differ here.`
 
+**`approach`** — the alternative the PR could have taken. Carries the most context behind it, so
+it is the kind that comes out as an essay. Both ✗ fail for opposite reasons.
+
+- ✗ `Le drawer fingerprinte `cardState` et `limit` et borne l'attente à quatre refreshes, parce que
+  les mutations renvoient un `Boolean` nu et ne bumpent jamais `revision`, donc un refetch peut
+  rendre l'ancien état. Est-ce que c'est la bonne couche pour gérer ça ?` — three chained clauses of
+  proof, question last.
+- ✗ `pourquoi avoir choisi cette approche ? il y avait peut-être plus simple` — short, question
+  first, and worth nothing: the author can only answer "because". An `approach` with no named
+  alternative is a ✗, not a short comment.
+- ✓ `pourquoi pas remonter `cardState` dans la mutation plutôt que le deviner côté client ? ça
+  retire tout `payout-card-settlement.ts``
+
 **`intent`** — what is this for.
 
 - ✗ `Could you clarify the purpose of this method? It appears to iterate over the results and apply
