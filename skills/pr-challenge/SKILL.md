@@ -1,6 +1,6 @@
 ---
 name: pr-challenge
-description: This skill should be used when reviewing someone else's pull request and the goal is the review a colleague would leave — questions that challenge the code, asking why something was written instead of reusing what the repo has, naming a simpler shape, asking what a piece is for. Produces a handful of drafted comments, not a findings table, and hands them to pr-comment to post. Triggers on "review this PR", "challenge this PR", "leave a human review", "review @someone's PR", "what would I ask on this PR".
+description: This skill should be used when reviewing someone else's pull request and the goal is the review a colleague would leave — questions that challenge the code, asking why something was written instead of reusing what the repo has, naming a simpler shape, asking what a piece is for. Produces a few drafted comments — or an LGTM when the PR reads clean — never a findings table, and hands what it has to pr-comment to post. Triggers on "review this PR", "challenge this PR", "leave a human review", "review @someone's PR", "what would I ask on this PR".
 argument-hint: "[pr-number-or-url] [--max N] [--label] [--lang fr|en]"
 ---
 
@@ -13,7 +13,7 @@ Review someone else's PR the way a colleague who works in this repo reviews it: 
 ## Arguments
 
 - `$0` (optional): PR number or URL. Omitted → detect from the current branch.
-- `--max N` (default `6`): hard cap on posted comments. See §4 — the cap is the feature.
+- `--max N` (default `6`): hard cap on posted comments. See §4 — a ceiling, never a target.
 - `--label`: prefix each comment with its conventional-comment label (`question:`, `suggestion:`, `nit:`). Off by default; a bare question reads more like a person.
 - `--lang fr|en`: force the drafting language instead of inferring it (§5).
 
@@ -56,7 +56,7 @@ Then, for the files the diff touches:
 
 ## 3. The four passes
 
-Each pass produces candidates. A candidate carries a `kind`, a `file:line` on the diff, the question in one clause, and its **evidence** — and a candidate with no evidence is not a candidate.
+Each pass looks for candidates, and on most PRs most passes come back empty. A candidate carries a `kind`, a `file:line` on the diff, the question in one clause, and its **evidence** — and a candidate with no evidence is not a candidate.
 
 **Evidence is what admits a candidate, not what the comment says.** It is held here, in your notes, so that §4 can cut on it; §5 spends at most one clause of it, usually just a cited path or symbol. A candidate whose evidence cannot survive that compression is a defect report wearing a question mark — §6's other door.
 
@@ -75,13 +75,15 @@ Two disciplines hold across all four:
 
 **`exists` and `simpler` ask, they do not instruct.** The author may have a reason the grep cannot see — a deliberate fork, a deprecation in flight, a perf constraint. Draft the question so a "no, because…" is a complete answer, and so that answer costs the author one sentence.
 
-**Done when**: every candidate carries a kind, a `file:line` present in the diff, and evidence of its own family. Count the candidates before §4 — the cut needs something to cut.
+**Done when**: every candidate that exists carries a kind, a `file:line` present in the diff, and evidence of its own family. Four passes run and nothing admitted is a finished §3 and an **LGTM** — skip §4 and §5 and go straight to §6.
 
 ## 4. Cut to the review a person would leave
 
-An eighteen-comment review is how anyone can tell a machine wrote it. A colleague leaves three to six comments and spends them on what they actually want to know. `--max` is the ceiling, not the target; under it is normal, and **zero is a valid review** — say the PR is clean and stop.
+**LGTM is a complete review.** Twenty human comments across forty-five days of this team's PRs — most PRs got none, and the ones that got any got one or two. A colleague spends a comment on what they actually want to know and says nothing on the rest.
 
-Drop, in this order:
+An eighteen-comment review is how anyone can tell a machine wrote it, and so is a review that found something to say on every PR it touched. `--max` is a ceiling, never a target.
+
+Nothing survived §3 → the review is an LGTM; go to §6 and report what you read. Otherwise drop, in this order:
 
 1. **Answered.** The diff answers it, the PR body answers it, a linked ticket answers it, or a `threads` entry already made the point — settled threads included. Re-raising a resolved thread is the loudest automated tell there is.
 2. **No evidence.** §3's bar, applied without mercy. A reuse question with no path, a simpler question with no named shape, a convention question with one example: gone.
@@ -91,7 +93,7 @@ Drop, in this order:
 
 Then rank what survives by what you most want answered, and take the top `--max`. Order matters: the first comment sets how the review reads.
 
-**Done when**: the surviving set is at or under `--max`, each survivor has a reason it survived, and the drops are counted by cause (one line, for §6's summary). A review that cut nothing did not run this step.
+**Done when**: every candidate has been held against the five drops, the survivors are at or under `--max`, each survivor has a reason it survived, and the drops are counted by cause (one line, for §6's summary). An empty survivor set passes this step like any other — it is an LGTM.
 
 ## 5. Draft in a reviewer's voice
 
@@ -117,6 +119,8 @@ With `--label`, prefix the humanized body: `question: ` for `intent`, `suggestio
 
 Invoke `pr-comment` in **challenge mode**, carrying for each comment: `kind`, `file`, `line`, `location` (`diff-line` when the line is on the diff, `adjacent` otherwise), the drafted body, and the PR's `owner` / `repo` / number / `head_sha`. `pr-comment` owns the batch preview, the single confirmation, the `gh api` posting and the stale-line skip — do not reimplement any of it here, and never run `gh api …/comments`, `gh pr review` or `gh pr comment` from this skill.
 
-Before the handoff, report in three or four lines: the stated goal you reviewed against, the surviving comments as one line each (`kind · file:line · the question`), the drop counts by cause, and — if §2 turned up an actual **defect** — one sentence naming it and pointing at the other door: `gate-wf` on the branch, then `pr-comment` for the findings. Never smuggle a defect into this batch as a question; a null deref phrased as "is this always defined?" is a bug report the author can close by saying "yes".
+**On an LGTM, there is no handoff.** Do not invoke `pr-comment` at all. Report instead: the stated goal, what §2 actually read — the symbols searched for, the sibling files opened, the call sites checked — and one line saying nothing here needs asking. An LGTM backed by a reading you can cite is a review; one that names nothing is a shrug.
 
-**Done when**: `pr-comment` is invoked with the comment set, or there was nothing to say and the review is the report. Nothing was posted from inside this skill.
+Otherwise, before the handoff, report in three or four lines: the stated goal you reviewed against, the surviving comments as one line each (`kind · file:line · the question`), the drop counts by cause, and — if §2 turned up an actual **defect** — one sentence naming it and pointing at the other door: `gate-wf` on the branch, then `pr-comment` for the findings. Never smuggle a defect into this batch as a question; a null deref phrased as "is this always defined?" is a bug report the author can close by saying "yes".
+
+**Done when**: `pr-comment` is invoked with the comment set, or the review was an LGTM and the report is the whole of it. Nothing was posted from inside this skill.
