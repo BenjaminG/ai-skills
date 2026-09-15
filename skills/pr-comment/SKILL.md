@@ -30,7 +30,7 @@ Both produce the same shape: `id` (B1/M1/N1), `tier` (BLOCKER/MAJOR/NIT), `file`
 
 ## Prerequisites — challenge mode
 
-Comments come from `pr-challenge` in this conversation, already cut to size, already through `humanizer`, and already in the PR's language. Each carries `kind` (`intent` / `exists` / `simpler` / `scope` / `convention` / `nit`), `file`, `line`, `location`, the drafted `body`, and the PR's `owner` / `repo` / number / `head_sha`.
+Comments come from `pr-challenge` in this conversation, already cut to size, already through `humanizer`, and already in the PR's language. Each carries `kind` (`approach` / `intent` / `exists` / `simpler` / `naming` / `scope` / `convention` / `nit`), `file`, `line`, `location`, the drafted `body`, and the PR's `owner` / `repo` / number / `head_sha`.
 
 Those bodies are **finished**. Do not re-draft them, do not expand them, and above all do not add a tier: `pr-challenge` spent a whole step cutting and phrasing them, and a second pass over a one-sentence question only puts the AI tells back. Route a body through `humanizer` here only if it arrived unhumanized (the caller says so, or it reads like a finding).
 

@@ -1,6 +1,6 @@
 ---
 name: pr-challenge
-description: This skill should be used when reviewing someone else's pull request and the goal is the review a colleague would leave — questions that challenge the code, naming the alternative the PR could have taken instead, asking why something was written instead of reusing what the repo has, naming a simpler shape, asking what a piece is for. Produces a few drafted comments — or an LGTM when the PR reads clean — never a findings table, and hands what it has to pr-comment to post. Triggers on "review this PR", "challenge this PR", "leave a human review", "review @someone's PR", "what would I ask on this PR".
+description: This skill should be used when reviewing someone else's pull request and the goal is the review a colleague would leave — questions that challenge the code, naming the alternative the PR could have taken instead, asking why something was written instead of reusing what the repo has, naming a simpler shape, asking what a piece is for, asking what a name promises against what it does. Produces a few drafted comments — or an LGTM when the PR reads clean — never a findings table, and hands what it has to pr-comment to post. Triggers on "review this PR", "challenge this PR", "leave a human review", "review @someone's PR", "what would I ask on this PR".
 argument-hint: "[pr-number-or-url] [--max N] [--label] [--lang fr|en]"
 ---
 
@@ -72,9 +72,9 @@ And it removes, it does not add: **the alternative must take away machinery that
 
 **Done when**: the behaviour is written in two sentences; the mechanism is named or explicitly "none"; and where there is one, the constraint is named and there is **either an alternative that removes machinery from this diff, or nothing**. No mechanism, a constraint that cannot move, or no alternative you can name: §3 is finished and there is no candidate. That is the common case, not a failure.
 
-## 4. The five passes
+## 4. The passes
 
-§3 has already run the first pass. Each of the four below looks for candidates too, and on most PRs most passes come back empty. A candidate carries a `kind`, a `file:line` on the diff, the question in one clause, and its **evidence** — and a candidate with no evidence is not a candidate.
+§3 has already run the first pass. Each of the five below looks for candidates too, and on most PRs most passes come back empty. A candidate carries a `kind`, a `file:line` on the diff, the question in one clause, and its **evidence** — and a candidate with no evidence is not a candidate.
 
 **Evidence is what admits a candidate, not what the comment says.** It is held here, in your notes, so that §5 can cut on it; §6 spends at most one clause of it, usually just a cited path or symbol. A candidate whose evidence cannot survive that compression is a defect report wearing a question mark — §7's other door.
 
@@ -84,17 +84,22 @@ And it removes, it does not add: **the alternative must take away machinery that
 | `intent` | what is this for? why is it needed? | the thing that is missing: the diff shows *what*, and neither the diff nor the PR body nor the linked ticket shows *why* | nothing — the question stands alone |
 | `exists` | why not reuse what we have? | `path:symbol` of the existing thing, read in §2, doing the same job | the `path:symbol`, cited |
 | `simpler` | why not the shorter shape? | the replacement named in one clause — the shape, not "consider simplifying" | the shape, named |
+| `naming` | what does this name promise, against what it does? | the gap, statable in **one clause**: what the name claims, and what the thing actually is. No artifact required — this is the one kind with no path to cite | the gap, in one clause — plus, only if one exists, the domain term or the repo's own word for the concept |
 | `scope` | is this in this PR? | the stated goal from §1, and the lines that fall outside it | the stated goal, in a half-sentence |
 
-`approach` and `simpler` are different altitudes, not degrees: `approach` is the strategy of the whole PR and **removes** machinery, `simpler` is a shape inside one hunk. A sixth kind is allowed where §2 found it: `convention` — this repo does this differently, with **two or more** existing call sites as evidence. One counter-example is not a convention.
+`approach` and `simpler` are different altitudes, not degrees: `approach` is the strategy of the whole PR and **removes** machinery, `simpler` is a shape inside one hunk. A further kind is allowed where §2 found it: `convention` — this repo does this differently, with **two or more** existing call sites as evidence. One counter-example is not a convention.
 
-Two disciplines hold across all four:
+`approach` is the rarest kind by a wide margin. Four windows of mined human review on a repo of this shape — roughly 1800 merged PRs — turned up not one instance of it. Treat an `approach` candidate as an unusual event that needs its evidence to be exactly right, not as the question a good review is supposed to contain.
+
+Three disciplines hold across the passes:
 
 **The `intent` pass is the one that earns the review, and the one easiest to fake.** The test is a sentence: can you state, from the PR alone, both what this code does *and* why the product needs it? Both yes → no comment, whatever the code looks like. Can state the what but not the why → that is the question, and it is a real one. Neither → you have not read enough to ask anything; go back to §2. A question whose answer is three lines down in the diff is the single worst comment a reviewer can leave, and it is the one an automated pass leaves most.
 
 **`exists` and `simpler` ask, they do not instruct.** The author may have a reason the grep cannot see — a deliberate fork, a deprecation in flight, a perf constraint. Draft the question so a "no, because…" is a complete answer, and so that answer costs the author one sentence.
 
-**Done when**: every candidate that exists carries a kind, a `file:line` present in the diff, and evidence of its own family. Four passes run and nothing admitted is a finished §4 and an **LGTM** — skip §5 and §6 and go straight to §7.
+**`naming` is the gap, never the preference.** State what the name promises and what the thing is, in one clause, or there is no candidate: *the name says the opposite of what it returns*, *`enrichmentStore` carries no business meaning — what is behind it*, *`unified` appears here and nowhere else in this queue*. What that bar excludes is the whole of "I would have called it something else" — a rename that costs a commit and buys no reader anything is taste, and taste with no cost is dropped at §5. This is the one kind with no path to cite, which is exactly why its clause has to carry the weight.
+
+**Done when**: every candidate that exists carries a kind, a `file:line` present in the diff, and evidence of its own family. Every pass run and nothing admitted is a finished §4 and an **LGTM** — skip §5 and §6 and go straight to §7.
 
 ## 5. Cut to the review a person would leave
 
@@ -108,11 +113,16 @@ Nothing survived §3 and §4 → the review is an LGTM; go to §7 and report wha
 2. **No evidence.** §4's bar, applied without mercy. A reuse question with no path, a simpler question with no named shape, a convention question with one example: gone.
 3. **No stake.** Would you want the answer, or is this talk to fill a review? Ask of each: what changes when the author replies? Nothing → gone.
 4. **Collapse.** Several candidates circling one worry — the same helper, the same abstraction, the same field — become **one** comment on the line where the worry starts. Not one per angle. And where an `approach` candidate survives, the local candidates **inside the mechanism it questions** are dropped, not merged into it: answering the approach question rewrites them anyway, and asking both at once is the surest way to make a review unreadable.
-5. **Taste with no cost.** A rename or a formatting preference that costs the author a commit and buys nobody anything. Keep a nit only when it would bother the next person to read the file, and cap the review at one or two.
+5. **Taste with no cost.** A formatting preference, or a rename that costs the author a commit and buys nobody anything — a `naming` candidate whose clause turned out to be "I would have said it differently" dies here, along with the rest. Keep a nit only when it would bother the next person to read the file, and cap the review at one or two.
 
-A surviving `approach` candidate keeps its slot and opens the review. It is the question that costs most to ask late — once the PR merges, the machinery stays. Then rank the rest by what you most want answered, and take the top `--max`. Order matters: the first comment sets how the review reads.
+Then two ceilings, applied before the ranking:
 
-**Done when**: every candidate has been held against the five drops, the survivors are at or under `--max`, each survivor has a reason it survived, and the drops are counted by cause (one line, for §7's summary). An empty survivor set passes this step like any other — it is an LGTM.
+- **One `naming` comment per review**, on its own budget — it does not spend a nit slot. This kind floods faster than any other: a person who knows the domain can leave eight naming comments on one PR and be right eight times, and a pass that has read the repo for an hour cannot. Collapse the rest onto the name that costs the reader most.
+- **One or two nits**, as above, and comment noise — a comment that restates the line under it — is a nit, not a kind of its own.
+
+Rank what is left by what you most want answered, and take the top `--max`. Order matters: the first comment sets how the review reads. A surviving `approach` candidate is worth putting first when it is there, because it is the question that costs most to ask late — once the PR merges, the machinery stays — but it does not open the review by right, and its absence is the normal case, not a gap to fill.
+
+**Done when**: every candidate has been held against the five drops, both ceilings are respected, the survivors are at or under `--max`, each survivor has a reason it survived, and the drops are counted by cause (one line, for §7's summary). An empty survivor set passes this step like any other — it is an LGTM.
 
 ## 6. Draft in a reviewer's voice
 
@@ -128,11 +138,13 @@ Then draft each surviving candidate into this shape, which is the one thing in t
 
 A draft whose first sentence carries a premise before the question is not a comment yet — move the premise into sentence two, or drop it. A question that needs two chained premises to be understood is a defect report, not a question; it leaves through §7's other door.
 
+**The ask may be an imperative, if it keeps its tag.** Barely half the short comments a real team leaves are interrogative; the other half are the shape `use X instead no ?`, `rename peut etre en clientCurrency no ?`, `should just take rate.vat instead of rate.vatRate * rate.priceWithoutVat ?`. The trailing tag is what keeps the sentence a question — it is the whole difference between that and `rename here too`, which leaves the author nowhere to stand. So: `exists`, `simpler`, `naming` and a nit may open on an imperative **ending in a tag** (`no ?`, `non ?`, `right ?`, a bare `?`). `intent`, `approach` and `scope` stay interrogative — an imperative `intent` is "delete this", which is an instruction with the question thrown away.
+
 Route every comment through the `humanizer` skill. That dependency is mandatory, not optional: humanizer strips the tells (the rule of three, the signposting, "Consider…", the hedged parallelism) and applies the user's `STYLE.md`. Re-check the shape after humanizer runs — it rewrites sentences, and a rewrite that buries the question fails this step.
 
-With `--label`, prefix the humanized body: `question: ` for `intent`, `suggestion: ` for `exists` / `simpler` / `convention`, `nit: ` for a kept nit, and `scope` takes `question: `. Without it, post bare — except a nit, which keeps `nit: ` always, because that prefix is how a person says "do not block on this".
+With `--label`, prefix the humanized body: `question: ` for `intent`, `suggestion: ` for `exists` / `simpler` / `naming` / `convention`, `nit: ` for a kept nit, and `scope` takes `question: `. Without it, post bare — except a nit, which keeps `nit: ` always, because that prefix is how a person says "do not block on this".
 
-**Done when**: every comment opens on its question, keeps at most one clause of evidence behind it, sits under 35 words, is in the PR's language, has been through humanizer, and carries no tier marker. A `**blocker:**` or `**major:**` in this set is a bug — those belong to `pr-comment`'s findings mode, and their presence here means a defect leaked in from §2.
+**Done when**: every comment opens on its ask — a question, or an imperative closing on a tag where the kind allows it — keeps at most one clause of evidence behind it, sits under 35 words, is in the PR's language, has been through humanizer, and carries no tier marker. A `**blocker:**` or `**major:**` in this set is a bug — those belong to `pr-comment`'s findings mode, and their presence here means a defect leaked in from §2.
 
 ## 7. Hand off to pr-comment
 
