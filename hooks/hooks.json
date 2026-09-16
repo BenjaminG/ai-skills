@@ -1,0 +1,4 @@
+{
+  "description": "Panes: /prs lists my open PRs with checks and review state, a button per PR filling /pr-feedback; /wt lists worktrunk worktrees, a button per worktree entering it",
+  "modules": ["./register.ts"]
+}
