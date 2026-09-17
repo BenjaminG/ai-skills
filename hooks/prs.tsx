@@ -7,6 +7,7 @@ const ID = 'prs'
 const POLL_MS = 60_000
 const FIELDS =
   'number,title,headRefName,isDraft,reviewDecision,statusCheckRollup,url'
+const DASH_SCRIPT = '/skills/babysit-prs/scripts/pr-dash.py'
 
 type Check = { conclusion?: string | null; status?: string; state?: string }
 
@@ -39,11 +40,7 @@ function checksOf(checks: Check[]): [glyph: string, color: string] {
   return verdicts.length === 0 ? ['·', 'gray'] : ['✓', 'green']
 }
 
-export const COMMAND = {
-  name: ID,
-  description:
-    'My open PRs in this repo: checks, review state, a button per PR filling /pr-feedback',
-} as const
+type Run = { exitCode: number; stdout: string; stderr: string }
 
 // Module state: one hooks module runs per session. The loader lets `$` reach
 // only functions declared at the module's top, so `refresh` lives here too.
@@ -52,10 +49,23 @@ let error: string | null = null
 let isOpen = false
 let poll: Timer | null = null
 
+// The extended view: pr-dash's own snapshot over babysit-prs' state, run
+// read-only, drawn as text. The script is the one reader of that state.
+type View = 'compact' | 'detailed'
+let view: View = 'compact'
+let dash: string | null = null
+let dashError: string | null = null
+
+// This module's address, as the loader seated it: the plugin's hooks/ folder.
+// `plugin.register` fires before a module's hooks join the chain, so it cannot
+// hand this over — import.meta can.
+const HOOKS_DIR = new URL('.', import.meta.url).pathname
+const DASH_PATH = new URL(`../..${DASH_SCRIPT}`, import.meta.url).pathname
+
 async function refresh($: Engine) {
   const run = await $.process
     .run(['gh', 'pr', 'list', '--author', '@me', '--json', FIELDS])
-    .catch((e: unknown) => ({
+    .catch((e: unknown): Run => ({
       exitCode: 1,
       stdout: '',
       stderr: e instanceof Error ? e.message : String(e),
@@ -71,6 +81,35 @@ async function refresh($: Engine) {
   $.ui.invalidate('ui.render')
 }
 
+async function refreshDash($: Engine) {
+  const run = await $.process
+    .run(['python3', DASH_PATH, 'status'])
+    .catch((e: unknown): Run => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: e instanceof Error ? e.message : String(e),
+    }))
+
+  if (run.exitCode === 0 && run.stdout.trim() !== '') {
+    dash = run.stdout.replace(/\n+$/, '\n')
+    dashError = null
+  } else {
+    dashError = run.stderr.trim() || `pr-dash exited ${run.exitCode}`
+  }
+
+  $.ui.invalidate('ui.render')
+}
+
+function load($: Engine) {
+  void (view === 'detailed' ? refreshDash($) : refresh($))
+}
+
+export const COMMAND = {
+  name: ID,
+  description:
+    'My open PRs: compact (checks, review state, a button per PR filling /pr-feedback) or detailed (pr-dash stacks, threads, notes)',
+} as const
+
 /** The pane's hooks; `session.start` registers COMMAND once for every pane, in register.ts. */
 export const register: Register = on => {
   on('command.run', { command: ID }, async $ => {
@@ -81,9 +120,12 @@ export const register: Register = on => {
     }
 
     isOpen = true
+    view = 'compact'
+    dash = null
+    dashError = null
     await $.ui.open({ id: ID, title: 'PRs' })
-    poll = $.clock.every(POLL_MS, () => void refresh($))
-    void refresh($)
+    poll = $.clock.every(POLL_MS, () => load($))
+    load($)
 
     return { text: 'PRs panel shown' }
   })
@@ -107,6 +149,40 @@ export const register: Register = on => {
 
     const { Box, Text, Button } = await $.ui.resolve(e)
     const width = e.props.bodyColumns - 2
+
+    const header = (
+      <Box flexDirection="row" gap={1}>
+        <Text bold>{`PRs · ${view === 'detailed' ? 'stacks' : (prs?.length ?? '…')}`}</Text>
+        <Button
+          key="prs:view"
+          plain
+          onPress={() => {
+            view = view === 'compact' ? 'detailed' : 'compact'
+            load($)
+          }}
+        >
+          {view === 'compact' ? '[detailed]' : '[compact]'}
+        </Button>
+      </Box>
+    )
+
+    if (view === 'detailed') {
+      return (
+        <Box flexDirection="column" paddingX={1}>
+          {header}
+          {dashError === null ? (
+            dash === null ? (
+              <Text dimColor>Loading pr-dash…</Text>
+            ) : (
+              <Text wrap="wrap">{dash}</Text>
+            )
+          ) : (
+            <Text color="red">{dashError}</Text>
+          )}
+          <Text dimColor>babysit-prs state · /prs to close</Text>
+        </Box>
+      )
+    }
 
     const rows = (prs ?? []).map(pr => {
       const [glyph, glyphColor] = checksOf(pr.statusCheckRollup)
@@ -141,7 +217,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Text bold>{`PRs · ${prs?.length ?? '…'}`}</Text>
+        {header}
         {note === null ? null : <Text color={error ? 'red' : undefined} dimColor={!error}>{note}</Text>}
         {rows}
         <Text dimColor>Click a PR to fill /pr-feedback · refreshes every 60 s</Text>

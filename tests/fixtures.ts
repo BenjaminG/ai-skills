@@ -42,7 +42,7 @@ export const pane = (id: string): RenderInput<'Pane'> => ({
  * The world beneath the plugin: a session in /work, one process answering
  * `stdout` (or failing with `stderr`), panes and prompt fills kept.
  */
-export function world(on: On, process: { stdout?: string; stderr?: string }) {
+export function world(on: On, process: { stdout?: string; stderr?: string; python3?: { stdout?: string; stderr?: string; exitCode?: number } }) {
   const runs: string[][] = []
   const opened: string[] = []
   const closed: string[] = []
@@ -56,11 +56,16 @@ export function world(on: On, process: { stdout?: string; stderr?: string }) {
   on('process.run', ($, e) => {
     runs.push([...e.argv])
 
+    const answer: { stdout?: string; stderr?: string; exitCode?: number } =
+      process.python3 !== undefined && e.argv[0] === 'python3'
+        ? process.python3
+        : process
+
     return {
       value: {
-        exitCode: process.stderr === undefined ? 0 : 1,
-        stdout: process.stdout ?? '',
-        stderr: process.stderr ?? '',
+        exitCode: answer.stderr === undefined ? 0 : (answer.exitCode ?? 1),
+        stdout: answer.stdout ?? '',
+        stderr: answer.stderr ?? '',
       },
     }
   })
