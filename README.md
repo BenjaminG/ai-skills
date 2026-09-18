@@ -68,7 +68,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `innovate` | Generate divergent solutions for a problem |
 | `interview` | One-question-at-a-time clarification loop |
 | `investigate` | Structured investigation workflow |
-| `ralph-loop` | Run autonomous iterative loops over multi-step tasks |
+| `orchestrate` | Run a dependency-ordered stack of Linear tickets through Herdr |
 | `retrospective` | Reflect on the work done on the current branch vs main |
 | `skill-creator` | Guide for creating skills |
 | **Specialist agents** | |
