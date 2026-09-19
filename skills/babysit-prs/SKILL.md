@@ -60,7 +60,9 @@ Empty PR list? Say so and stop.
 
 The JSON is orchestration input. Do not reproduce its PR table in chat. The author gets the current
 view with `pr-dash status` or keeps it open with `pr-dash status --watch`; that dashboard reads the
-state written by the scanner and never scans GitHub, folds reports, changes mutes, or starts agents.
+state written by the scanner and never folds reports, changes mutes, or starts agents. Add
+`--drafts` to also list the drafts the scan filtered out: the dashboard reads them from GitHub for
+that one render and writes nothing, so they stay out of the state and no agent is spawned on them.
 
 An agent report is a snapshot; the scanner is the present. Use the scanner's live `held` count over
 `report.held`. A `report.blocked` suppresses another agent only while the named failure or conflict

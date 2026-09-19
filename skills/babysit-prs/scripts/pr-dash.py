@@ -266,6 +266,20 @@ def dashboard_status(number, row, prs, order, running, scanner):
     return STATUS_LABELS[status]
 
 
+def with_drafts(state, scanner):
+    """Drafts the scan filtered out, fetched for display only — state is never written."""
+    missing = [n for n in scanner.open_prs(include_drafts=True) if str(n) not in state]
+    merged = dict(state)
+    for number, raw in scanner.fetch_raw(missing).items():
+        merged[str(number)] = dict(
+            scanner.row(raw, {}),
+            schema_version=scanner.STATE_SCHEMA_VERSION,
+            report=None,
+        )
+    scanner.link_stack({int(key): value for key, value in merged.items()})
+    return merged
+
+
 def rows(state, directory, scanner):
     prs = {int(key): dict(value) for key, value in state.items()}
     if not prs:
@@ -431,8 +445,10 @@ def table(data, color=False):
     return "\n".join(output)
 
 
-def snapshot(directory, repo, scanner, color=False):
+def snapshot(directory, repo, scanner, color=False, drafts=False):
     state, path = load_state(directory)
+    if drafts:
+        state = with_drafts(state, scanner)
     updated = (
         datetime.fromtimestamp(os.path.getmtime(path)).astimezone().strftime("%H:%M:%S")
     )
@@ -461,7 +477,7 @@ def signature(directory):
     return tuple(values), shutil.get_terminal_size((180, 24)).columns
 
 
-def watch(directory, repo, scanner):
+def watch(directory, repo, scanner, drafts=False):
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("--watch requires an interactive terminal")
     original = termios.tcgetattr(sys.stdin)
@@ -472,7 +488,7 @@ def watch(directory, repo, scanner):
         while True:
             current = signature(directory)
             if current != previous:
-                content = snapshot(directory, repo, scanner, color=True)
+                content = snapshot(directory, repo, scanner, color=True, drafts=drafts)
                 sys.stdout.write(f"\033[H\033[2J{content}\nq quit\n")
                 sys.stdout.flush()
                 previous = current
@@ -580,6 +596,31 @@ def self_check(scanner):
     )
     assert rendered[2][3] == "✅ READY"
     assert rendered[3][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
+    class DraftScanner:
+        STATE_SCHEMA_VERSION = scanner.STATE_SCHEMA_VERSION
+        link_stack = staticmethod(scanner.link_stack)
+
+        @staticmethod
+        def open_prs(include_drafts=False):
+            return [42, 43, 44, 99, 100]
+
+        @staticmethod
+        def fetch_raw(numbers):
+            assert numbers == [100], numbers
+            return {100: {"number": 100}}
+
+        @staticmethod
+        def row(raw, seen):
+            return dict(base, number=raw["number"], title="Draft top",
+                        branch="d", base="fix/BOF-44-cart", draft=True,
+                        merge_state="DRAFT")
+
+    merged = with_drafts(sample, DraftScanner)
+    assert set(merged) == {"42", "43", "44", "99", "100"}
+    assert merged["100"]["parent"] == 44, merged["100"]
+    assert merged["100"]["report"] is None
+    assert sample.keys() == {"42", "43", "44", "99"}, "the drafts stay out of state"
+
     colored = table(rendered, color=True)
     line_widths = {display_width(line) for line in colored.splitlines()}
     assert len(line_widths) == 1, line_widths
@@ -599,6 +640,9 @@ def parser():
     status.add_argument(
         "--watch", action="store_true", help="redraw when state changes"
     )
+    status.add_argument(
+        "--drafts", action="store_true", help="also show draft PRs the scan skipped"
+    )
     return command
 
 
@@ -613,9 +657,17 @@ def main():
     try:
         directory, repo = resolve_state_dir(args.state_dir)
         if args.watch:
-            watch(directory, repo, scanner)
+            watch(directory, repo, scanner, args.drafts)
         else:
-            print(snapshot(directory, repo, scanner, color=sys.stdout.isatty()))
+            print(
+                snapshot(
+                    directory,
+                    repo,
+                    scanner,
+                    color=sys.stdout.isatty(),
+                    drafts=args.drafts,
+                )
+            )
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError) as error:
