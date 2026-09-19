@@ -42,6 +42,7 @@ pageInfo { hasNextPage endCursor }
 FRAGMENT = """
 fragment S on PullRequest {
   number url title isDraft headRefName baseRefName mergeable mergeStateStatus
+  stackEntry { position stack { number } }
   reviewThreads(first: 100) {
 """ + THREAD_FIELDS + """
   }
@@ -157,6 +158,10 @@ def row(p, seen):
         "branch": p["headRefName"],
         "base": p["baseRefName"],
         "merge_state": p["mergeStateStatus"],
+        # GitHub's own stack, when the PR belongs to one: the split `gh stack` drew, which the
+        # base chain cannot show — one stack based on another's head reads as a single chain.
+        "stack": ((p.get("stackEntry") or {}).get("stack") or {}).get("number"),
+        "stack_pos": (p.get("stackEntry") or {}).get("position"),
         "mergeable": p["mergeable"],
         "ci": rollup.get("state") or "NONE",
         "head": (commit.get("oid") or "")[:7],
@@ -221,7 +226,12 @@ def link_stack(prs):
 
 
 def stacks(prs):
-    """{pr: [every PR of its stack, lowest first]} — a stack is a chain of parent links."""
+    """{pr: [every PR of its stack, lowest first]} — `gh stack` first, the parent chain otherwise.
+
+    A stack opened on top of another one's head is one chain of bases, so the parent links alone
+    would merge the two and serialise their agents into a single queue. GitHub's own stack is the
+    split the author drew; only PRs it knows no stack for fall back to the chain.
+    """
     def chain(n):
         c, walked = [n], {n}
         p = prs[n].get("parent")
@@ -233,10 +243,10 @@ def stacks(prs):
 
     groups = {}
     for n in prs:
-        groups.setdefault(chain(n)[-1], []).append(n)
+        groups.setdefault(prs[n].get("stack") or ("chain", chain(n)[-1]), []).append(n)
     order = {}
     for members in groups.values():
-        members.sort(key=lambda n: len(chain(n)))
+        members.sort(key=lambda n: prs[n].get("stack_pos") or len(chain(n)))
         for n in members:
             order[n] = members
     return order
@@ -269,7 +279,8 @@ def needs_agent(r):
 
 
 def merge_ready(r):
-    return (r.get("merge_state") == "CLEAN" and r.get("ci") == "SUCCESS"
+    # A draft cannot be merged whatever else is green, and a stacked draft does report CLEAN.
+    return (not r.get("draft") and r.get("merge_state") == "CLEAN" and r.get("ci") == "SUCCESS"
             and not r.get("unresolved_bot") and not r.get("unresolved_human") and not r.get("held"))
 
 
@@ -550,8 +561,10 @@ def self_check():
     finally:
         gh = original_gh
     assert len(paginated[7]["reviewThreads"]["nodes"]) == 101 and len(calls) == 1
-    # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own.
+    # A draft carries mergeStateStatus DRAFT, so it can never leave the matrix on its own —
+    # except in a stack, where GitHub reports CLEAN on a draft that nobody can merge.
     assert not merge_ready(dict(a, merge_state="DRAFT"))
+    assert not merge_ready(dict(a, draft=True, merge_state="CLEAN", ci="SUCCESS"))
     # A stack: each PR based on the one below it. The join is pure — no API call.
     st = link_stack({1: dict(a, number=1, branch="feat-a", base="main"),
                      2: dict(a, number=2, branch="feat-b", base="feat-a"),
@@ -594,6 +607,16 @@ def self_check():
     ob = stacks(br)
     assert ob[2] == ob[3] and ob[2][0] == 1
     assert waits_on(br[2], br, ob, set()) == 1 and waits_on(br[3], br, ob, set()) == 1
+    # Two `gh stack` stacks, the second based on the first's head: separate queues.
+    two = link_stack({1: dict(a, number=1, branch="feat-a", base="main", stack=10, stack_pos=1,
+                              ci="FAILURE"),
+                      2: dict(a, number=2, branch="feat-b", base="feat-a", stack=10, stack_pos=2),
+                      3: dict(a, number=3, branch="feat-c", base="feat-b", stack=11, stack_pos=1)})
+    ot = stacks(two)
+    assert ot[1] == [1, 2] and ot[3] == [3], ot
+    assert waits_on(two[2], two, ot, set()) == 1, "a stack still serialises on itself"
+    assert waits_on(two[3], two, ot, set()) is None, \
+        "the stack above has its own agent — GitHub's split is the author's"
     solo = link_stack({1: dict(a, number=1, branch="feat-a", base="main")})
     os_, none = stacks(solo), set()
     def st1(**kw):
@@ -605,6 +628,7 @@ def self_check():
     assert st1(ci="PENDING", merge_state="BLOCKED") == "ci"
     assert st1(unresolved_human=1, merge_state="BLOCKED") == "review"
     assert st1(draft=True, merge_state="DRAFT") == "draft"
+    assert st1(draft=True) == "draft", "a green draft is still nobody's to merge"
     assert is_bot("cursor", "User") and is_bot("x[bot]", "User") and not is_bot("viclafouch", "User")
 
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.

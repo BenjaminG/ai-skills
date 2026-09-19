@@ -63,6 +63,9 @@ view with `pr-dash status` or keeps it open with `pr-dash status --watch`; that 
 state written by the scanner and never folds reports, changes mutes, or starts agents. Add
 `--drafts` to also list the drafts the scan filtered out: the dashboard reads them from GitHub for
 that one render and writes nothing, so they stay out of the state and no agent is spawned on them.
+A stack is the one `gh stack` drew, the parent chain only where GitHub knows none: a stack opened
+on top of another one's head is its own stack, with its own agent, and the dashboard draws each one
+head first, base at the bottom.
 
 An agent report is a snapshot; the scanner is the present. Use the scanner's live `held` count over
 `report.held`. A `report.blocked` suppresses another agent only while the named failure or conflict

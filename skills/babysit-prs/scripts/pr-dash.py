@@ -221,30 +221,22 @@ def thread_summary(row, expected_schema):
 
 
 def stack_layout(prs, order):
-    children = {number: [] for number in prs}
-    for number, row in prs.items():
-        parent = row.get("parent")
-        if parent in children:
-            children[parent].append(number)
-
-    groups = {}
-    for members in order.values():
-        groups.setdefault(tuple(members), None)
-
     output = []
     stack_number = 0
-    for members in sorted(groups, key=lambda item: item[0]):
+    groups = {tuple(members): None for members in order.values()}
+    for members in sorted(groups, key=min):
         if len(members) == 1:
             output.append((members[0], "◆ SINGLE"))
             continue
         stack_number += 1
-        for number in members:
-            if prs[number].get("parent") not in prs:
-                role = "╭ BASE"
-            elif not children[number]:
-                role = "╰ HEAD"
-            else:
-                role = "├ MID"
+        # Head first: the PR on top of the stack reads at the top, the one on the trunk at the
+        # bottom — the way the branches sit.
+        for index, number in enumerate(reversed(members)):
+            role = "├ MID"
+            if index == 0:
+                role = "╭ HEAD"
+            elif index == len(members) - 1:
+                role = "╰ BASE"
             output.append((number, f"S{stack_number} {role}"))
     return output
 
@@ -553,6 +545,28 @@ def self_check(scanner):
             ci="SUCCESS",
             merge_state="CLEAN",
         ),
+        "45": dict(
+            base,
+            number=45,
+            title="Reprice cart [BOF-45]",
+            branch="fix/BOF-45-cart",
+            parent=44,
+            stack=17312,
+            stack_pos=1,
+            ci="SUCCESS",
+            merge_state="CLEAN",
+        ),
+        "46": dict(
+            base,
+            number=46,
+            title="Ship cart [BOF-46]",
+            branch="fix/BOF-46-cart",
+            parent=45,
+            stack=17312,
+            stack_pos=2,
+            ci="SUCCESS",
+            merge_state="CLEAN",
+        ),
         "99": dict(
             base,
             number=99,
@@ -568,14 +582,27 @@ def self_check(scanner):
         open(os.path.join(directory, "43.muted"), "w").close()
         rendered = rows(sample, directory, scanner)
 
+    # Head first inside a stack, and the stack `gh stack` opened on top of the chain stays its own
+    # — the base link alone would read all five PRs as one.
     assert [row[0] for row in rendered] == [
-        "S1 ╭ BASE",
+        "S1 ╭ HEAD",
         "S1 ├ MID",
-        "S1 ╰ HEAD",
+        "S1 ╰ BASE",
+        "S2 ╭ HEAD",
+        "S2 ╰ BASE",
         "◆ SINGLE",
     ]
-    assert rendered[0][2].text == "BOF-42"
-    assert rendered[0][3:] == [
+    assert [row[1].text.split()[0] for row in rendered] == [
+        "#44",
+        "#43",
+        "#42",
+        "#46",
+        "#45",
+        "#99",
+    ]
+    shown = {row[1].text.split()[0]: row for row in rendered}
+    assert shown["#42"][2].text == "BOF-42"
+    assert shown["#42"][3:] == [
         "👀 REVIEW",
         "·",
         "❌ FAIL",
@@ -583,26 +610,26 @@ def self_check(scanner):
         "🤖 0 open · 5 closed\n👤 0 open · 2 closed",
         "✓ 1 fixed · ⛔ failing e2e",
     ]
-    assert rendered[1][3:7] == [
+    assert shown["#43"][3:7] == [
         "🔧 WORKING",
         "🤖 ACTIVE",
         "⏳ RUN",
         "⛔ BLOCKED",
     ]
-    assert rendered[1][7] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
+    assert shown["#43"][7] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
     assert (
         thread_summary({"unresolved_bot": 3}, scanner.STATE_SCHEMA_VERSION)
         == "⚠ scanner outdated"
     )
-    assert rendered[2][3] == "✅ READY"
-    assert rendered[3][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
+    assert shown["#44"][3] == "✅ READY"
+    assert shown["#99"][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
     class DraftScanner:
         STATE_SCHEMA_VERSION = scanner.STATE_SCHEMA_VERSION
         link_stack = staticmethod(scanner.link_stack)
 
         @staticmethod
         def open_prs(include_drafts=False):
-            return [42, 43, 44, 99, 100]
+            return [42, 43, 44, 45, 46, 99, 100]
 
         @staticmethod
         def fetch_raw(numbers):
@@ -616,10 +643,10 @@ def self_check(scanner):
                         merge_state="DRAFT")
 
     merged = with_drafts(sample, DraftScanner)
-    assert set(merged) == {"42", "43", "44", "99", "100"}
+    assert set(merged) == {"42", "43", "44", "45", "46", "99", "100"}
     assert merged["100"]["parent"] == 44, merged["100"]
     assert merged["100"]["report"] is None
-    assert sample.keys() == {"42", "43", "44", "99"}, "the drafts stay out of state"
+    assert sample.keys() == {"42", "43", "44", "45", "46", "99"}, "drafts stay out of state"
 
     colored = table(rendered, color=True)
     line_widths = {display_width(line) for line in colored.splitlines()}
