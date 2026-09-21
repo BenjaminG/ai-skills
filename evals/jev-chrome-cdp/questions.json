@@ -1,0 +1,17 @@
+{
+  "pick_element": {
+    "type": "choice",
+    "instructions": "A browser automation harness is executing a step on the page whose accessibility tree is in `tree`. The next intended action is described in `intent`. `candidates` lists the interactive elements currently on the page by reference id, role, and accessible name. Which single candidate is the element the intended action targets? The answer must be one candidate's `ref`, or `none` if no candidate matches the intent.",
+    "criteria": {
+      "none": "None of the candidates is the element the intended action targets — the page does not show it (wrong page, not loaded yet, below the fold, or inside an iframe not represented here)."
+    }
+  },
+  "is_login_form": {
+    "type": "noul",
+    "instructions": "Does the accessibility tree in `tree` show the page state described in `claim`?",
+    "criteria": {
+      "true": "The elements the claim names are present in `tree` with the described roles or names, in a state consistent with the claim.",
+      "false": "The claim names elements absent from `tree`, present with different roles or names, or the tree shows a state that contradicts the claim."
+    }
+  }
+}

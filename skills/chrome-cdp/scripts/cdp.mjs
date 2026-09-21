@@ -402,6 +402,100 @@ async function netStr(cdp, sid) {
   ).join('\n');
 }
 
+// Harvest interactive candidates from the live DOM for Jev's pickElement.
+// Pure DOM work — the model only judges. Selectors must be stable across
+// calls (no :nth-of-type, no indices): tag + [type] + [aria-label] + [name]
+// + trimmed text, whichever first identifies the element.
+async function harvestCandidates(cdp, sid) {
+  const expr = `
+    (function() {
+      const sels = 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="textbox"], [role="combobox"], [role="searchbox"], summary';
+      const seen = new Set();
+      const out = [];
+      for (const el of document.querySelectorAll(sels)) {
+        if (seen.size >= 200) break;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;  // hidden/offscreen
+        const role = (el.getAttribute('role') || {
+          BUTTON: 'button', A: 'link', INPUT: (el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : el.type === 'submit' ? 'button' : 'textbox'),
+          SELECT: 'combobox', TEXTAREA: 'textbox', SUMMARY: 'button',
+        }[el.tagName] || el.tagName.toLowerCase()).toLowerCase();
+        const name = (el.getAttribute('aria-label') || el.getAttribute('name')
+          || el.getAttribute('placeholder') || (el.textContent || el.value || '')
+            .trim().replace(/\\s+/g, ' ').slice(0, 60) || el.type || '').slice(0, 60);
+        let selector = null;
+        if (el.id && /^[A-Za-z][\\w-]*$/.test(el.id)) selector = '#' + el.id;
+        if (!selector) {
+          const parts = [el.tagName.toLowerCase()];
+          if (el.type) parts.push('[type="' + el.type + '"]');
+          const al = el.getAttribute('aria-label');
+          if (al) parts.push('[aria-label="' + al.replace(/"/g, '\\\\"') + '"]');
+          else if (el.getAttribute('name')) parts.push('[name="' + el.getAttribute('name').replace(/"/g, '\\\\"') + '"]');
+          else if (el.getAttribute('placeholder')) parts.push('[placeholder="' + el.getAttribute('placeholder').replace(/"/g, '\\\\"') + '"]');
+          else {
+            const txt = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
+            if (txt) parts.push(':where(*):has-text') /* replaced below */;
+            parts.pop();
+          }
+          selector = parts.join('');
+        }
+        // Text-identified fallback: verify it matches exactly one element
+        if (selector.includes('has-text')) continue;
+        try { if (document.querySelectorAll(selector).length !== 1) continue; } catch { continue; }
+        const key = selector;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ selector, role, name, visible: r.width > 0 || r.height > 0 });
+      }
+      return out;
+    })()
+  `;
+  const result = await evalStr(cdp, sid, expr);
+  const arr = JSON.parse(result);
+  if (!Array.isArray(arr)) throw new Error('candidate harvest returned non-array');
+  return arr;
+}
+
+// Page title fetched once per daemon — cheap context for Jev's judgments.
+let _title;
+async function titleOf(cdp, sid) {
+  if (_title !== undefined) return _title;
+  try { _title = (await evalStr(cdp, sid, 'document.title')) || null; }
+  catch { _title = null; }
+  return _title;
+}
+
+// Jev-backed judgments (scripts/jev.mjs). Neither command acts on the page:
+// pick returns a selector for the caller to click; verify returns a verdict
+// for the caller to record. Low confidence exits non-zero so escalation is
+// the caller's decision, never hidden here.
+async function pickStr(cdp, sid, intent) {
+  if (!intent) throw new Error('intent required: pick <target> <what to act on>');
+  const [candidates, tree] = await Promise.all([
+    harvestCandidates(cdp, sid),
+    snapshotStr(cdp, sid, true),
+  ]);
+  const page = await titleOf(cdp, sid);
+  const { pickElement } = await import('./jev.mjs');
+  const r = await pickElement({ intent, candidates, tree, page });
+  if (r.decision === 'pick') {
+    return `pick ${r.selector}  (role: ${r.role}, name: ${JSON.stringify(r.name)}, confidence ${r.confidence.toFixed(2)})\nNext: click <target> ${r.selector}`;
+  }
+  return `escalate: ${r.reason} (confidence ${r.confidence?.toFixed?.(2) ?? 'n/a'})\nThe caller (agent) should snap and choose the element itself.`;
+}
+
+async function verifyStr(cdp, sid, claim) {
+  if (!claim) throw new Error('claim required: verify <target> <expected page state>');
+  const tree = await snapshotStr(cdp, sid, true);
+  const page = await titleOf(cdp, sid);
+  const { verifyState } = await import('./jev.mjs');
+  const r = await verifyState({ claim, tree, page });
+  if (r.decision === 'pass') return `pass  (noul ${r.noul.toFixed(2)} >= ${process.env.CDP_JEV_PASS_AT || '0.8'})`;
+  if (r.decision === 'fail') return `fail  (noul ${r.noul.toFixed(2)} <= ${process.env.CDP_JEV_FAIL_AT || '0.2'}) — claim not shown in the tree`;
+  return `escalate: noul ${r.noul.toFixed(2)} is in the uncertain band — the caller should snap and judge itself`;
+}
+
+
 // Click element by CSS selector
 async function clickStr(cdp, sid, selector) {
   if (!selector) throw new Error('CSS selector required');
@@ -560,6 +654,8 @@ async function runDaemon(targetId) {
         case 'type': result = await typeStr(cdp, sessionId, args[0]); break;
         case 'loadall': result = await loadAllStr(cdp, sessionId, args[0], args[1] ? parseInt(args[1]) : 1500); break;
         case 'evalraw': result = await evalRawStr(cdp, sessionId, args[0], args[1]); break;
+        case 'pick': result = await pickStr(cdp, sessionId, args.join(' ')); break;
+        case 'verify': result = await verifyStr(cdp, sessionId, args.join(' ')); break;
         case 'stop': return { ok: true, result: '', stopAfter: true };
         default: return { ok: false, error: `Unknown command: ${cmd}` };
       }
@@ -739,6 +835,13 @@ Usage: cdp <command> [args]
                                     Optional interval in ms between clicks (default 1500)
   evalraw <target> <method> [json]  Send a raw CDP command; returns JSON result
                                     e.g. evalraw <t> "DOM.getDocument" '{}'
+  pick   <target> <intent>          Ask Jev (TypeSafe) which interactive element matches
+                                    <intent>; prints a CSS selector to click, or "escalate"
+                                    below the confidence gate (CDP_JEV_MIN_CONF, default 0.6).
+                                    Needs TYPESAFE_API_KEY. Never clicks by itself.
+  verify <target> <claim>           Ask Jev whether the a11y tree shows the claimed state.
+                                    Prints pass / fail / escalate. Needs TYPESAFE_API_KEY.
+                                    Bands: CDP_JEV_PASS_AT (0.8), CDP_JEV_FAIL_AT (0.2).
   open  [url]                       Open a new tab (default: about:blank)
                                     Note: each new tab triggers a fresh "Allow debugging?" prompt
   stop  [target]                    Stop daemon(s)
@@ -777,6 +880,7 @@ DAEMON IPC (for advanced use / scripting)
 const NEEDS_TARGET = new Set([
   'snap','snapshot','eval','shot','screenshot','html','nav','navigate',
   'net','network','click','clickxy','type','loadall','evalraw',
+  'pick','verify',
 ]);
 
 async function main() {
@@ -862,6 +966,12 @@ async function main() {
     // args: [method, ...jsonParts] — join json parts in case of spaces
     if (!cmdArgs[0]) { console.error('Error: CDP method required'); process.exit(1); }
     if (cmdArgs.length > 2) cmdArgs[1] = cmdArgs.slice(1).join(' ');
+  } else if (cmd === 'pick' || cmd === 'verify') {
+    // intent/claim can contain spaces — join everything after the target
+    const text = cmdArgs.join(' ');
+    if (!text) { console.error(`Error: ${cmd === 'pick' ? 'intent' : 'claim'} required`); process.exit(1); }
+    cmdArgs[0] = text;
+    cmdArgs.length = 1;
   }
 
   if ((cmd === 'nav' || cmd === 'navigate') && !cmdArgs[0]) {
@@ -873,6 +983,9 @@ async function main() {
 
   if (response.ok) {
     if (response.result) console.log(response.result);
+    if ((cmd === 'pick' || cmd === 'verify') && response.result.startsWith('escalate:')) {
+      process.exitCode = 3;  // uncertain judgment — caller decides, not us
+    }
   } else {
     console.error('Error:', response.error);
     process.exitCode = 1;

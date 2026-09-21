@@ -98,6 +98,21 @@ scripts/cdp.mjs open    [url]                  # open new tab (each triggers All
 scripts/cdp.mjs stop    [target]               # stop daemon(s)
 ```
 
+### Jev judgments — `pick` and `verify`
+
+Fast typed judgments via TypeSafe's Jev (`~$0.00006/call`, ~1s latency) instead of reading a full `snap` into context. Both need `TYPESAFE_API_KEY` (console.typesafe.ai). Neither command acts on the page — `pick` returns a selector for the caller to `click`, `verify` returns a verdict for the caller to record.
+
+```bash
+scripts/cdp.mjs pick   <target> <intent>   # which element matches the intent?
+scripts/cdp.mjs verify <target> <claim>    # does the tree show the claimed state?
+```
+
+- `pick` harvests interactive elements in code, registers them as Choice options (the model cannot invent a selector that isn't on the page), and prints `pick <selector> (confidence …)` plus the next command to run. Below the confidence gate it prints `escalate` and exits **3** — snap and choose the element yourself.
+- `verify` asks a Noul over the a11y tree and prints `pass` / `fail` / `escalate` (uncertain band), exiting 0 / 0 / 3.
+- Tunables: `CDP_JEV_MIN_CONF` (default 0.6), `CDP_JEV_PASS_AT` (0.8), `CDP_JEV_FAIL_AT` (0.2).
+- **Verify after the page settles** — `verify` has no wait. Right after a click, poll first (e.g. `eval` with `awaitPromise`) or the judgment runs on the pre-render tree. A `fail` right after an action usually means "too early", not "wrong state" — re-run once.
+- Measured on the replay corpus in `evals/jev-chrome-cdp/`: pick 100% precision at conf ≥ 0.6 (10/10 acted); verify 18/19 correct, 0 false-pass. Corpus is login-heavy — treat dense-page picks with the same escalation discipline.
+
 ## Coordinates
 
 `shot` saves an image at native resolution: image pixels = CSS pixels × DPR. CDP Input events (`clickxy` etc.) take **CSS pixels**.
