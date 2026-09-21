@@ -1,0 +1,35 @@
+{
+  "defect_real": {
+    "type": "noul",
+    "instructions": "A code reviewer flagged the defect described in `finding` at line `line` of `file`. The numbered source around that line is in `code`. Does that defect actually occur in the code shown?",
+    "criteria": {
+      "true": "The flagged pattern is present at or around the cited line, the quoted `finding.evidence` appears in `code`, and `finding.message` correctly describes what the code does. The defect is real as stated.",
+      "false": "The finding misreads the code, the quoted evidence does not appear in `code`, the flagged pattern is not there, the concern is already handled by code visible in `code`, or a documented exception in `rule_citation` covers this case."
+    }
+  },
+  "severity": {
+    "type": "score",
+    "instructions": "Assuming the defect in `finding` is real, how severe is it for the code in `code`? Judge the consequence of shipping it unchanged, not how unpleasant the code looks.",
+    "criteria": [
+      "Style, naming, formatting or a matter of taste. Behaviour is unchanged. Nothing breaks if this ships exactly as written.",
+      "A real defect with a bounded blast radius: a wrong result on an edge case, a leaked handle or listener, a missed invariant, a confusing API that a caller can get wrong. No data is lost or corrupted, nothing is exposed to an attacker, production stays up.",
+      "Ships broken: data is lost or corrupted, a security hole has a reachable path from untrusted input, a request path throws or hangs for real users, or a project rule quoted in `rule_citation` is violated outright."
+    ]
+  },
+  "fix_addresses": {
+    "type": "noul",
+    "instructions": "Would applying `finding.suggested_fix` to the code in `code` remove the defect described in `finding.message`?",
+    "criteria": {
+      "true": "The suggested fix changes the behaviour that causes the defect, and after applying it the described problem no longer occurs.",
+      "false": "The fix is cosmetic, restates the problem without changing behaviour, addresses a different problem, or is a pattern applied by reflex that leaves the described defect in place."
+    }
+  },
+  "needs_wider_context": {
+    "type": "noul",
+    "instructions": "`code` is a fixed window around the cited line. Is code outside that window required to decide whether the defect in `finding` is real?",
+    "criteria": {
+      "true": "Deciding requires seeing something not in `code`: a caller, a callee's body, a type or schema definition, a migration, a config value, or another file the finding relates this one to.",
+      "false": "Everything needed to decide is visible in `code`."
+    }
+  }
+}

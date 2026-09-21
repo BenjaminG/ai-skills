@@ -3,12 +3,16 @@ export const meta = {
   description: 'Quality gate: parallel reviewers, tier-scaled adversarial verify, context annotation',
   phases: [
     { title: 'Review', detail: 'reviewers in parallel + CLAUDE.md/ADR synthesis' },
-    { title: 'Verify', detail: 'skeptics per finding, scaled by tier' },
+    { title: 'Verify', detail: A.useJev ? 'jev first pass, sonnet skeptics on the escalate band' : 'skeptics per finding, scaled by tier' },
     { title: 'Context', detail: 'annotate survivors against project context' },
   ],
 }
 
-// args: { tmpDir, reviewers: string[], prNumber: number|null }
+// args: { tmpDir, reviewers: string[], prNumber: number|null, useJev?: boolean }
+// useJev (the skill's --jev flag): Jev first-passes every finding through
+// jev-verify's batch mode; only the escalate band (and any runner failure)
+// falls back to tier-scaled sonnet skeptics. Off by default — the gate's shape
+// is unchanged without it.
 // args may arrive as an object or a JSON string depending on harness path; normalize.
 const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
 if (!Array.isArray(A.reviewers) || !A.reviewers.length) {
@@ -126,9 +130,106 @@ const synthP = agent(synthesizePrompt(), {
 // pick highest-tier primary, if false-positive rate on merged dupes bites.
 const claimed = new Map()
 
+// --- --jev: Jev first pass over the findings ---------------------------------
+//
+// The workflow sandbox has no network, so python does the HTTP and a haiku
+// runner agent just relays its stdout — the agent's only job is to run
+// jev_verify.py batch and echo the JSON. Python decides; the agent never
+// judges. The lesson from v9 (a model retyping 18 findings cut identifiers
+// mid-word) applies: the runner returns python's bytes with a msg_len
+// integrity check per row, and anything that does not line up — wrong length,
+// missing row, malformed JSON, api down — routes to a sonnet skeptic. The jev
+// path can only add skeptics, never silently lose a finding.
+const JEV_BATCH_SCHEMA = {
+  type: 'object',
+  properties: {
+    error: { type: 'boolean' },
+    stderr: { type: 'string' },
+    rows: { type: 'array', items: { type: 'object', properties: {
+      file: { type: 'string' }, line: { type: 'number' }, rule_id: { type: 'string' },
+      decision: { type: 'string', enum: ['keep', 'kill', 'escalate'] },
+      defect_real: { type: 'number' }, msg_len: { type: 'number' },
+      needs_wider_context: { type: 'number' },
+    } } },
+    usage: { type: 'object', properties: { input_tokens: { type: 'number' }, requests: { type: 'number' } } },
+  },
+}
+
+// The findings the batch needs, stripped to the keys jev_verify reads.
+const jevFinding = (f) => ({
+  file: f.file, line: f.line, rule_id: f.rule_id, tier: f.tier,
+  message: f.message, evidence: f.evidence, suggested_fix: f.suggested_fix,
+  citation: f.citation, source: f.source,
+})
+
+// The sandbox has no filesystem, so the batch rides in the prompt as JSON and
+// the runner writes it to tmpDir before executing. The filename carries the
+// stage tag: reviewer stages run concurrently in the pipeline and would
+// otherwise all write the same path and race. Chunks are capped so the haiku
+// prompt stays small; ~60 findings ≈ 6-10k tokens of payload.
+const jevRunnerPrompt = (payload, repo, tag) => `Write this JSON array to ${A.tmpDir}/jev-batch-${tag}.json (exact bytes, no edits):
+
+${JSON.stringify(payload)}
+
+Then run and return its stdout verbatim:
+
+python3 ~/.claude/skills/jev-verify/scripts/jev_verify.py batch --repo ${repo} < ${A.tmpDir}/jev-batch-${tag}.json
+
+If the command exits non-zero or prints nothing, return {"error": true, "stderr": "<first 200 chars of stderr>"}.
+Print the JSON in one message, no commentary — the caller validates it. Do not modify the findings, do not retry, do not summarize.`
+
+// Slice findings to ~60 per batch: one runner call per chunk keeps a single
+// failure bounded and the haiku context small.
+const jevVerify = async (findings, tag) => {
+  // Repo root for git-blob reads when the worktree has moved past the finding.
+  // agent() yields null on user-skip; an empty repo degrades every row to
+  // 'unreadable' -> escalate -> sonnet skeptics, which is the designed fallback.
+  const repo = ((await agent(
+    'Run: git rev-parse --show-toplevel — return its stdout trimmed, nothing else.',
+    { phase: 'Verify', label: 'jev:repo', agentType: 'ai-skills:jev-runner' },
+  )) || '').trim()
+  const out = {}
+  const chunks = []
+  for (let i = 0; i < findings.length; i += 60) chunks.push(findings.slice(i, i + 60))
+  const results = await parallel(chunks.map((chunk, ci) => () =>
+    agent(jevRunnerPrompt(chunk, repo, `${tag}-${ci}`), {
+      phase: 'Verify', label: `jev:batch-${ci}`, schema: JEV_BATCH_SCHEMA,
+      agentType: 'ai-skills:jev-runner',
+    })
+  }))
+  results.forEach((r, ci) => {
+    if (!r || r.error || !Array.isArray(r.rows)) return // chunk lost -> its findings escalate
+    r.rows.forEach((row) => {
+      const key = `${row.file}:${row.line}:${row.rule_id}`
+      out[key] = row
+    })
+  })
+  return out
+}
+
+// Route one finding: jev says keep/kill, else (or on any doubt) the sonnet path.
+const jevRoute = (f, jevRows) => {
+  if (!jevRows) return 'sonnet'
+  const row = jevRows[`${f.file}:${f.line}:${f.rule_id}`]
+  // Integrity (v9 lesson): wrong message length or a missing row means the
+  // relay was cut — trust nothing about it, ask a skeptic. (JS .length counts
+  // UTF-16 units, python len() counts code points, so a message with non-BMP
+  // characters trips this and costs one extra skeptic. Safe direction.)
+  if (!row || row.msg_len !== (f.message || '').length || !row.decision) return 'sonnet'
+  if (row.decision === 'keep') return 'kept'
+  if (row.decision === 'kill') return 'killed'
+  return 'sonnet' // escalate band: exactly what skeptics are for
+}
+
 const tierVotes = (tier) => (tier === 'BLOCKER' ? 3 : tier === 'MAJOR' ? 1 : 0)
 
-const verifyOne = async (f) => {
+const verifyOne = (jevRows) => async (f) => {
+  if (A.useJev && tierVotes(f.tier) > 0) {
+    const route = jevRoute(f, jevRows)
+    if (route === 'kept') { f.verifications = [{ refuted: false, reason: 'jev first pass: defect_real=' + (jevRows[`${f.file}:${f.line}:${f.rule_id}`].defect_real ?? '?') }] ; return f }
+    if (route === 'killed') { f.verifications = [{ refuted: true, reason: 'jev first pass: defect_real=' + (jevRows[`${f.file}:${f.line}:${f.rule_id}`].defect_real ?? '?') }] ; return null }
+    // 'sonnet': escalate band or relay failure — fall through to skeptics below
+  }
   const votes = tierVotes(f.tier)
   if (votes === 0) { f.verifications = []; return f } // NIT: shown, not verified
   const skeptics = (await parallel(
@@ -149,6 +250,11 @@ const reviewStage = (reviewer) =>
   })
 
 const verifyStage = async (review, reviewer) => {
+  let jevRows = null
+  if (A.useJev) {
+    const cands = (review?.findings || []).filter((f) => tierVotes(f.tier) > 0 && (f.message || '').length)
+    if (cands.length) jevRows = await jevVerify(cands.map(jevFinding), String(reviewer).replace(/[^a-z0-9]+/gi, '-'))
+  }
   const toVerify = []
   for (const f of review?.findings || []) {
     const key = `${f.file}:${f.line}`
@@ -168,7 +274,7 @@ const verifyStage = async (review, reviewer) => {
     claimed.set(key, f)
     toVerify.push(f)
   }
-  return (await parallel(toVerify.map((f) => () => verifyOne(f)))).filter(Boolean)
+  return (await parallel(toVerify.map((f) => () => verifyOne(jevRows)(f)))).filter(Boolean)
 }
 
 log(`Reviewing with ${A.reviewers.length} reviewers`)
