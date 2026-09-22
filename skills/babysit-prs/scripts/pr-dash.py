@@ -213,11 +213,9 @@ def thread_summary(row, expected_schema):
     bot_closed = row.get("threads_bot_closed", 0)
     human_open = row.get("threads_human_open", row.get("unresolved_human", 0))
     human_closed = row.get("threads_human_closed", 0)
-    human = f"👤 {human_open} open · {human_closed} closed"
+    summary = f"🤖 {bot_open}/{bot_open + bot_closed} 👤 {human_open}/{human_open + human_closed}"
     logins = ", ".join(row.get("humans") or [])
-    if logins:
-        human += f" ({logins})"
-    return f"🤖 {bot_open} open · {bot_closed} closed\n{human}"
+    return f"{summary} ({logins})" if logins else summary
 
 
 def stack_layout(prs, order):
@@ -285,15 +283,14 @@ def rows(state, directory, scanner):
         label = dashboard_status(number, row, prs, order, running, scanner)
         output.append(
             [
-                clip(row.get("branch") or "—", 22),
+                Cell(
+                    row.get("branch") or "—",
+                    None if issue == "—" else f"https://linear.app/issue/{issue}",
+                ),
                 stack,
                 Cell(f"#{number} {pr_title(row)}", row.get("url")),
-                Cell(
-                    issue, None if issue == "—" else f"https://linear.app/issue/{issue}"
-                ),
                 diff_size(row),
                 label,
-                "🤖 ACTIVE" if number in running else "·",
                 ci_status(row),
                 merge_status(row),
                 thread_summary(row, scanner.STATE_SCHEMA_VERSION),
@@ -304,21 +301,21 @@ def rows(state, directory, scanner):
 
 
 def diff_size(row):
-    """Size of the change: `+adds −dels · Nf`, or `—` when the scanner knew no diff fields."""
+    """Size of the change: `+adds −dels Nf`, or `—` when the scanner knew no diff fields."""
     additions = row.get("additions")
     if type(additions) is not int:
         return "—"
     deletions = row.get("deletions", 0)
     files = row.get("files", 0)
-    return f"+{additions} −{deletions} · {files}f"
+    return f"+{additions} −{deletions} {files}f"
 
 
 def widths(columns):
     terminal = max(133, min(220, shutil.get_terminal_size((180, 24)).columns))
-    fixed = [22, 11, None, 9, 13, 15, 9, 8, 11, 20, None]
+    fixed = [22, 11, None, 14, 15, 8, 11, 20, None]
     borders = 3 * len(fixed) + 1  # `│ ` + cell + ` ` per column, then the closing `│`
     available = terminal - borders - sum(value or 0 for value in fixed)
-    flexible = [max(12, available * 44 // 100), max(10, available * 56 // 100)]
+    flexible = [max(12, available * 65 // 100), max(10, available * 35 // 100)]
     result = []
     flex = iter(flexible)
     for index, value in enumerate(fixed):
@@ -333,6 +330,15 @@ def wrap(value, width):
     for part in text.splitlines() or [""]:
         lines.extend(wrap_line(part, width))
     return lines
+
+
+def truncate(value, width):
+    """One line, cut with `…` at `width` columns: the cell's full text stays behind its link."""
+    text = value.text if isinstance(value, Cell) else str(value)
+    if display_width(text) <= width:
+        return [text]
+    piece, _ = split_at_width(text, width - 1)
+    return [piece.rstrip() + "…"]
 
 
 def wrap_line(text, width):
@@ -401,7 +407,7 @@ def tint(value, column, enabled):
             return f"\033[90m{value}{RESET}"
         color = STACK_COLORS[(int(match.group(1)) - 1) % len(STACK_COLORS)]
         return f"{color}{value}{RESET}"
-    semantic_columns = (5, 6, 7, 8)
+    semantic_columns = (4, 5, 6)
     if column not in semantic_columns:
         return value
     color = next((color for key, color in COLORS.items() if key in clean), None)
@@ -413,10 +419,8 @@ def table(data, color=False):
         "Branch",
         "Stack",
         "PR",
-        "Issue",
         "Diff",
         "Status",
-        "Agent",
         "CI",
         "Merge",
         "Threads",
@@ -428,7 +432,9 @@ def table(data, color=False):
     bottom = "└" + "┴".join("─" * (size + 2) for size in sizes) + "┘"
 
     def render(values, colored=True):
-        cells = [wrap(value, size) for value, size in zip(values, sizes)]
+        # Only Note wraps — it carries the held decision's gist; every other cell is one line.
+        cells = [truncate(value, size) for value, size in zip(values[:-1], sizes)]
+        cells.append(wrap(values[-1], sizes[-1]))
         height = max(len(cell) for cell in cells)
         lines = []
         for line in range(height):
@@ -445,11 +451,17 @@ def table(data, color=False):
     output = [top, *render(columns, colored=False), middle]
     values = data or [["No open PRs"] + [""] * (len(columns) - 1)]
     for index, row in enumerate(values):
-        output.extend(render(row))
-        if index < len(values) - 1:
+        if index and not same_stack(values[index - 1], row):
             output.append(middle)
+        output.extend(render(row))
     output.append(bottom)
     return "\n".join(output)
+
+
+def same_stack(above, below):
+    """A rule only between stacks: rows of one `S<n>` stack sit together, singles stand apart."""
+    key = str(above[1]).split(" ", 1)[0]
+    return key.startswith("S") and key == str(below[1]).split(" ", 1)[0]
 
 
 def snapshot(directory, repo, scanner, color=False, drafts=False):
@@ -651,33 +663,25 @@ def self_check(scanner):
         "#99",
     ]
     shown = {row[2].text.split()[0]: row for row in rendered}
-    assert shown["#42"][0] == "fix/BOF-42-cart"
-    assert shown["#42"][3].text == "BOF-42"
-    assert shown["#42"][4] == "—", "state without diff fields reads as no size"
-    assert shown["#42"][5:] == [
+    assert shown["#42"][0] == Cell("fix/BOF-42-cart", "https://linear.app/issue/BOF-42")
+    assert shown["#42"][3] == "—", "state without diff fields reads as no size"
+    assert shown["#42"][4:] == [
         "👀 REVIEW",
-        "·",
         "❌ FAIL",
         "⛔ BLOCKED",
-        "🤖 0 open · 5 closed\n👤 0 open · 2 closed",
+        "🤖 0/5 👤 0/2",
         "✓ 1 fixed · ⛔ failing e2e",
     ]
-    assert shown["#43"][5:9] == [
-        "🔧 WORKING",
-        "🤖 ACTIVE",
-        "⏳ RUN",
-        "⛔ BLOCKED",
-    ]
-    assert shown["#43"][9] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
+    assert shown["#43"][4:8] == ["🔧 WORKING", "⏳ RUN", "⛔ BLOCKED", "🤖 1/3 👤 0/1"]
     assert (
         thread_summary({"unresolved_bot": 3}, scanner.STATE_SCHEMA_VERSION)
         == "⚠ scanner outdated"
     )
-    assert diff_size({"additions": 12, "deletions": 3, "files": 4}) == "+12 −3 · 4f"
+    assert diff_size({"additions": 12, "deletions": 3, "files": 4}) == "+12 −3 4f"
     assert diff_size({"additions": "12"}) == "—", "a non-int is pre-schema state, not a size"
-    assert shown["#44"][4] == "+120 −8 · 6f"
-    assert shown["#44"][5] == "✅ READY"
-    assert shown["#99"][5:9] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
+    assert shown["#44"][3] == "+120 −8 6f"
+    assert shown["#44"][4] == "✅ READY"
+    assert shown["#99"][4:7] == ["📝 DRAFT", "· NONE", "📝 DRAFT"]
     class DraftScanner:
         STATE_SCHEMA_VERSION = scanner.STATE_SCHEMA_VERSION
         link_stack = staticmethod(scanner.link_stack)
@@ -712,6 +716,10 @@ def self_check(scanner):
     assert "\033]8;;https://example.test/42" in colored
     assert "\033]8;;https://linear.app/issue/BOF-42" in colored
     assert "No open PRs" in table([], color=True)
+    assert truncate("#17225 let the client disagree", 12) == ["#17225 let…"]
+    assert display_width(truncate("🤖 12/40 👤 3/10 (alice)", 16)[0]) <= 16
+    rules = sum(line.startswith("├") for line in colored.splitlines())
+    assert rules == 3, f"{rules}: header, S1|S2, S2|single — none inside a stack"
     print("self-check ok")
 
 
