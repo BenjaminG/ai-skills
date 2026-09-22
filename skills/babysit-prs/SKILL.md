@@ -63,6 +63,9 @@ view with `pr-dash status` or keeps it open with `pr-dash status --watch`; that 
 state written by the scanner and never folds reports, changes mutes, or starts agents. Add
 `--drafts` to also list the drafts the scan filtered out: the dashboard reads them from GitHub for
 that one render and writes nothing, so they stay out of the state and no agent is spawned on them.
+In the watch view, `r` runs one scanner pass on demand — between the watcher's 60-second polls —
+from the watched repo's checkout; the pass parks its event lines for the watcher to print, so a
+report folded by `r` is not lost to it. `q` quits.
 A stack is the one `gh stack` drew, the parent chain only where GitHub knows none: a stack opened
 on top of another one's head is its own stack, with its own agent, and the dashboard draws each one
 head first, base at the bottom.

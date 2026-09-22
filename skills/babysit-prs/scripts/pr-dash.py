@@ -285,11 +285,13 @@ def rows(state, directory, scanner):
         label = dashboard_status(number, row, prs, order, running, scanner)
         output.append(
             [
+                clip(row.get("branch") or "—", 22),
                 stack,
                 Cell(f"#{number} {pr_title(row)}", row.get("url")),
                 Cell(
                     issue, None if issue == "—" else f"https://linear.app/issue/{issue}"
                 ),
+                diff_size(row),
                 label,
                 "🤖 ACTIVE" if number in running else "·",
                 ci_status(row),
@@ -301,10 +303,20 @@ def rows(state, directory, scanner):
     return output
 
 
+def diff_size(row):
+    """Size of the change: `+adds −dels · Nf`, or `—` when the scanner knew no diff fields."""
+    additions = row.get("additions")
+    if type(additions) is not int:
+        return "—"
+    deletions = row.get("deletions", 0)
+    files = row.get("files", 0)
+    return f"+{additions} −{deletions} · {files}f"
+
+
 def widths(columns):
     terminal = max(133, min(220, shutil.get_terminal_size((180, 24)).columns))
-    fixed = [11, None, 9, 15, 9, 8, 11, 20, None]
-    available = terminal - 28 - sum(value or 0 for value in fixed)
+    fixed = [22, 11, None, 9, 13, 15, 9, 8, 11, 20, None]
+    available = terminal - 30 - sum(value or 0 for value in fixed)
     flexible = [max(12, available * 44 // 100), max(10, available * 56 // 100)]
     result = []
     flex = iter(flexible)
@@ -382,13 +394,13 @@ def tint(value, column, enabled):
     clean = value.strip()
     if not clean:
         return value
-    if column == 0:
+    if column == 1:
         match = re.match(r"S(\d+)", clean)
         if not match:
             return f"\033[90m{value}{RESET}"
         color = STACK_COLORS[(int(match.group(1)) - 1) % len(STACK_COLORS)]
         return f"{color}{value}{RESET}"
-    semantic_columns = (3, 4, 5, 6)
+    semantic_columns = (5, 6, 7, 8)
     if column not in semantic_columns:
         return value
     color = next((color for key, color in COLORS.items() if key in clean), None)
@@ -397,9 +409,11 @@ def tint(value, column, enabled):
 
 def table(data, color=False):
     columns = [
+        "Branch",
         "Stack",
         "PR",
         "Issue",
+        "Diff",
         "Status",
         "Agent",
         "CI",
@@ -469,11 +483,35 @@ def signature(directory):
     return tuple(values), shutil.get_terminal_size((180, 24)).columns
 
 
+def refresh(directory):
+    """One scanner pass, on demand: the same pass `babysit-scan.py --watch` runs every 60
+    seconds, without the watcher. It writes state; the redraw follows from the state moving.
+    Returns a hint line when no pass can run here, else None.
+
+    The scanner derives its state dir from the checkout it runs in, so this only works from
+    the watched repo's checkout — the same place the dashboard resolves its own state dir.
+    """
+    script = os.path.join(os.path.dirname(os.path.realpath(__file__)), "babysit-scan.py")
+    try:
+        here = repository()
+    except RuntimeError:
+        return "r: refresh needs the repo checkout as cwd"
+    if here.replace("/", "_") != os.path.basename(directory):
+        return f"r: cwd is {here}, not the repo this dashboard watches"
+    process = subprocess.run(
+        (sys.executable, script), capture_output=True, text=True
+    )
+    if process.returncode:
+        return "r: scan pass failed — run babysit-prs to see why"
+    return None
+
+
 def watch(directory, repo, scanner, drafts=False):
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("--watch requires an interactive terminal")
     original = termios.tcgetattr(sys.stdin)
     previous = None
+    hint = None
     try:
         tty.setcbreak(sys.stdin.fileno())
         sys.stdout.write("\033[?1049h\033[?25l")
@@ -481,12 +519,20 @@ def watch(directory, repo, scanner, drafts=False):
             current = signature(directory)
             if current != previous:
                 content = snapshot(directory, repo, scanner, color=True, drafts=drafts)
-                sys.stdout.write(f"\033[H\033[2J{content}\nq quit\n")
+                footer = f"{hint}\n" if hint else ""
+                sys.stdout.write(f"\033[H\033[2J{content}\n{footer}r refresh · q quit\n")
                 sys.stdout.flush()
                 previous = current
+                hint = None
             readable, _, _ = select.select([sys.stdin], [], [], 0.25)
-            if readable and sys.stdin.read(1).lower() == "q":
+            if not readable:
+                continue
+            key = sys.stdin.read(1).lower()
+            if key == "q":
                 break
+            if key == "r":
+                hint = refresh(directory)
+                previous = None  # a failed pass wrote nothing; its message still owes a redraw
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original)
         sys.stdout.write("\033[?25h\033[?1049l")
@@ -544,6 +590,9 @@ def self_check(scanner):
             parent=43,
             ci="SUCCESS",
             merge_state="CLEAN",
+            additions=120,
+            deletions=8,
+            files=6,
         ),
         "45": dict(
             base,
@@ -584,7 +633,7 @@ def self_check(scanner):
 
     # Head first inside a stack, and the stack `gh stack` opened on top of the chain stays its own
     # — the base link alone would read all five PRs as one.
-    assert [row[0] for row in rendered] == [
+    assert [row[1] for row in rendered] == [
         "S1 ╭ HEAD",
         "S1 ├ MID",
         "S1 ╰ BASE",
@@ -592,7 +641,7 @@ def self_check(scanner):
         "S2 ╰ BASE",
         "◆ SINGLE",
     ]
-    assert [row[1].text.split()[0] for row in rendered] == [
+    assert [row[2].text.split()[0] for row in rendered] == [
         "#44",
         "#43",
         "#42",
@@ -600,9 +649,11 @@ def self_check(scanner):
         "#45",
         "#99",
     ]
-    shown = {row[1].text.split()[0]: row for row in rendered}
-    assert shown["#42"][2].text == "BOF-42"
-    assert shown["#42"][3:] == [
+    shown = {row[2].text.split()[0]: row for row in rendered}
+    assert shown["#42"][0] == "fix/BOF-42-cart"
+    assert shown["#42"][3].text == "BOF-42"
+    assert shown["#42"][4] == "—", "state without diff fields reads as no size"
+    assert shown["#42"][5:] == [
         "👀 REVIEW",
         "·",
         "❌ FAIL",
@@ -610,19 +661,22 @@ def self_check(scanner):
         "🤖 0 open · 5 closed\n👤 0 open · 2 closed",
         "✓ 1 fixed · ⛔ failing e2e",
     ]
-    assert shown["#43"][3:7] == [
+    assert shown["#43"][5:9] == [
         "🔧 WORKING",
         "🤖 ACTIVE",
         "⏳ RUN",
         "⛔ BLOCKED",
     ]
-    assert shown["#43"][7] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
+    assert shown["#43"][9] == "🤖 1 open · 2 closed\n👤 0 open · 1 closed"
     assert (
         thread_summary({"unresolved_bot": 3}, scanner.STATE_SCHEMA_VERSION)
         == "⚠ scanner outdated"
     )
-    assert shown["#44"][3] == "✅ READY"
-    assert shown["#99"][3:7] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
+    assert diff_size({"additions": 12, "deletions": 3, "files": 4}) == "+12 −3 · 4f"
+    assert diff_size({"additions": "12"}) == "—", "a non-int is pre-schema state, not a size"
+    assert shown["#44"][4] == "+120 −8 · 6f"
+    assert shown["#44"][5] == "✅ READY"
+    assert shown["#99"][5:9] == ["📝 DRAFT", "·", "· NONE", "📝 DRAFT"]
     class DraftScanner:
         STATE_SCHEMA_VERSION = scanner.STATE_SCHEMA_VERSION
         link_stack = staticmethod(scanner.link_stack)

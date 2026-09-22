@@ -42,6 +42,7 @@ pageInfo { hasNextPage endCursor }
 FRAGMENT = """
 fragment S on PullRequest {
   number url title isDraft headRefName baseRefName mergeable mergeStateStatus
+  additions deletions changedFiles
   stackEntry { position stack { number } }
   reviewThreads(first: 100) {
 """ + THREAD_FIELDS + """
@@ -165,6 +166,9 @@ def row(p, seen):
         "mergeable": p["mergeable"],
         "ci": rollup.get("state") or "NONE",
         "head": (commit.get("oid") or "")[:7],
+        "additions": p["additions"],
+        "deletions": p["deletions"],
+        "files": p["changedFiles"],
         "unresolved_bot": len(bot),
         "unresolved_human": len(human),
         "held": len(held),
@@ -364,6 +368,31 @@ def fold_reports(d):
     return out, lines
 
 
+def park_events(d, lines):
+    """A pass outside the watch (a dashboard's `r`) folds reports the watcher never saw.
+    Park those lines for it: the next watch iteration drains and prints them, so no report
+    line is lost to whoever happened to scan first."""
+    if not lines:
+        return
+    with open(os.path.join(d, "pending-events"), "a") as f:
+        f.write("".join(f"{line}\n" for line in lines))
+
+
+def drain_events(d):
+    """The watcher's half of the handshake — every parked line, once."""
+    path = os.path.join(d, "pending-events")
+    try:
+        with open(path) as f:
+            lines = [line for line in f.read().splitlines() if line]
+    except OSError:
+        return []
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    return lines
+
+
 def muted(d, n):
     """Is an agent still alive on this PR? Its mute file says so — until it goes stale.
 
@@ -432,10 +461,15 @@ def carry(prev, reports, prs):
 
 
 def once(d, only=None, include_drafts=False):
-    prs, reports, _, seen, prev = scan(d, only, include_drafts)
+    prs, reports, report_lines, seen, prev = scan(d, only, include_drafts)
     carried = carry(prev, reports, prs)
     order, running = stacks(prs), {n for n in prs if muted(d, n)}
     save_state(d, prs, carried, seen)
+    # This pass saw transitions and folded reports the watcher never saw: park the lines it
+    # would have printed, or its next diff — against the state just written here — is silent.
+    visible = {n: r for n, r in prs.items() if not muted(d, n)}
+    moved = diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
+    park_events(d, report_lines + moved)
     print(json.dumps({
         "state_dir": d,
         "prs": [dict(r, report=carried.get(str(n)), needs_agent=needs_agent(r),
@@ -473,6 +507,7 @@ def watch(d, secs, only=None, include_drafts=False):
             try:
                 prs, reports, lines, seen, prev = scan(d, only, include_drafts)
                 visible = {n: r for n, r in prs.items() if not muted(d, n)}
+                lines = drain_events(d) + lines
                 lines += diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
                 save_state(d, prs, carry(prev, reports, prs), seen)
                 for line in lines:
@@ -653,6 +688,13 @@ def self_check():
         assert lines == ["#42 report: pushed 2, inflight 0, held 3, blocked -"], lines
         assert not muted(d, 42), "folding the report must lift the mute"
         assert fold_reports(d) == ({}, []), "a folded report is consumed once"
+        # A pass outside the watch parks its lines; the watcher drains them once.
+        park_events(d, ["#42 report: pushed 2"])
+        park_events(d, ["#7 ci FAILURE→SUCCESS"])
+        assert drain_events(d) == ["#42 report: pushed 2", "#7 ci FAILURE→SUCCESS"]
+        assert drain_events(d) == [], "drained lines are consumed once"
+        park_events(d, [])
+        assert not os.path.exists(os.path.join(d, "pending-events")), "empty park writes nothing"
         # A dead agent writes no report. Its mute must not reserve the stack forever.
         stale = os.path.join(d, "7.muted")
         open(stale, "w").close()
