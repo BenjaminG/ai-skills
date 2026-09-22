@@ -4,3 +4,9 @@
 
 # humanizer: per-user style customization, created by `humanizer init`
 skills/humanizer/STYLE.md
+
+# impeccable hook cache
+skills/*/.impeccable/
+
+# eval run outputs
+evals/results/
