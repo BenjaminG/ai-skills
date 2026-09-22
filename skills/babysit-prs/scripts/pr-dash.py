@@ -316,7 +316,8 @@ def diff_size(row):
 def widths(columns):
     terminal = max(133, min(220, shutil.get_terminal_size((180, 24)).columns))
     fixed = [22, 11, None, 9, 13, 15, 9, 8, 11, 20, None]
-    available = terminal - 30 - sum(value or 0 for value in fixed)
+    borders = 3 * len(fixed) + 1  # `│ ` + cell + ` ` per column, then the closing `│`
+    available = terminal - borders - sum(value or 0 for value in fixed)
     flexible = [max(12, available * 44 // 100), max(10, available * 56 // 100)]
     result = []
     flex = iter(flexible)
@@ -702,9 +703,11 @@ def self_check(scanner):
     assert merged["100"]["report"] is None
     assert sample.keys() == {"42", "43", "44", "45", "46", "99"}, "drafts stay out of state"
 
+    os.environ["COLUMNS"] = "186"  # get_terminal_size reads it first
     colored = table(rendered, color=True)
     line_widths = {display_width(line) for line in colored.splitlines()}
     assert len(line_widths) == 1, line_widths
+    assert max(line_widths) <= 186, f"{line_widths}: a line wider than the terminal wraps"
     assert "#42 Fix cart" in colored
     assert "\033]8;;https://example.test/42" in colored
     assert "\033]8;;https://linear.app/issue/BOF-42" in colored
