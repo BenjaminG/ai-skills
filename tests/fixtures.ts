@@ -44,6 +44,9 @@ export const pane = (id: string): RenderInput<'Pane'> => ({
  */
 export function world(on: On, process: { stdout?: string; stderr?: string; python3?: { stdout?: string; stderr?: string; exitCode?: number } }) {
   const runs: string[][] = []
+  // Every file's mtime as `date -r` prints it (kept out of `runs`); a test moves it to say
+  // "the file changed".
+  const files = { mtimeMs: 1 }
   const opened: string[] = []
   const closed: string[] = []
   const filled: string[] = []
@@ -54,6 +57,10 @@ export function world(on: On, process: { stdout?: string; stderr?: string; pytho
   on('command.register', ($, e) => ({ value: { command: e.name } }))
 
   on('process.run', ($, e) => {
+    if (e.argv[0] === 'date') {
+      return { value: { exitCode: 0, stdout: `${files.mtimeMs}\n`, stderr: '' } }
+    }
+
     runs.push([...e.argv])
 
     const answer: { stdout?: string; stderr?: string; exitCode?: number } =
@@ -104,7 +111,7 @@ export function world(on: On, process: { stdout?: string; stderr?: string; pytho
 
   const clock = mock.clock(on)
 
-  return { runs, opened, closed, filled, toasts, toolCalls, clock }
+  return { runs, opened, closed, filled, toasts, toolCalls, clock, files }
 }
 
 /** A rendered tree's text as it reads: strings and Button labels, in order. */

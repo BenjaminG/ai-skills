@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Objective state of the author's open PRs — the only reader of GitHub truth for babysit-prs.
+"""Objective state of the author's open PRs — the one reader of GitHub truth, for pr-dash and
+babysit-prs alike.
 
-Usage: babysit-scan.py [PR...]        one pass, matrix JSON on stdout
-       babysit-scan.py --watch [SECS] poll forever (default 60s), one line per transition
-       babysit-scan.py --include-drafts  keep draft PRs in the scan
-       babysit-scan.py --self-check   offline assertions on the diff logic
+Usage: pr-scan.py [PR...] [--include-drafts]           a fresh pass, matrix JSON on stdout
+       pr-scan.py --follow [PR...] [--include-drafts]  that selection's event lines, forever
+       pr-scan.py --watch [SECS] [--repo OWNER/NAME]   the service itself (poll, default 60s)
+       pr-scan.py --self-check                         offline assertions
+
+One service per repo writes ~/.claude/pr-state/<owner_repo>/state.json: every open PR of the
+author, drafts included, plus any PR a babysit selection names. Whoever needs it first starts it
+(`ensure`); nobody runs it by hand. It passes every SECS seconds or on SIGUSR1, appends one line
+per transition to events.log, and exits once no reader has touched reader.heartbeat for
+READER_TTL. Readers filter on their side: the dashboard hides drafts, babysit-prs keeps its own
+selection.
 
 Named PR numbers are the selection: they are fetched as given, past the author and the
 draft filter alike.
@@ -17,12 +25,20 @@ import argparse
 import fcntl
 import json
 import os
+import re
+import select
+import signal
 import subprocess
+import sys
 import time
 
 POLL_DEFAULT = 60
 MUTE_TTL = 3600
-STATE_SCHEMA_VERSION = 2
+READER_TTL = 1800
+PASS_WAIT = 10
+EVENTS_MAX = 1 << 20
+SCRIPT = os.path.realpath(__file__)
+STATE_SCHEMA_VERSION = 3
 # Same list as pr-feedback/scripts/fetch-pr.py — a machine account posting with a PAT
 # reads as `User`, so __typename alone is not enough.
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
@@ -41,7 +57,8 @@ pageInfo { hasNextPage endCursor }
 
 FRAGMENT = """
 fragment S on PullRequest {
-  number url title isDraft headRefName baseRefName mergeable mergeStateStatus
+  number url title state isDraft headRefName baseRefName mergeable mergeStateStatus
+  author { login }
   additions deletions changedFiles
   stackEntry { position stack { number } }
   reviewThreads(first: 100) {
@@ -62,10 +79,13 @@ def gh(*args):
 _REPO = []
 
 
-def repo():
-    """owner, name — asked once per process, not once per poll."""
+def repo(slug=None):
+    """owner, name — asked once per process, not once per poll. Every reader resolves it here,
+    so the dashboard and the service can never land on two different repos. `slug` pins it:
+    the service is handed its repo, because the worktree it was started from can disappear."""
     if not _REPO:
-        owner, _, name = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").strip().partition("/")
+        slug = slug or gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").strip()
+        owner, _, name = slug.partition("/")
         _REPO.extend((owner, name))
     return _REPO
 
@@ -85,7 +105,15 @@ def repo_slug():
 
 
 def state_dir():
-    d = os.path.join(os.path.expanduser("~"), ".claude", "babysit-state", repo_slug())
+    home = os.path.join(os.path.expanduser("~"), ".claude")
+    d = os.path.join(home, "pr-state", repo_slug())
+    legacy = os.path.join(home, "babysit-state", repo_slug())
+    if not os.path.exists(d) and os.path.isdir(legacy):
+        os.makedirs(os.path.dirname(d), exist_ok=True)
+        try:
+            os.rename(legacy, d)  # mutes, reports and seen comment ids come along
+        except OSError:
+            pass                  # another reader migrated it first
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -94,11 +122,10 @@ def is_bot(login, typename):
     return typename == "Bot" or login.endswith("[bot]") or login in BOT_LOGINS
 
 
-def open_prs(include_drafts=False):
-    args = ["pr", "list", "--author", "@me", "--state", "open"]
-    if not include_drafts:
-        args.append("--draft=false")
-    out = gh(*args, "--json", "number", "-q", ".[].number")
+def open_prs():
+    """Every open PR of the author, drafts included: filtering is each reader's business."""
+    out = gh("pr", "list", "-R", "/".join(repo()), "--author", "@me", "--state", "open",
+             "--json", "number", "-q", ".[].number")
     return sorted(int(n) for n in out.split())
 
 
@@ -155,6 +182,7 @@ def row(p, seen):
         "number": p["number"],
         "url": p["url"],
         "title": p["title"],
+        "author": (p.get("author") or {}).get("login"),
         "draft": p["isDraft"],
         "branch": p["headRefName"],
         "base": p["baseRefName"],
@@ -368,29 +396,152 @@ def fold_reports(d):
     return out, lines
 
 
-def park_events(d, lines):
-    """A pass outside the watch (a dashboard's `r`) folds reports the watcher never saw.
-    Park those lines for it: the next watch iteration drains and prints them, so no report
-    line is lost to whoever happened to scan first."""
+def emit(d, lines):
+    """Print for scan.log, append for `--follow`. Past EVENTS_MAX the log starts over: a follower
+    only ever reads forward, and state.json carries the present."""
     if not lines:
         return
-    with open(os.path.join(d, "pending-events"), "a") as f:
+    path = os.path.join(d, "events.log")
+    try:
+        full = os.path.getsize(path) > EVENTS_MAX
+    except OSError:
+        full = False
+    with open(path, "w" if full else "a") as f:
         f.write("".join(f"{line}\n" for line in lines))
+    for line in lines:
+        print(line, flush=True)
 
 
-def drain_events(d):
-    """The watcher's half of the handshake — every parked line, once."""
-    path = os.path.join(d, "pending-events")
+def read_selection(d):
+    """PR numbers a babysit-prs run named: fetched on top of the author's own."""
     try:
-        with open(path) as f:
-            lines = [line for line in f.read().splitlines() if line]
-    except OSError:
+        with open(os.path.join(d, "selection.json")) as f:
+            return [int(n) for n in json.load(f)]
+    except (OSError, ValueError, TypeError):
         return []
-    try:
-        os.remove(path)
-    except OSError:
+
+
+def write_selection(d, only):
+    with open(os.path.join(d, "selection.json"), "w") as f:
+        json.dump(sorted(only), f)
+
+
+def touch(path):
+    with open(path, "a"):
         pass
-    return lines
+    os.utime(path)
+
+
+def mtime(path):
+    try:
+        return os.stat(path).st_mtime_ns
+    except OSError:
+        return None
+
+
+def take_lock(path, what, tries=10):
+    """flock `path` for this process's lifetime and write our pid and script into it.
+
+    A few tries, not one: a reader's `holder` probe holds the lock for an instant, and a service
+    starting in that instant must not give up and leave the repo unwatched.
+    """
+    lock = open(path, "a+")
+    for attempt in range(tries):
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if attempt == tries - 1:
+                lock.seek(0)
+                owner = (lock.read().split() or ["unknown"])[0]
+                lock.close()
+                raise RuntimeError(f"{what} already active (pid {owner})")
+            time.sleep(0.2)
+    lock.seek(0)
+    lock.truncate()
+    lock.write(f"{os.getpid()}\n{SCRIPT}\n")
+    lock.flush()
+    return lock
+
+
+def holder(path):
+    """(pid, script) of whoever holds the lock at `path`, or None when nobody does.
+
+    The lock itself answers, not the pid: the kernel drops it when its process dies, where a pid
+    left in a file can be reused by any process — and SIGUSR1 kills a process that expects none.
+    """
+    try:
+        f = open(path, "a+")
+    except OSError:
+        return None
+    with f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            f.seek(0)
+            pid, _, script = f.read().partition("\n")
+            return (int(pid) if pid.isdigit() else None), script.strip()
+        fcntl.flock(f, fcntl.LOCK_UN)
+        return None
+
+
+def outdated(script):
+    """Is the running service another, older copy of this script? A plugin update lands in a new
+    directory, and the copy left behind would scan with old code until the service idles out.
+    Newer on disk wins, so two versions never take turns replacing each other."""
+    if script == SCRIPT:
+        return False
+    try:
+        return os.path.getmtime(SCRIPT) > os.path.getmtime(script)
+    except OSError:
+        return True  # its copy is gone
+
+
+def ensure(d):
+    """Mark a reader alive, and start the service unless one runs. (pid, started)."""
+    touch(os.path.join(d, "reader.heartbeat"))
+    lock = os.path.join(d, "watch.lock")
+    held = holder(lock)
+    if held and not outdated(held[1]):
+        return held[0], False
+    if held and held[0]:
+        os.kill(held[0], signal.SIGTERM)
+        for _ in range(25):
+            if not holder(lock):
+                break
+            time.sleep(0.2)
+    with open(os.path.join(d, "scan.log"), "a") as log:
+        child = subprocess.Popen(
+            (sys.executable, SCRIPT, "--watch", str(POLL_DEFAULT), "--repo", "/".join(repo()),
+             "--state-dir", d),
+            cwd=d, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True)
+    return child.pid, True
+
+
+def wake(d):
+    """Ask the running service for a pass now. False when none runs to ask."""
+    held = holder(os.path.join(d, "watch.lock"))
+    if not held or not held[0]:
+        return False
+    os.kill(held[0], signal.SIGUSR1)
+    return True
+
+
+def fresh_pass(d):
+    """A pass the caller can read: start or wake the service, then wait for state.json to move.
+    A service just started runs its first pass on its own — and has no SIGUSR1 handler yet."""
+    state = os.path.join(d, "state.json")
+    before = mtime(state)
+    _, started = ensure(d)
+    if not started:
+        wake(d)
+    deadline = time.time() + PASS_WAIT
+    while time.time() < deadline:
+        if mtime(state) != before:
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def muted(d, n):
@@ -425,15 +576,16 @@ def resolve_unknown(prs, seen):
     return prs
 
 
-def scan(d, only=None, include_drafts=False):
+def scan(d, extras=()):
     prev = load_state(d)
     seen = {int(k): dict(v.get("seen") or {}) for k, v in prev.items()}
     # Fold before ventilating: an agent's report certifies everything still open on that PR as
     # deliberately left open, and the row that comes out of this pass has to reflect that — or
     # the manager reads a stale `unresolved_bot` and respawns the agent that just finished.
     reports, report_lines = fold_reports(d)
-    # Named numbers are the selection: fetching by number bypasses author and draft alike.
-    raw = fetch_raw(only or open_prs(include_drafts))
+    # A named PR is fetched by number, past the author filter — and dropped once it closes.
+    raw = {n: p for n, p in fetch_raw(sorted(set(open_prs()) | set(extras))).items()
+           if p.get("state", "OPEN") == "OPEN"}
     for k in reports:
         n = int(k)
         if n in raw:
@@ -449,7 +601,7 @@ def carry(prev, reports, prs):
     A held gist points at an open thread. That thread can be resolved by anyone — the next agent,
     or the author in another session, who read the gist and fixed it by hand. The scan sees it on
     the next pass; the report never would. So a gist outlives its thread by exactly zero passes.
-    Only PRs this scan actually looked at are touched: a filtered pass must not wipe the rest.
+    Only PRs this scan actually looked at are touched.
     """
     out = {k: (prev.get(k) or {}).get("report") for k in prev}
     out.update(reports)
@@ -460,61 +612,132 @@ def carry(prev, reports, prs):
     return out
 
 
-def once(d, only=None, include_drafts=False):
-    prs, reports, report_lines, seen, prev = scan(d, only, include_drafts)
-    carried = carry(prev, reports, prs)
+def selected(state, only, include_drafts, mine):
+    """The rows a babysit selection covers: the named PRs, else the author's own, drafts only on
+    request. `mine` guards the default: a PR an earlier run named stays in the state, and
+    babysitting it unasked would push to a colleague's branch."""
+    prs = {int(k): {f: v for f, v in r.items() if f != "seen"} for k, r in state.items()}
+    if only:
+        return {n: r for n, r in prs.items() if n in only}
+    return {n: r for n, r in prs.items() if r.get("author", mine) == mine
+            and (include_drafts or not r.get("draft"))}
+
+
+def once(d, only=(), include_drafts=False):
+    """babysit-prs' pass: the service's, freshly run, as that selection's matrix."""
+    if only:
+        write_selection(d, only)
+    fresh = fresh_pass(d)
+    prs = link_stack(selected(load_state(d), only, include_drafts, me()))
     order, running = stacks(prs), {n for n in prs if muted(d, n)}
-    save_state(d, prs, carried, seen)
-    # This pass saw transitions and folded reports the watcher never saw: park the lines it
-    # would have printed, or its next diff — against the state just written here — is silent.
-    visible = {n: r for n, r in prs.items() if not muted(d, n)}
-    moved = diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
-    park_events(d, report_lines + moved)
-    print(json.dumps({
+    out = {
         "state_dir": d,
-        "prs": [dict(r, report=carried.get(str(n)), needs_agent=needs_agent(r),
-                     agent_running=n in running,
+        "prs": [dict(r, needs_agent=needs_agent(r), agent_running=n in running,
                      waits_on=waits_on(r, prs, order, running), merge_ready=merge_ready(r),
                      status=status(r, prs, order, running))
                 for n, r in sorted(prs.items())],
-    }, indent=2))
+    }
+    if not fresh:
+        out["stale"] = f"no pass landed within {PASS_WAIT}s; this is the last state on disk"
+    print(json.dumps(out, indent=2))
 
 
-def acquire_watch_lock(d):
-    lock = open(os.path.join(d, "watch.lock"), "a+")
+def keep(line, state, only, include_drafts, mine):
+    """Does this event line belong to the follower's selection? One naming no PR (a scan error)
+    does; so does a `gone` line, whose row has left the state and says nothing more."""
+    match = re.match(r"#(\d+) ", line)
+    if not match:
+        return True
+    n = int(match.group(1))
+    if str(n) not in state:
+        return not only or n in only
+    return n in selected({str(n): state[str(n)]}, only, include_drafts, mine)
+
+
+def follow(d, only=(), include_drafts=False):
+    """babysit-prs' Monitor: the service's event lines for one selection, until killed.
+
+    Holds babysit.lock, which is how the dashboard knows agents are on the job, and re-ensures
+    the service every 30 s: its heartbeat keeps it alive, and a service that died comes back.
+    """
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # TaskStop: run the finally below
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        lock.seek(0)
-        owner = lock.read().strip() or "unknown"
+        lock = take_lock(os.path.join(d, "babysit.lock"), "babysit-prs")
+    except RuntimeError as e:
+        print(f"scan error: {e}", flush=True)
+        return 1
+    path = os.path.join(d, "events.log")
+    try:
+        if only:
+            write_selection(d, only)
+        mine, offset, tick = me(), os.path.getsize(path) if os.path.exists(path) else 0, 0
+        while True:
+            if tick % 30 == 0:
+                ensure(d)
+            tick += 1
+            size = os.path.getsize(path) if os.path.exists(path) else 0
+            if size < offset:
+                offset = 0  # the service started the log over
+            if size > offset:
+                with open(path, "rb") as f:
+                    f.seek(offset)
+                    chunk = f.read()
+                whole = chunk[: chunk.rfind(b"\n") + 1]  # a line still being written waits
+                offset += len(whole)
+                state = load_state(d)
+                for line in whole.decode().splitlines():
+                    if line and keep(line, state, only, include_drafts, mine):
+                        print(line, flush=True)
+            time.sleep(1)
+    finally:
+        if only:
+            try:
+                os.remove(os.path.join(d, "selection.json"))
+            except OSError:
+                pass
         lock.close()
-        raise RuntimeError(f"watcher already active (pid {owner})")
-    lock.seek(0)
-    lock.truncate()
-    lock.write(str(os.getpid()))
-    lock.flush()
-    return lock
 
 
-def watch(d, secs, only=None, include_drafts=False):
+def service(d, secs):
+    """The one writer of the state. A pass every `secs`, or at once on SIGUSR1."""
+    wake_r, wake_w = os.pipe()
+    os.set_blocking(wake_r, False)
+    os.set_blocking(wake_w, False)
+    signal.set_wakeup_fd(wake_w)  # a signal makes the select below return early
+    signal.signal(signal.SIGUSR1, lambda *_: None)
     try:
-        lock = acquire_watch_lock(d)
+        lock = take_lock(os.path.join(d, "watch.lock"), "watcher")
     except RuntimeError as e:
         print(f"scan error: {e}", flush=True)
         return
+    os.chdir(d)
+    born = mtime(SCRIPT)
     try:
         while True:
             try:
-                prs, reports, lines, seen, prev = scan(d, only, include_drafts)
+                prs, reports, lines, seen, prev = scan(d, read_selection(d))
                 visible = {n: r for n, r in prs.items() if not muted(d, n)}
-                lines = drain_events(d) + lines
                 lines += diff({k: v for k, v in prev.items() if int(k) in visible}, visible)
                 save_state(d, prs, carry(prev, reports, prs), seen)
-                for line in lines:
-                    print(line, flush=True)
-            except Exception as e:  # a transient gh failure must not kill the watch
-                print(f"scan error: {e}", flush=True)
-            time.sleep(secs)
+                emit(d, lines)
+            except Exception as e:  # a transient gh failure must not kill the service
+                emit(d, [f"scan error: {e}"])
+            if time.time() - (mtime(os.path.join(d, "reader.heartbeat")) or 0) / 1e9 > READER_TTL:
+                print(f"no reader for {READER_TTL // 60} min: exiting", flush=True)
+                return
+            now = mtime(SCRIPT)
+            if now is None:
+                print("script removed: exiting", flush=True)
+                return
+            if now != born:
+                print("script changed: restarting", flush=True)
+                lock.close()
+                os.execv(sys.executable, [sys.executable, SCRIPT, *sys.argv[1:]])
+            select.select([wake_r], [], [], secs)
+            try:
+                os.read(wake_r, 512)
+            except BlockingIOError:
+                pass
     finally:
         lock.close()
 
@@ -669,16 +892,22 @@ def self_check():
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.
     import tempfile
     with tempfile.TemporaryDirectory() as d:
-        lock = acquire_watch_lock(d)
+        path = os.path.join(d, "watch.lock")
+        assert holder(path) is None, "nobody holds a fresh lock"
+        lock = take_lock(path, "watcher")
         try:
+            assert holder(path) == (os.getpid(), SCRIPT), holder(path)
             try:
-                acquire_watch_lock(d)
+                take_lock(path, "watcher", tries=1)
                 assert False, "a second watcher acquired the same state"
             except RuntimeError as e:
                 assert "watcher already active" in str(e)
         finally:
             lock.close()
-        acquire_watch_lock(d).close()
+        assert holder(path) is None, "a closed lock is free: its holder died"
+        take_lock(path, "watcher").close()
+        assert not outdated(SCRIPT) and outdated(os.path.join(d, "gone.py")), \
+            "our own copy is current; a copy removed from disk is not"
         open(os.path.join(d, "42.muted"), "w").close()
         with open(os.path.join(d, "42.report.json"), "w") as f:
             json.dump({"pushed": 2, "inflight": 0, "held": 3, "blocked": None}, f)
@@ -688,13 +917,29 @@ def self_check():
         assert lines == ["#42 report: pushed 2, inflight 0, held 3, blocked -"], lines
         assert not muted(d, 42), "folding the report must lift the mute"
         assert fold_reports(d) == ({}, []), "a folded report is consumed once"
-        # A pass outside the watch parks its lines; the watcher drains them once.
-        park_events(d, ["#42 report: pushed 2"])
-        park_events(d, ["#7 ci FAILURE→SUCCESS"])
-        assert drain_events(d) == ["#42 report: pushed 2", "#7 ci FAILURE→SUCCESS"]
-        assert drain_events(d) == [], "drained lines are consumed once"
-        park_events(d, [])
-        assert not os.path.exists(os.path.join(d, "pending-events")), "empty park writes nothing"
+        # The event log grows by appends, and starts over past its cap.
+        import contextlib
+        import io
+        log = os.path.join(d, "events.log")
+        with contextlib.redirect_stdout(io.StringIO()):
+            emit(d, [])
+            assert not os.path.exists(log), "no line, no log"
+            emit(d, ["#42 report: pushed 2"])
+            emit(d, ["#7 ci FAILURE→SUCCESS"])
+        with open(log) as f:
+            assert f.read() == "#42 report: pushed 2\n#7 ci FAILURE→SUCCESS\n"
+        with open(log, "w") as f:
+            f.write("x" * (EVENTS_MAX + 1))
+        with contextlib.redirect_stdout(io.StringIO()):
+            emit(d, ["#7 head a→b"])
+        with open(log) as f:
+            assert f.read() == "#7 head a→b\n", "a full log starts over"
+        # A selection survives on disk for the service, and garbage reads as none.
+        write_selection(d, [456, 123])
+        assert read_selection(d) == [123, 456]
+        with open(os.path.join(d, "selection.json"), "w") as f:
+            f.write("{")
+        assert read_selection(d) == []
         # A dead agent writes no report. Its mute must not reserve the stack forever.
         stale = os.path.join(d, "7.muted")
         open(stale, "w").close()
@@ -712,17 +957,38 @@ def self_check():
     assert carry(prev, {}, {})["7"]["held_gist"] == rep["held_gist"], \
         "a PR this pass never scanned keeps its gist"
 
-    ns = parser().parse_args(["123", "456", "--include-drafts", "--watch", "60"])
-    assert (ns.prs, ns.watch, ns.include_drafts) == ([123, 456], 60, True), ns
+    # Readers filter the service's full state: babysit-prs sees its own selection only.
+    state = {"1": dict(a, author="me", seen={"T": "c"}), "2": dict(a, number=2, author="me", draft=True),
+             "3": dict(a, number=3, author="colleague")}
+    assert set(selected(state, (), False, "me")) == {1}, "own PRs, no draft, no leftover named PR"
+    assert set(selected(state, (), True, "me")) == {1, 2}
+    assert set(selected(state, [3], False, "me")) == {3}, "a named PR is the selection"
+    assert "seen" not in selected(state, (), False, "me")[1], "comment ids stay out of the matrix"
+    assert set(selected({"9": dict(a, number=9)}, (), False, "me")) == {9}, \
+        "a row from before the author field is the author's"
+    assert keep("#1 ci SUCCESS→FAILURE", state, (), False, "me")
+    assert not keep("#2 head a→b", state, (), False, "me"), "a draft stays quiet unless asked"
+    assert not keep("#3 head a→b", state, (), False, "me"), "so does a PR nobody named this run"
+    assert keep("#3 head a→b", state, [3], False, "me") and not keep("#1 head a→b", state, [3], False, "me")
+    assert keep("#8 gone (merged or closed)", state, (), False, "me")
+    assert not keep("#8 gone (merged or closed)", state, [3], False, "me")
+    assert keep("scan error: gh: timeout", state, [3], False, "me"), "an error concerns everyone"
+
+    ns = parser().parse_args(["123", "456", "--include-drafts", "--follow"])
+    assert (ns.prs, ns.follow, ns.include_drafts) == ([123, 456], True, True), ns
     assert parser().parse_args([]).prs == [] and parser().parse_args([]).watch is None
     assert parser().parse_args(["--watch"]).watch == POLL_DEFAULT, "bare --watch keeps the default"
+    assert parser().parse_args(["--watch", "--repo", "o/n"]).repo == "o/n"
     print("self-check ok")
 
 
 def parser():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("prs", nargs="*", type=int, help="PR numbers to scan; default is every open PR")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("prs", nargs="*", type=int, help="PR numbers to select; default is every open PR")
     ap.add_argument("--watch", nargs="?", const=POLL_DEFAULT, type=int, metavar="SECS")
+    ap.add_argument("--follow", action="store_true")
+    ap.add_argument("--repo", metavar="OWNER/NAME")
+    ap.add_argument("--state-dir", help=argparse.SUPPRESS)  # where the reader that started it reads
     ap.add_argument("--include-drafts", action="store_true")
     ap.add_argument("--self-check", action="store_true")
     return ap
@@ -732,7 +998,12 @@ if __name__ == "__main__":
     ns = parser().parse_args()
     if ns.self_check:
         self_check()
-    elif ns.watch is not None:
-        watch(state_dir(), ns.watch, ns.prs, ns.include_drafts)
     else:
-        once(state_dir(), ns.prs, ns.include_drafts)
+        repo(ns.repo)
+        d = ns.state_dir or state_dir()
+        if ns.watch is not None:
+            service(d, ns.watch)
+        elif ns.follow:
+            sys.exit(follow(d, ns.prs, ns.include_drafts))
+        else:
+            once(d, ns.prs, ns.include_drafts)

@@ -18,7 +18,7 @@ import sys
 BODY_CAP = 600
 MIN_BODY = 15          # "LGTM", "done", "👍" carry no rule
 CHUNK = 20             # PRs per GraphQL call — 20 x 100 threads x 20 comments stays under the node cap
-# Same list as pr-feedback/scripts/fetch-pr.py and babysit-prs/scripts/babysit-scan.py —
+# Same list as pr-feedback/scripts/fetch-pr.py and pr-dash/scripts/pr-scan.py —
 # a machine account posting with a PAT reads as `User`, so __typename alone is not enough.
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
 

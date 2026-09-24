@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only terminal dashboard for babysit-prs state."""
+"""Terminal dashboard of the author's open PRs, over the state pr-scan.py's service keeps.
+
+It never reads GitHub and never writes the state: it starts the service when none runs, touches
+the reader heartbeat that keeps it alive, and draws what the state says. What only babysit-prs
+knows (live agents, their notes) shows only while babysit-prs holds babysit.lock.
+"""
 
 import argparse
 import importlib.util
@@ -8,7 +13,6 @@ import os
 import re
 import select
 import shutil
-import subprocess
 import sys
 import termios
 import time
@@ -44,7 +48,11 @@ COLORS = {
     "REVIEW": "\033[35m",
     "DRAFT": "\033[90m",
     "BLOCKED": "\033[31m",
+    "BOT": "\033[33m",
+    "FIX": "\033[31m",
 }
+ENSURE_EVERY = 30
+RESCANNING = "rescanning…"
 STACK_COLORS = [
     "\033[38;5;117m",
     "\033[38;5;183m",
@@ -68,55 +76,42 @@ class Cell:
 
 
 def scanner_module():
-    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "babysit-scan.py")
-    spec = importlib.util.spec_from_file_location("babysit_scan", path)
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "pr-scan.py")
+    spec = importlib.util.spec_from_file_location("pr_scan", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def repository():
-    process = subprocess.run(
-        ("git", "config", "--get", "remote.origin.url"),
-        capture_output=True,
-        text=True,
-    )
-    if process.returncode:
-        raise RuntimeError("cannot resolve repository; run from its checkout")
-    remote = process.stdout.strip().removesuffix(".git")
-    if "github.com:" in remote:
-        slug = remote.rsplit("github.com:", 1)[1]
-    elif "github.com/" in remote:
-        slug = remote.rsplit("github.com/", 1)[1]
-    else:
-        raise RuntimeError("origin is not a GitHub repository")
-    if slug.count("/") != 1:
-        raise RuntimeError("cannot resolve GitHub owner/repository")
-    return slug
-
-
-def resolve_state_dir(explicit=None):
+def resolve_state_dir(scanner, explicit=None):
+    """The state dir and `owner/name`, resolved the way the service resolves them."""
     if explicit:
-        return os.path.expanduser(explicit), None
-    repo = repository()
-    directory = os.path.join(
-        os.path.expanduser("~"), ".claude", "babysit-state", repo.replace("/", "_")
-    )
-    return directory, repo
+        directory = os.path.expanduser(explicit)
+        scanner.repo(os.path.basename(directory).replace("_", "/", 1))
+        return directory, "/".join(scanner.repo())
+    try:
+        scanner.repo()
+    except RuntimeError:
+        raise RuntimeError("cannot resolve the GitHub repository; run from its checkout")
+    return scanner.state_dir(), "/".join(scanner.repo())
 
 
 def load_state(directory):
-    path = os.path.join(directory, "state.json")
+    """The state, or None before the service's first pass."""
     try:
-        with open(path) as handle:
+        with open(os.path.join(directory, "state.json")) as handle:
             state = json.load(handle)
     except FileNotFoundError:
-        raise RuntimeError("no babysit state; start babysit-prs first")
+        return None
     except json.JSONDecodeError:
-        raise RuntimeError("babysit state is unreadable; wait for the next scan")
+        raise RuntimeError("the PR state is unreadable; wait for the next scan")
     if not isinstance(state, dict):
-        raise RuntimeError("babysit state has an invalid shape")
-    return state, path
+        raise RuntimeError("the PR state has an invalid shape")
+    return state
+
+
+def babysitting(directory, scanner):
+    return scanner.holder(os.path.join(directory, "babysit.lock")) is not None
 
 
 def active_agents(directory, numbers, ttl):
@@ -239,7 +234,27 @@ def stack_layout(prs, order):
     return output
 
 
-def dashboard_status(number, row, prs, order, running, scanner):
+def github_status(row, scanner):
+    """What GitHub alone says. No agent is coming, so nothing reads as one: bot threads and a
+    red check or a conflict are the author's to take, or to hand to babysit-prs."""
+    if row.get("unresolved_bot"):
+        return f"🤖 BOT {row['unresolved_bot']}"
+    if row.get("ci") == "FAILURE" or row.get("mergeable") == "CONFLICTING":
+        return "🔨 FIX"
+    if row.get("held"):
+        return STATUS_LABELS["your-call"]
+    if scanner.merge_ready(row):
+        return STATUS_LABELS["ready"]
+    if row.get("ci") == "PENDING":
+        return STATUS_LABELS["ci"]
+    if row.get("draft"):
+        return STATUS_LABELS["draft"]
+    return STATUS_LABELS["review"]
+
+
+def dashboard_status(number, row, prs, order, running, scanner, babysit):
+    if not babysit:
+        return github_status(row, scanner)
     if number in running:
         return "🔧 WORKING"
     if row.get("held"):
@@ -256,47 +271,36 @@ def dashboard_status(number, row, prs, order, running, scanner):
     return STATUS_LABELS[status]
 
 
-def with_drafts(state, scanner):
-    """Drafts the scan filtered out, fetched for display only — state is never written."""
-    missing = [n for n in scanner.open_prs(include_drafts=True) if str(n) not in state]
-    merged = dict(state)
-    for number, raw in scanner.fetch_raw(missing).items():
-        merged[str(number)] = dict(
-            scanner.row(raw, {}),
-            schema_version=scanner.STATE_SCHEMA_VERSION,
-            report=None,
-        )
-    scanner.link_stack({int(key): value for key, value in merged.items()})
-    return merged
-
-
-def rows(state, directory, scanner):
-    prs = {int(key): dict(value) for key, value in state.items()}
+def rows(state, directory, scanner, babysit=False, drafts=False):
+    """One row per PR, stack order. The Note column is babysit-prs' own, so it comes with it."""
+    prs = {
+        int(key): dict(value)
+        for key, value in state.items()
+        if drafts or not value.get("draft")
+    }
     if not prs:
         return []
     order = scanner.stacks(prs)
-    running = active_agents(directory, prs, scanner.MUTE_TTL)
+    running = active_agents(directory, prs, scanner.MUTE_TTL) if babysit else set()
     output = []
     for number, stack in stack_layout(prs, order):
         row = prs[number]
         issue = issue_key(row)
-        label = dashboard_status(number, row, prs, order, running, scanner)
-        output.append(
-            [
-                Cell(
-                    row.get("branch") or "—",
-                    None if issue == "—" else f"https://linear.app/issue/{issue}",
-                ),
-                stack,
-                Cell(f"#{number} {pr_title(row)}", row.get("url")),
-                diff_size(row),
-                label,
-                ci_status(row),
-                merge_status(row),
-                thread_summary(row, scanner.STATE_SCHEMA_VERSION),
-                note(row),
-            ]
-        )
+        label = dashboard_status(number, row, prs, order, running, scanner, babysit)
+        cells = [
+            Cell(
+                row.get("branch") or "—",
+                None if issue == "—" else f"https://linear.app/issue/{issue}",
+            ),
+            stack,
+            Cell(f"#{number} {pr_title(row)}", row.get("url")),
+            diff_size(row),
+            label,
+            ci_status(row),
+            merge_status(row),
+            thread_summary(row, scanner.STATE_SCHEMA_VERSION),
+        ]
+        output.append(cells + [note(row)] if babysit else cells)
     return output
 
 
@@ -312,10 +316,15 @@ def diff_size(row):
 
 def widths(columns):
     terminal = max(133, min(220, shutil.get_terminal_size((180, 24)).columns))
-    fixed = [22, 11, None, 14, 15, 8, 11, 20, None]
+    fixed = [22, 11, None, 14, 15, 8, 11, 20, None][: len(columns)]
     borders = 3 * len(fixed) + 1  # `│ ` + cell + ` ` per column, then the closing `│`
     available = terminal - borders - sum(value or 0 for value in fixed)
-    flexible = [max(12, available * 65 // 100), max(10, available * 35 // 100)]
+    # PR and Note share what is left; without Note, PR takes it all.
+    flexible = (
+        [max(12, available * 65 // 100), max(10, available * 35 // 100)]
+        if fixed[-1] is None
+        else [max(12, available)]
+    )
     result = []
     flex = iter(flexible)
     for index, value in enumerate(fixed):
@@ -414,7 +423,7 @@ def tint(value, column, enabled):
     return f"{color}{value}{RESET}" if color else value
 
 
-def table(data, color=False):
+def table(data, color=False, notes=False):
     columns = [
         "Branch",
         "Stack",
@@ -424,8 +433,7 @@ def table(data, color=False):
         "CI",
         "Merge",
         "Threads",
-        "Note",
-    ]
+    ] + (["Note"] if notes else [])
     sizes = widths(columns)
     top = "┌" + "┬".join("─" * (size + 2) for size in sizes) + "┐"
     middle = "├" + "┼".join("─" * (size + 2) for size in sizes) + "┤"
@@ -433,8 +441,9 @@ def table(data, color=False):
 
     def render(values, colored=True):
         # Only Note wraps — it carries the held decision's gist; every other cell is one line.
-        cells = [truncate(value, size) for value, size in zip(values[:-1], sizes)]
-        cells.append(wrap(values[-1], sizes[-1]))
+        cells = [truncate(value, size) for value, size in zip(values, sizes)]
+        if notes:
+            cells[-1] = wrap(values[-1], sizes[-1])
         height = max(len(cell) for cell in cells)
         lines = []
         for line in range(height):
@@ -464,18 +473,61 @@ def same_stack(above, below):
     return key.startswith("S") and key == str(below[1]).split(" ", 1)[0]
 
 
-def snapshot(directory, repo, scanner, color=False, drafts=False):
-    state, path = load_state(directory)
-    if drafts:
-        state = with_drafts(state, scanner)
-    updated = (
-        datetime.fromtimestamp(os.path.getmtime(path)).astimezone().strftime("%H:%M:%S")
-    )
-    name = repo or os.path.basename(directory).replace("_", "/", 1)
-    return f"pr-dash · {name} · updated {updated}\n{table(rows(state, directory, scanner), color)}"
+def freshness(path):
+    """`updated 14:03:12`, plus its age once that is old enough to mislead."""
+    stamp = os.path.getmtime(path)
+    clock = datetime.fromtimestamp(stamp).astimezone().strftime("%H:%M:%S")
+    ago = time.time() - stamp
+    if ago < 120:
+        return f"updated {clock}"
+    if ago < 7200:
+        return f"updated {clock} ({int(ago // 60)}m ago)"
+    if ago < 172800:
+        return f"updated {clock} ({int(ago // 3600)}h ago)"
+    return f"updated {clock} ({int(ago // 86400)}d ago)"
 
 
-def signature(directory):
+def view(directory, repo, scanner, drafts=False, hint=None):
+    """(header, state, rows, babysit): one read of the state, for the terminal and for /prs."""
+    state = load_state(directory)
+    babysit = babysitting(directory, scanner)
+    head = [f"pr-dash · {repo}"]
+    if state is None:
+        head.append("no scan yet · first pass running…")
+        return " · ".join(head), {}, None, babysit
+    head.append(freshness(os.path.join(directory, "state.json")))
+    if babysit:
+        head.append("babysit-prs on")
+    if hint:
+        head.append(hint)
+    return " · ".join(head), state, rows(state, directory, scanner, babysit, drafts), babysit
+
+
+def snapshot(directory, repo, scanner, color=False, drafts=False, hint=None):
+    header, _, data, babysit = view(directory, repo, scanner, drafts, hint)
+    if data is None:
+        return header
+    return f"{header}\n{table(data, color, notes=babysit)}"
+
+
+def summary(directory, repo, scanner, drafts=False, hint=None):
+    """/prs' one read: the rows it draws compact, and the whole table for its detailed view."""
+    header, state, data, babysit = view(directory, repo, scanner, drafts, hint)
+    prs = []
+    for row in data or []:
+        number = int(row[2].text.split()[0][1:])
+        prs.append({
+            "number": number,
+            "title": pr_title(state[str(number)]),
+            "url": row[2].url,
+            "ci": state[str(number)].get("ci"),
+            "status": row[4],
+        })
+    text = header if data is None else f"{header}\n{table(data, notes=babysit)}"
+    return {"state": os.path.join(directory, "state.json"), "text": text, "prs": prs}
+
+
+def signature(directory, scanner):
     names = ["state.json"]
     try:
         names.extend(
@@ -493,50 +545,40 @@ def signature(directory):
             values.append((name, stat.st_mtime_ns, stat.st_size))
         except OSError:
             values.append((name, None, None))
-    return tuple(values), shutil.get_terminal_size((180, 24)).columns
-
-
-def refresh(directory):
-    """One scanner pass, on demand: the same pass `babysit-scan.py --watch` runs every 60
-    seconds, without the watcher. It writes state; the redraw follows from the state moving.
-    Returns a hint line when no pass can run here, else None.
-
-    The scanner derives its state dir from the checkout it runs in, so this only works from
-    the watched repo's checkout — the same place the dashboard resolves its own state dir.
-    """
-    script = os.path.join(os.path.dirname(os.path.realpath(__file__)), "babysit-scan.py")
-    try:
-        here = repository()
-    except RuntimeError:
-        return "r: refresh needs the repo checkout as cwd"
-    if here.replace("/", "_") != os.path.basename(directory):
-        return f"r: cwd is {here}, not the repo this dashboard watches"
-    process = subprocess.run(
-        (sys.executable, script), capture_output=True, text=True
+    return (
+        tuple(values),
+        babysitting(directory, scanner),
+        int(time.time() // 60),  # the header's age moves on its own
+        shutil.get_terminal_size((180, 24)).columns,
     )
-    if process.returncode:
-        return "r: scan pass failed — run babysit-prs to see why"
-    return None
 
 
 def watch(directory, repo, scanner, drafts=False):
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("--watch requires an interactive terminal")
     original = termios.tcgetattr(sys.stdin)
+    state = os.path.join(directory, "state.json")
     previous = None
-    hint = None
+    pending = None  # (state mtime when a rescan was asked,) until the pass lands
+    ensured = 0
     try:
         tty.setcbreak(sys.stdin.fileno())
         sys.stdout.write("\033[?1049h\033[?25l")
         while True:
-            current = signature(directory)
+            if time.time() - ensured >= ENSURE_EVERY:
+                _, started = scanner.ensure(directory)
+                ensured = time.time()
+                if started:
+                    pending = (scanner.mtime(state),)
+            if pending is not None and scanner.mtime(state) != pending[0]:
+                pending = None
+            current = signature(directory, scanner), pending is None
             if current != previous:
-                content = snapshot(directory, repo, scanner, color=True, drafts=drafts)
-                footer = f"{hint}\n" if hint else ""
-                sys.stdout.write(f"\033[H\033[2J{content}\n{footer}r refresh · q quit\n")
+                hint = None if pending is None else RESCANNING
+                content = snapshot(directory, repo, scanner, True, drafts, hint)
+                sys.stdout.write(f"\033[H\033[2J{content}\nr rescan · q quit\n")
                 sys.stdout.flush()
                 previous = current
-                hint = None
             readable, _, _ = select.select([sys.stdin], [], [], 0.25)
             if not readable:
                 continue
@@ -544,8 +586,10 @@ def watch(directory, repo, scanner, drafts=False):
             if key == "q":
                 break
             if key == "r":
-                hint = refresh(directory)
-                previous = None  # a failed pass wrote nothing; its message still owes a redraw
+                pending = (scanner.mtime(state),)
+                if not scanner.wake(directory):
+                    scanner.ensure(directory)
+                    ensured = time.time()
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original)
         sys.stdout.write("\033[?25h\033[?1049l")
@@ -642,7 +686,8 @@ def self_check(scanner):
     }
     with tempfile.TemporaryDirectory() as directory:
         open(os.path.join(directory, "43.muted"), "w").close()
-        rendered = rows(sample, directory, scanner)
+        rendered = rows(sample, directory, scanner, babysit=True, drafts=True)
+        alone = rows(sample, directory, scanner)
 
     # Head first inside a stack, and the stack `gh stack` opened on top of the chain stays its own
     # — the base link alone would read all five PRs as one.
@@ -682,33 +727,19 @@ def self_check(scanner):
     assert shown["#44"][3] == "+120 −8 6f"
     assert shown["#44"][4] == "✅ READY"
     assert shown["#99"][4:7] == ["📝 DRAFT", "· NONE", "📝 DRAFT"]
-    class DraftScanner:
-        STATE_SCHEMA_VERSION = scanner.STATE_SCHEMA_VERSION
-        link_stack = staticmethod(scanner.link_stack)
 
-        @staticmethod
-        def open_prs(include_drafts=False):
-            return [42, 43, 44, 45, 46, 99, 100]
-
-        @staticmethod
-        def fetch_raw(numbers):
-            assert numbers == [100], numbers
-            return {100: {"number": 100}}
-
-        @staticmethod
-        def row(raw, seen):
-            return dict(base, number=raw["number"], title="Draft top",
-                        branch="d", base="fix/BOF-44-cart", draft=True,
-                        merge_state="DRAFT")
-
-    merged = with_drafts(sample, DraftScanner)
-    assert set(merged) == {"42", "43", "44", "45", "46", "99", "100"}
-    assert merged["100"]["parent"] == 44, merged["100"]
-    assert merged["100"]["report"] is None
-    assert sample.keys() == {"42", "43", "44", "45", "46", "99"}, "drafts stay out of state"
+    # Without babysit-prs: GitHub's word only — no agent, no note, no draft unless asked.
+    bare = {row[2].text.split()[0]: row for row in alone}
+    assert "#99" not in bare, "drafts stay hidden without --drafts"
+    assert {len(row) for row in alone} == {8}, "the Note column is babysit-prs'"
+    assert bare["#42"][4] == "🔨 FIX", "a red check with no agent coming is the author's"
+    assert bare["#43"][4] == "🧪 CI", "a mute means nothing once babysit-prs is gone"
+    assert bare["#44"][4] == "✅ READY"
+    assert github_status(dict(base, unresolved_bot=2), scanner) == "🤖 BOT 2"
+    assert github_status(dict(base, ci="SUCCESS", held=1), scanner) == "🙋 YOUR CALL"
 
     os.environ["COLUMNS"] = "186"  # get_terminal_size reads it first
-    colored = table(rendered, color=True)
+    colored = table(rendered, color=True, notes=True)
     line_widths = {display_width(line) for line in colored.splitlines()}
     assert len(line_widths) == 1, line_widths
     assert max(line_widths) <= 186, f"{line_widths}: a line wider than the terminal wraps"
@@ -720,6 +751,31 @@ def self_check(scanner):
     assert display_width(truncate("🤖 12/40 👤 3/10 (alice)", 16)[0]) <= 16
     rules = sum(line.startswith("├") for line in colored.splitlines())
     assert rules == 3, f"{rules}: header, S1|S2, S2|single — none inside a stack"
+    narrow = table(alone)
+    assert "Note" not in narrow and len({display_width(line) for line in narrow.splitlines()}) == 1
+    assert max(display_width(line) for line in narrow.splitlines()) <= 186
+
+    with tempfile.TemporaryDirectory() as directory:
+        assert snapshot(directory, "o/n", scanner) == "pr-dash · o/n · no scan yet · first pass running…"
+        path = os.path.join(directory, "state.json")
+        with open(path, "w") as handle:
+            json.dump(sample, handle)
+        view_only = summary(directory, "o/n", scanner)
+        assert [pr["number"] for pr in view_only["prs"]] == [44, 43, 42, 46, 45]
+        assert view_only["prs"][0] == {"number": 44, "title": "Finish cart",
+                                       "url": "https://example.test/42", "ci": "SUCCESS",
+                                       "status": "✅ READY"}
+        assert view_only["state"] == path and "babysit-prs on" not in view_only["text"]
+        open(os.path.join(directory, "43.muted"), "w").close()
+        lock = scanner.take_lock(os.path.join(directory, "babysit.lock"), "babysit-prs")
+        try:
+            watched = summary(directory, "o/n", scanner, hint=RESCANNING)
+        finally:
+            lock.close()
+        assert "babysit-prs on · rescanning…" in watched["text"], watched["text"]
+        assert "Note" in watched["text"] and watched["prs"][1]["status"] == "🔧 WORKING"
+        os.utime(path, (0, time.time() - 3 * 3600))
+        assert freshness(path).endswith("(3h ago)"), freshness(path)
     print("self-check ok")
 
 
@@ -728,13 +784,12 @@ def parser():
     command.add_argument("--state-dir", help=argparse.SUPPRESS)
     command.add_argument("--self-check", action="store_true", help=argparse.SUPPRESS)
     actions = command.add_subparsers(dest="command")
-    status = actions.add_parser("status", help="show babysit-prs state")
+    status = actions.add_parser("status", help="show the repo's open PRs")
     status.add_argument(
         "--watch", action="store_true", help="redraw when state changes"
     )
-    status.add_argument(
-        "--drafts", action="store_true", help="also show draft PRs the scan skipped"
-    )
+    status.add_argument("--drafts", action="store_true", help="also show draft PRs")
+    status.add_argument("--json", action="store_true", help=argparse.SUPPRESS)  # /prs reads it
     return command
 
 
@@ -747,19 +802,20 @@ def main():
     if args.command != "status":
         parser().error("the following arguments are required: command")
     try:
-        directory, repo = resolve_state_dir(args.state_dir)
+        directory, repo = resolve_state_dir(scanner, args.state_dir)
         if args.watch:
             watch(directory, repo, scanner, args.drafts)
+            return
+        _, started = scanner.ensure(directory)
+        # Before any first pass there is nothing to draw: give that pass its few seconds.
+        deadline = time.time() + scanner.PASS_WAIT
+        while load_state(directory) is None and time.time() < deadline:
+            time.sleep(0.2)
+        hint = RESCANNING if started else None
+        if args.json:
+            print(json.dumps(summary(directory, repo, scanner, args.drafts, hint)))
         else:
-            print(
-                snapshot(
-                    directory,
-                    repo,
-                    scanner,
-                    color=sys.stdout.isatty(),
-                    drafts=args.drafts,
-                )
-            )
+            print(snapshot(directory, repo, scanner, sys.stdout.isatty(), args.drafts, hint))
     except KeyboardInterrupt:
         pass
     except (OSError, RuntimeError) as error:

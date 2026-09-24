@@ -1,6 +1,6 @@
 ---
 name: babysit-prs
-description: Drive every open PR to merge-ready without polling by hand. Maintains shared dashboard state, watches GitHub for real transitions through a persistent Monitor, and hands each PR that has bot feedback or a red check to its own subagent, which answers, folds and pushes on its own. Human reviews are counted, never touched. Use when asked to babysit, watch, or surveiller open PRs, or to keep them moving until they can merge.
+description: Drive every open PR to merge-ready without polling by hand. Follows the transitions pr-dash's shared scan service writes, through a persistent Monitor, and hands each PR that has bot feedback or a red check to its own subagent, which answers, folds and pushes on its own. Human reviews are counted, never touched. Use when asked to babysit, watch, or surveiller open PRs, or to keep them moving until they can merge.
 argument-hint: "[--once] [--include-drafts] [PR…]"
 ---
 
@@ -18,27 +18,31 @@ judgment comes from an agent that never tells you how it judged.
 
 ## 1. Resolve the script
 
-It ships with the plugin; resolve its path the same way `pr-feedback` resolves its own:
+The scanner belongs to `pr-dash`, which runs without this skill; babysit-prs is one of its
+readers. Resolve its path the same way `pr-feedback` resolves its own:
 
 ```bash
-for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/babysit-prs/scripts/babysit-scan.py}" \
-         $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/babysit-prs/scripts/babysit-scan.py 2>/dev/null | sort -V | tail -1) \
-         "$HOME/.claude/skills/babysit-prs/scripts/babysit-scan.py"; do
+for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/pr-dash/scripts/pr-scan.py}" \
+         $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/pr-dash/scripts/pr-scan.py 2>/dev/null | sort -V | tail -1) \
+         "$HOME/.claude/skills/pr-dash/scripts/pr-scan.py"; do
   [ -n "$c" ] && [ -f "$c" ] && SCAN="$c" && break
 done
 python3 "$SCAN" $ARGS      # the user's PR numbers and --include-drafts, verbatim
 ```
 
-One pass, one JSON blob: every open PR of the author with `schema_version`, `merge_state`, `ci` rollup,
+One scan service per repo writes the state, whoever started it — the dashboard or you. This call
+starts it if none runs, asks it for a pass now, waits for that pass (ten seconds at most — past
+that the blob carries `stale` and the last state on disk), and prints your selection of it as one
+JSON blob: every open PR of the author with `schema_version`, `merge_state`, `ci` rollup,
 open/closed bot/human thread counts, `unresolved_bot`, `unresolved_human`, `held` (open bot threads that have not moved since an agent
 last looked — our reply sits last, or the bot's does and an agent already read it; either way they
 wait on the author, not on an agent), `humans`, `head`, `base`, `parent` (the open PR this one is
 stacked on, `null` at the bottom of a stack), the last agent `report`, plus `needs_agent`,
 `waits_on`, `merge_ready` and `status`. It is the **only** reader of GitHub truth in this skill — never
 run `gh pr view`, `gh pr checks`, or a thread query yourself, and never ask an agent for a status
-the script already carries. The initial query is aliased across PRs; only PRs above 100 review
-threads need extra paginated calls. Two readers produce contradictory status for checks that
-changed minutes ago.
+the script already carries. The service's query is aliased across PRs; only PRs above 100
+review threads need extra paginated calls. Two readers produce contradictory status for checks
+that changed minutes ago.
 
 The blob opens with `state_dir` — the absolute path where mutes and agent reports live. Every path
 you write into an agent's prompt must be that value expanded, never `$STATE_DIR`: a subagent has no
@@ -46,26 +50,25 @@ such variable, and a report written to a literal `$STATE_DIR/…` is a report yo
 
 Two flags shape the scan, and both come from the user, never from you:
 
-- **`--include-drafts`** — by default the scan filters drafts at the source, so a draft never
-  enters the state and never spawns an agent; marking one ready for review brings it in on the next
-  pass. With the flag, drafts are babysat like any other PR: bots and CI already run on them,
+- **`--include-drafts`** — by default drafts stay out of your selection (the service tracks them
+  for the dashboard, never for you), so a draft never spawns an agent; marking one ready for review
+  brings it in on the next pass. With the flag, drafts are babysat like any other PR: bots and CI already run on them,
   and clearing their findings before the PR goes out is the point.
 - **PR numbers** (`123 456`) — a named PR **is** the selection. It is fetched as given, past the
   author filter and past the draft filter alike: name a colleague's PR and its agent will push
-  to their branch. Nothing else is scanned that pass.
+  to their branch. Nothing else is in the blob, and the service keeps fetching a named PR for as
+  long as your watch runs.
 
 Empty PR list? Say so and stop.
 
 ## 2. Use state; leave display to `pr-dash`
 
 The JSON is orchestration input. Do not reproduce its PR table in chat. The author gets the current
-view with `pr-dash status` or keeps it open with `pr-dash status --watch`; that dashboard reads the
-state written by the scanner and never folds reports, changes mutes, or starts agents. Add
-`--drafts` to also list the drafts the scan filtered out: the dashboard reads them from GitHub for
-that one render and writes nothing, so they stay out of the state and no agent is spawned on them.
-In the watch view, `r` runs one scanner pass on demand — between the watcher's 60-second polls —
-from the watched repo's checkout; the pass parks its event lines for the watcher to print, so a
-report folded by `r` is not lost to it. `q` quits.
+view with `pr-dash status` or keeps it open with `pr-dash status --watch` (see the `pr-dash` skill);
+that dashboard reads the same state and never folds reports, changes mutes, or starts agents. While
+your watch runs, it adds what only you know — live agents, their notes, `WAITS` — and without you
+it shows GitHub's word alone. Its `r` asks the service for a pass; the events of that pass reach
+your watch like any other.
 A stack is the one `gh stack` drew, the parent chain only where GitHub knows none: a stack opened
 on top of another one's head is its own stack, with its own agent, and the dashboard draws each one
 head first, base at the bottom.
@@ -212,7 +215,7 @@ four. After that the regime is quiet: one agent at a time, usually none.
 
 ```
 Monitor({
-  command: "python3 <absolute path of babysit-scan.py> --watch 60 <the same args>",
+  command: "python3 <absolute path of pr-scan.py> --follow <the same args>",
   description: "transitions on <n> open PRs",
   persistent: true,
   timeout_ms: 3600000,
@@ -222,42 +225,46 @@ Monitor({
 Substitute the resolved absolute path — shell variables do not survive between Bash calls, so a `$SCAN` left in there arms a monitor that dies on its first poll.
 
 **The watch takes the same arguments as the first pass** — the same PR numbers, the same
-`--include-drafts`. Drop them and the watch surveys a different selection: the drafts you asked for
+`--include-drafts`. Drop them and the watch follows a different selection: the drafts you asked for
 go silent, and PRs you never selected start emitting.
 
-The script emits one line per PR whose CI rollup, unresolved-thread counts, `mergeStateStatus` or
-head sha actually moved — not one line per check, which would be dozens per push and would get the
-monitor shut down as a firehose. Muted PRs emit nothing. A dropped report is folded in and lifts
-its own mute — `TaskStop` its agent then, in the same pass, before spawning anything.
+`--follow` reads the service's event log and prints the lines of your selection: one per PR whose
+CI rollup, unresolved-thread counts, `mergeStateStatus` or head sha actually moved — not one line
+per check, which would be dozens per push and would get the monitor shut down as a firehose. Muted
+PRs emit nothing. A dropped report is folded in and lifts its own mute — `TaskStop` its agent then,
+in the same pass, before spawning anything. It also keeps the service alive, and restarts it if it
+died.
 
-The watch holds `<state_dir>/watch.lock` for its lifetime. If startup reports an active watcher,
-keep that watcher and stop; retrying would create competing writers for the same state.
+The watch holds `<state_dir>/babysit.lock` for its lifetime. If startup reports `babysit-prs
+already active`, another manager is babysitting this repo: leave it and stop — two managers would
+spawn two agents on the same branch.
 
 Then end the turn. Do not arm a `ScheduleWakeup`, do not poll, do not ask an agent whether it is
 done: an agent going idle is not a signal, and its report file is. Today's silence is the design
 working.
 
-On each batch of events: run one pass, stop agents whose reports were folded, spawn any PR that now
+On each batch of events: run one pass (the §1 call), stop agents whose reports were folded, spawn any PR that now
 needs an agent, notify only author actions or merge-ready PRs, and end the turn again.
 
-`--once` means one pass, no monitor and no agents. Refresh the dashboard state and reply with one
-line pointing to `pr-dash status`.
+`--once` means one pass, no monitor and no agents. Run the §1 call and reply with one line pointing
+to `pr-dash status`.
 
 ## Stopping
 
 `TaskStop` the monitor when every PR is merged or closed, or when the user says stop. Nothing else
-stops the watch. Held items and unresolved conflicts stay visible in `pr-dash`; keep watching. A
+stops the watch. The service outlives it: it keeps the dashboard current and exits on its own
+half an hour after its last reader. Held items and unresolved conflicts stay visible in `pr-dash`; keep watching. A
 dashboard where everything waits on a human costs no agent work while nothing changes.
 
 ## What lives where
 
 | Concern | Skill |
 |---|---|
-| PR discovery, GitHub truth, the diff, the emit filter, mute, reports | `babysit-scan.py` |
+| PR discovery, GitHub truth, the diff, the emit filter, mute, reports | `pr-scan.py` (the `pr-dash` skill) |
 | Rebasing a conflicting branch onto its base | the PR's agent, directly |
 | Fetching threads, verdicts, P1/P2/Nit, the dismissals registry | `pr-feedback`, inside the PR's agent |
 | Code changes, replies, reactions, resolving threads | `pr-respond` |
 | Finding the introducing commit, fold, force-push | `fixup` |
 | Restacking children | `gh-stack` |
-| Terminal dashboard | `pr-dash.py` |
+| Terminal dashboard | `pr-dash` |
 | Spawning, the watch, stopping | here |
