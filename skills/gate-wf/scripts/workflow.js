@@ -3,12 +3,12 @@ export const meta = {
   description: 'Quality gate: parallel reviewers, tier-scaled adversarial verify, context annotation',
   phases: [
     { title: 'Review', detail: 'reviewers in parallel + CLAUDE.md/ADR synthesis' },
-    { title: 'Verify', detail: A.useJev ? 'jev first pass, sonnet skeptics on the escalate band' : 'skeptics per finding, scaled by tier' },
+    { title: 'Verify', detail: 'skeptics per finding, scaled by tier (jev first pass with --jev)' },
     { title: 'Context', detail: 'annotate survivors against project context' },
   ],
 }
 
-// args: { tmpDir, reviewers: string[], prNumber: number|null, useJev?: boolean }
+// args: { tmpDir, reviewers: string[], prNumber: number|null, useJev?: boolean, jevScript?: string }
 // useJev (the skill's --jev flag): Jev first-passes every finding through
 // jev-verify's batch mode; only the escalate band (and any runner failure)
 // falls back to tier-scaled sonnet skeptics. Off by default — the gate's shape
@@ -18,6 +18,7 @@ const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
 if (!Array.isArray(A.reviewers) || !A.reviewers.length) {
   throw new Error('gate-wf: expected args {tmpDir, reviewers:[...], prNumber} — got ' + JSON.stringify(args).slice(0, 200))
 }
+if (A.useJev && !A.jevScript) throw new Error('gate-wf: useJev needs args.jevScript (the JV path from Step 3e)')
 
 const FINDING_PROPS = {
   rule_id: { type: 'string' },
@@ -173,7 +174,7 @@ ${JSON.stringify(payload)}
 
 Then run and return its stdout verbatim:
 
-python3 ~/.claude/skills/jev-verify/scripts/jev_verify.py batch --repo ${repo} < ${A.tmpDir}/jev-batch-${tag}.json
+python3 ${A.jevScript} batch --repo ${repo} < ${A.tmpDir}/jev-batch-${tag}.json
 
 If the command exits non-zero or prints nothing, return {"error": true, "stderr": "<first 200 chars of stderr>"}.
 Print the JSON in one message, no commentary — the caller validates it. Do not modify the findings, do not retry, do not summarize.`
@@ -196,7 +197,7 @@ const jevVerify = async (findings, tag) => {
       phase: 'Verify', label: `jev:batch-${ci}`, schema: JEV_BATCH_SCHEMA,
       agentType: 'ai-skills:jev-runner',
     })
-  }))
+  ))
   results.forEach((r, ci) => {
     if (!r || r.error || !Array.isArray(r.rows)) return // chunk lost -> its findings escalate
     r.rows.forEach((row) => {

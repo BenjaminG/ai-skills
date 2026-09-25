@@ -70,7 +70,7 @@ def _load_findings_module():
     cands.append(os.path.expanduser("~/.claude/skills/gate-wf/scripts"))
     for c in cands:
         if os.path.isfile(os.path.join(c, "findings.py")):
-            sys.path.insert(0, os.path.abspath(c))
+            sys.path.insert(0, os.path.realpath(c))
             import findings  # noqa: F401
             return findings
     print("jev-verify: gate-wf's scripts/findings.py not found — "

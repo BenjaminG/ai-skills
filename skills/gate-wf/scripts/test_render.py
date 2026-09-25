@@ -110,6 +110,20 @@ def test_render_never_cuts_silently():
     assert R._one_line("a\n  b\tc") == "a b c"
 
 
+def test_workflow_script_loads():
+    """The Workflow tool refuses a script that fails to parse or whose meta reads a variable."""
+    src = Path(__file__).with_name("workflow.js").read_text()
+    with tempfile.TemporaryDirectory() as d:
+        # The harness runs the body inside an async function (top-level return/await).
+        body = Path(d) / "w.js"
+        body.write_text("(async () => {\n" + src.replace("export const meta", "const meta", 1) + "\n})")
+        r = subprocess.run(["node", "--check", str(body)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    meta = src.split("export const meta = ", 1)[1].split("\n}\n", 1)[0] + "\n}"
+    r = subprocess.run(["node", "-e", f"({meta})"], capture_output=True, text=True)
+    assert r.returncode == 0, "meta must be a pure literal:\n" + r.stderr
+
+
 def test_end_to_end(tmp_state=True):
     """ingest → brief → show on a throwaway git repo, exercising the real CLI."""
     with tempfile.TemporaryDirectory() as d:

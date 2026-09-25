@@ -453,7 +453,8 @@ Workflow({
     tmpDir:   "<TMP_DIR>",
     reviewers: <REVIEWERS_JSON>,   // e.g. ["ai-skills:bug-reviewer", ...]
     prNumber:  <PR number or null>,
-    useJev:    <true when --jev, else omit>
+    useJev:    <true when --jev, else omit>,
+    jevScript: <$JV from Step 3e when --jev, else omit>
   }
 })
 ```
