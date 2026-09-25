@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import shutil
@@ -127,9 +128,14 @@ ASSESSMENT_KEYS = {
     "humanOnlySurfaces",
     "exactPathEvidence",
     "evidence",
+    "findings",
     "unknowns",
     "explanation",
 }
+
+FINDING_SEVERITIES = ["HIGH", "MEDIUM", "LOW"]
+FINDING_KEYS = {"severity", "title", "detail", "file"}
+COMMENT_MARKER = "<!-- pr-risk-score -->"
 
 THREADS_QUERY = """
 query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
@@ -573,6 +579,7 @@ def rubric() -> dict[str, Any]:
         "dimensions": DIMENSIONS,
         "humanOnlySurfaces": sorted(HUMAN_ONLY_SURFACES),
         "exactPathEvidence": ["complete", "insufficient", "not_required"],
+        "findingSeverities": FINDING_SEVERITIES,
     }
 
 
@@ -602,6 +609,18 @@ def validate_evidence(evidence: Any) -> None:
             raise ValueError("Evidence file and reason must be non-empty strings")
 
 
+def validate_findings(findings: Any) -> None:
+    if not isinstance(findings, list) or len(findings) > 10:
+        raise ValueError("findings must be a list of at most ten entries")
+    for item in findings:
+        if not isinstance(item, dict) or set(item) != FINDING_KEYS:
+            raise ValueError(f"Each finding requires exactly {sorted(FINDING_KEYS)}")
+        if item["severity"] not in FINDING_SEVERITIES:
+            raise ValueError(f"Finding severity must be one of {FINDING_SEVERITIES}")
+        if not all(isinstance(item[key], str) and item[key].strip() for key in item):
+            raise ValueError("Finding fields must be non-empty strings")
+
+
 def validate_unknowns(unknowns: Any) -> None:
     if not isinstance(unknowns, list) or len(unknowns) > 10:
         raise ValueError("unknowns must be a list of at most ten values")
@@ -616,6 +635,7 @@ def validate_assessment(value: Any) -> dict[str, Any]:
     validate_dimensions(value.get("dimensions"))
     validate_surfaces(value.get("humanOnlySurfaces"))
     validate_evidence(value.get("evidence"))
+    validate_findings(value.get("findings"))
     validate_unknowns(value.get("unknowns"))
     if value.get("exactPathEvidence") not in {
         "complete",
@@ -788,19 +808,36 @@ def build_inconclusive_result(
             else assessment_error or "Structured assessment unavailable.",
         ),
     ]
+    why_not = " ".join(dict.fromkeys(reasons))
     return {
         **result_base(snapshot),
         "score": None,
+        "band": None,
+        "confidence": None,
         "dimensions": None,
         "verdict": "INCONCLUSIVE",
-        "explanation": " ".join(dict.fromkeys(reasons)),
+        "explanation": assessment["explanation"] if assessment else why_not,
+        "whyNot": why_not,
         "evidence": assessment.get("evidence", []) if assessment else [],
+        "findings": assessment.get("findings", []) if assessment else [],
         "humanOnlySurfaces": [],
         "unknowns": assessment.get("unknowns", []) if assessment else reasons,
         "gates": gates,
         "failedGates": [item for item in gates if not item["passed"]],
         "assessmentError": assessment_error,
     }
+
+
+def risk_band(score: int) -> str:
+    if score < LOW_RISK_SCORE_LIMIT:
+        return "Low"
+    return "Medium" if score < 70 else "High"
+
+
+def confidence(assessment: dict[str, Any]) -> int:
+    # ponytail: fixed steps, not a model; recalibrate once shadow runs show misses.
+    base = 60 if assessment["exactPathEvidence"] == "insufficient" else 90
+    return max(30, base - 10 * len(assessment["unknowns"]))
 
 
 def exact_path_reason(exact_path_evidence: str) -> str:
@@ -841,7 +878,8 @@ def build_assessment_gates(
         gate(
             "score_threshold",
             score < LOW_RISK_SCORE_LIMIT,
-            f"Score {score}; low-risk candidate requires < {LOW_RISK_SCORE_LIMIT}.",
+            f"Risk is {risk_band(score).upper()} (only LOW, under "
+            f"{LOW_RISK_SCORE_LIMIT}, can auto-approve).",
         ),
     ]
 
@@ -860,18 +898,17 @@ def build_scored_result(
     ]
     failed = [item for item in gates if not item["passed"]]
     verdict = "LOW_RISK_CANDIDATE" if not failed else "HUMAN_REVIEW_REQUIRED"
-    explanation = (
-        assessment["explanation"]
-        if not failed
-        else " ".join(item["reason"] for item in failed)
-    )
     return {
         **result_base(snapshot),
         "score": score,
+        "band": risk_band(score),
+        "confidence": confidence(assessment),
         "dimensions": assessment["dimensions"],
         "verdict": verdict,
-        "explanation": explanation,
+        "explanation": assessment["explanation"],
+        "whyNot": " ".join(item["reason"] for item in failed),
         "evidence": assessment["evidence"],
+        "findings": assessment["findings"],
         "humanOnlySurfaces": human_only_surfaces,
         "unknowns": assessment["unknowns"],
         "gates": gates,
@@ -961,6 +998,135 @@ def verify_head(snapshot_path: Path) -> dict[str, Any]:
     return verification_result(snapshot, current)
 
 
+VERDICT_CELLS = {
+    "LOW_RISK_CANDIDATE": "✅ **Eligible** — advice only, a human still merges",
+    "HUMAN_REVIEW_REQUIRED": "🧭 **No** — human review required",
+    "INCONCLUSIVE": "⚠️ **Inconclusive** — not scored",
+}
+
+
+def text(value: str) -> str:
+    # Assessment text quotes the PR; keep it on one line and out of the HTML.
+    return html.escape(" ".join(value.split()), quote=False)
+
+
+def finding_count(findings: list[dict[str, Any]]) -> str:
+    counts = [
+        f"{count} {severity.lower()}"
+        for severity in FINDING_SEVERITIES
+        if (count := sum(1 for item in findings if item["severity"] == severity))
+    ]
+    return f"{', '.join(counts)} finding(s)" if counts else "no findings"
+
+
+def render(result: dict[str, Any]) -> str:
+    scored = result["score"] is not None
+    score = f"**{result['score']}/100 · {result['band']}**" if scored else "—"
+    confidence_cell = f"**{result['confidence']}%**" if scored else "—"
+    findings = sorted(
+        result["findings"], key=lambda item: FINDING_SEVERITIES.index(item["severity"])
+    )
+    lines = [
+        COMMENT_MARKER,
+        "| Risk score | Auto-approval | Confidence |",
+        "| --- | --- | ---: |",
+        f"| {score} | {VERDICT_CELLS[result['verdict']]} | {confidence_cell} |",
+        "",
+    ]
+    if result["whyNot"]:
+        label = "Why not approved" if scored else "Why not scored"
+        lines += [f"> **{label}:** {text(result['whyNot'])}", ""]
+    lines += [
+        f"**Summary:** {text(result['explanation'])}",
+        "",
+        "<details>",
+        f"<summary>Review details · {finding_count(findings)}</summary>",
+        "",
+    ]
+    if findings:
+        lines += ["**Review notes**", ""]
+        lines += [
+            f"- **{item['severity']}: {text(item['title'])}** — "
+            f"{text(item['detail'])} (`{text(item['file'])}`)"
+            for item in findings
+        ]
+        lines.append("")
+    if result["dimensions"]:
+        lines += [
+            "**Dimensions**",
+            "",
+            "| Dimension | Score | Max |",
+            "| --- | ---: | ---: |",
+        ]
+        lines += [
+            f"| {name} | {value} | {DIMENSIONS[name]['allowed'][-1]} |"
+            for name, value in result["dimensions"].items()
+        ]
+        lines.append("")
+    lines += ["**Gates**", ""]
+    lines += [
+        f"- {'✅' if item['passed'] else '❌'} `{item['id']}` — {text(item['reason'])}"
+        for item in result["gates"]
+    ]
+    lines.append("")
+    if result["unknowns"]:
+        lines += [
+            "**Unknowns**",
+            "",
+            *[f"- {text(item)}" for item in result["unknowns"]],
+            "",
+        ]
+    if result["evidence"]:
+        lines += ["**Evidence**", ""]
+        lines += [
+            f"- `{text(item['file'])}` — {text(item['reason'])}"
+            for item in result["evidence"]
+        ]
+        lines.append("")
+    lines += [
+        f"<sub>{result['policyVersion']} · head {str(result['headSha'])[:12]} · "
+        "advice only, never an approval</sub>",
+        "",
+        "</details>",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def post(snapshot_path: Path, result_path: Path) -> dict[str, Any]:
+    freshness = verify_head(snapshot_path)
+    if not freshness["matches"]:
+        raise CommandError(f"Not posted: {freshness['reason']}")
+    snapshot = load_json(snapshot_path)
+    result = load_json(result_path)
+    if not isinstance(result, dict) or result.get("headSha") != snapshot.get("headSha"):
+        raise ValueError("Result does not describe the snapshot head")
+
+    pr_number = positive_integer(snapshot.get("prNumber"), "PR number")
+    login = gh_json(["api", "user"]).get("login")
+    existing = next(
+        (
+            comment
+            for comment in paged_rest(f"repos/{REPOSITORY}/issues/{pr_number}/comments")
+            if (comment.get("user") or {}).get("login") == login
+            and str(comment.get("body") or "").startswith(COMMENT_MARKER)
+        ),
+        None,
+    )
+    method, endpoint = (
+        ("PATCH", f"repos/{REPOSITORY}/issues/comments/{existing['id']}")
+        if existing
+        else ("POST", f"repos/{REPOSITORY}/issues/{pr_number}/comments")
+    )
+    raw = run(
+        [command_path("gh"), "api", "-X", method, endpoint, "--input", "-"],
+        input_text=json.dumps({"body": render(result)}),
+    )
+    return {
+        "action": "updated" if existing else "created",
+        "url": json.loads(raw).get("html_url"),
+    }
+
+
 def sample_snapshot(**overrides: Any) -> dict[str, Any]:
     snapshot = {
         "repository": REPOSITORY,
@@ -995,6 +1161,7 @@ def sample_assessment(**overrides: Any) -> dict[str, Any]:
         "humanOnlySurfaces": [],
         "exactPathEvidence": "complete",
         "evidence": [{"file": "src/card.tsx", "reason": "Targeted rendering test."}],
+        "findings": [],
         "unknowns": [],
         "explanation": "Contained UI change with exact-path proof.",
     }
@@ -1152,8 +1319,59 @@ def check_input_and_freshness() -> None:
     )
 
 
+def check_report() -> None:
+    medium = sample_assessment(
+        dimensions={
+            "businessImpact": 20,
+            "blastRadius": 10,
+            "contractsAndState": 5,
+            "operationalRisk": 5,
+            "verificationGap": 5,
+        },
+        findings=[
+            {
+                "severity": "LOW",
+                "title": "Legacy route now 404s",
+                "detail": "Status change only.\n</details> injected",
+                "file": "src/route.ts",
+            },
+            {
+                "severity": "HIGH",
+                "title": "Cache key dropped",
+                "detail": "Stale reads.",
+                "file": "src/cache.ts",
+            },
+        ],
+        unknowns=["Traffic unverified."],
+    )
+    result = evaluate_snapshot(sample_snapshot(), validate_assessment(medium))
+    require(
+        (result["band"], result["confidence"]) == ("Medium", 80), "Band or confidence"
+    )
+    require(result["explanation"] == medium["explanation"], "Summary replaced by gates")
+    report = render(result)
+    require(report.startswith(COMMENT_MARKER), "Comment marker missing")
+    require("| **45/100 · Medium** | 🧭 **No**" in report, "Score cell wrong")
+    require("> **Why not approved:** Unknowns" in report, "Why-not line wrong")
+    require("Review details · 1 high, 1 low finding(s)" in report, "Finding count")
+    require(report.index("HIGH: Cache") < report.index("LOW: Legacy"), "Severity order")
+    require(report.count("</details>") == 1, "Finding text escaped the details block")
+
+    inconclusive = render(evaluate_snapshot(sample_snapshot(mergeable=None), None))
+    require(
+        "| — | ⚠️ **Inconclusive**" in inconclusive
+        and "**Why not scored:**" in inconclusive,
+        "Inconclusive report wrong",
+    )
+    low = render(
+        evaluate_snapshot(sample_snapshot(), validate_assessment(sample_assessment()))
+    )
+    require("Why not" not in low and "✅ **Eligible**" in low, "Candidate report wrong")
+
+
 def self_check() -> None:
     check_candidate_and_threshold()
+    check_report()
     check_exact_path_regression()
     check_sensitive_surfaces()
     check_hard_gates()
@@ -1180,6 +1398,13 @@ def parser() -> argparse.ArgumentParser:
 
     verify_parser = commands.add_parser("verify-head")
     verify_parser.add_argument("--snapshot", type=Path, required=True)
+
+    render_parser = commands.add_parser("render")
+    render_parser.add_argument("--result", type=Path, required=True)
+
+    post_parser = commands.add_parser("post")
+    post_parser.add_argument("--snapshot", type=Path, required=True)
+    post_parser.add_argument("--result", type=Path, required=True)
     return root
 
 
@@ -1203,6 +1428,12 @@ def main(argv: list[str]) -> int:
         return 0
     if arguments.command == "verify-head":
         print(json.dumps(verify_head(arguments.snapshot), indent=2))
+        return 0
+    if arguments.command == "render":
+        print(render(load_json(arguments.result)), end="")
+        return 0
+    if arguments.command == "post":
+        print(json.dumps(post(arguments.snapshot, arguments.result), indent=2))
         return 0
     raise AssertionError(f"Unhandled command: {arguments.command}")
 
