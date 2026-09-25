@@ -81,7 +81,7 @@ Out-of-band work is safe while `held` is non-zero because the scanner will not s
 that PR. A stacked conflict belongs to the agent as a restack. A clean draft waits for the author.
 
 Send a concise notification only for `merge_ready` or `held`; include the PR number and the action
-the author owes. On startup, report how many PRs are watched and mention `pr-dash status --watch`.
+the author owes — for `held`, `/pr-explain <n>`, which explains the thread in its own tab. On startup, report how many PRs are watched and mention `pr-dash status --watch`.
 
 ## 3. Spawn an agent, but only where one is needed
 
