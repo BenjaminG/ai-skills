@@ -20,19 +20,9 @@ skills/<name>/
 
 **SKILL.md frontmatter** must include `name` and `description`. The `description` determines when Claude invokes the skill — make it specific and include trigger conditions.
 
-## Creating a Skill
+## Deprecated skills
 
-Use the initializer script:
-
-```bash
-python skills/skill-creator/scripts/init_skill.py <skill-name> --path skills/
-```
-
-To package for distribution:
-
-```bash
-python skills/skill-creator/scripts/package_skill.py <skill-name>
-```
+`deprecated/<name>/` holds retired skills. None of the installers look there: the Claude plugin loads `skills/`, the Codex manifest points `skills` at `./skills/`, and `npx skills` searches `skills/` first and only falls back to a recursive search when that finds nothing. Do not reference a deprecated skill from a shipped one.
 
 ## Local plugin testing
 
@@ -67,8 +57,8 @@ Loader rules the tests enforce: one hook per event without a matcher per module 
 ## Skill Categories
 
 - **Daily workflow** (`daily-update`): Standup compilation from Linear/Slack.
-- **Code quality** (`gate`, `gate-wf`, `quality-gate`, `triage-findings`, `code-slop`, `applying-solid-principles`, `second-pass`): Review and auto-fix workflows using agent teams. `gate-wf` reviews and renders a verdict; `triage-findings` acts on what it found (both share `skills/gate-wf/scripts/findings.py`).
-- **Review & PR** (`pr-create`, `pr-challenge`, `pr-feedback`, `pr-respond`, `pr-comment`, `fixup`, `ci-watch`, `babysit-prs`, `pr-dash`, `pr-explain`, `pr-demo`, `review-mining`, `qa-plan`, `qa-run`, `consensus`): Git/GitHub and review automation. `pr-challenge` reviews someone else's PR as a colleague would (questions, not findings) and hands its drafts to `pr-comment`, which also posts `gate-wf` findings. `pr-dash` owns the scan service (`pr-scan.py`) that both it and `babysit-prs` read; neither needs the other. `pr-explain` opens a herdr tab where a fresh session explains a `held` thread in plain words. `pr-demo` films a PR's flow in the local app through Playwright MCP and attaches the video to the PR.
-- **CLI integrations** (`acli`, `confluence-cli`, `codex-cli`, `chrome-cdp`): Wrappers for external CLI tools.
-- **Investigation & planning** (`interview`, `investigate`, `elevate`, `innovate`, `retrospective`, `orchestrate`, `skill-creator`): Structured thinking workflows.
-- **Specialist agents** (`backend-developer`, `frontend-developer`, `swiftui-performance`): Domain-specific subagent definitions.
+- **Code quality** (`gate`, `gate-wf`, `triage-findings`, `code-slop`): Review and auto-fix workflows using agent teams. `gate-wf` reviews and renders a verdict; `triage-findings` acts on what it found (both share `skills/gate-wf/scripts/findings.py`).
+- **Review & PR** (`pr-create`, `pr-challenge`, `pr-feedback`, `pr-respond`, `pr-comment`, `fixup`, `babysit-prs`, `pr-dash`, `pr-explain`, `pr-demo`, `review-mining`, `qa-plan`, `qa-run`): Git/GitHub and review automation. `pr-challenge` reviews someone else's PR as a colleague would (questions, not findings) and hands its drafts to `pr-comment`, which also posts `gate-wf` findings. `pr-dash` owns the scan service (`pr-scan.py`) that both it and `babysit-prs` read; neither needs the other. `pr-explain` opens a herdr tab where a fresh session explains a `held` thread in plain words. `pr-demo` films a PR's flow in the local app through Playwright MCP and attaches the video to the PR.
+- **CLI integrations** (`codex-cli`, `chrome-cdp`): Wrappers for external CLI tools.
+- **Investigation & planning** (`interview`, `investigate`, `elevate`, `innovate`, `retrospective`, `orchestrate`): Structured thinking workflows.
+- **Specialist agents** (`backend-developer`, `frontend-developer`): Domain-specific subagent definitions.

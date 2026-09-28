@@ -37,20 +37,13 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | **Daily workflow** | |
 | `daily-update` | Draft a daily Slack update from Linear |
 | **Code quality** | |
-| `applying-solid-principles` | SOLID principles and clean code practices |
 | `code-slop` | Detect and fix slop patterns |
 | `gate` | Harness-portable branch quality gate (Claude Code + Codex) with parallel reviewer subagents |
-| `quality-gate` | Quality gate review for React/Next.js |
-| `refactor-instructions` | Code refactoring guidelines |
-| `second-pass` | Second-pass review of recent work |
-| `ubiquitous-language` | Domain-driven naming review |
 | **Review & PR** | |
-| `consensus` | Run a prompt N times and consolidate by vote |
 | `pr-create` | Publish a PR with type detection + Linear/Jira linking |
 | `pr-feedback` | Triage and classify PR review comments + CI |
 | `pr-respond` | Apply picked PR feedback + post replies/reactions/resolve |
 | `pr-comment` | Post gate/gate-wf findings as a humanizer-drafted PR review |
-| `ci-watch` | Watch a PR's CI hands-free via a persistent Monitor |
 | `fixup` | Fold a fix into the commit that introduced it, force-push |
 | `babysit-prs` | Event-driven watch driving open PRs to merge-ready |
 | `pr-dash` | Live dashboard of the repo's open PRs, kept current by a shared scan service |
@@ -58,12 +51,9 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `qa-plan` | Manual QA plan generation |
 | `qa-run` | Execute a manual QA plan |
 | **Developer tools** | |
-| `acli` | Jira management via acli |
 | `chrome-cdp` | Drive a local Chrome session via DevTools Protocol |
 | `codex-cli` | OpenAI Codex CLI for automated code analysis |
 | `commit` | Stage + commit with auto-generated message |
-| `confluence-cli` | Confluence content management via CLI |
-| `hooks` | Create and manage Claude Code hooks |
 | **Investigation & planning** | |
 | `elevate` | Elevate a draft idea into a sharp proposal |
 | `innovate` | Generate divergent solutions for a problem |
@@ -71,12 +61,9 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `investigate` | Structured investigation workflow |
 | `orchestrate` | Run a dependency-ordered stack of Linear tickets through Herdr |
 | `retrospective` | Reflect on the work done on the current branch vs main |
-| `skill-creator` | Guide for creating skills |
 | **Specialist agents** | |
 | `backend-developer` | TypeScript backend specialist |
 | `frontend-developer` | React/TypeScript frontend specialist |
-| `swiftui-performance` | SwiftUI performance optimization |
-| `ui-skills` | Opinionated constraints for better interfaces |
 
 ## Repo layout
 
@@ -94,7 +81,8 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 │   └── ai-skills -> ..     # Codex marketplace path to root plugin
 ├── scripts/
 │   └── bump-version.sh     # bump version in both manifests + tag a release
-├── skills/                 # all skills live here as <name>/SKILL.md
+├── skills/                 # all shipped skills live here as <name>/SKILL.md
+├── deprecated/             # retired skills, kept for reference, never installed
 └── ...
 ```
 
@@ -108,7 +96,7 @@ claude --plugin-dir .
 /reload-plugins
 ```
 
-To create a new skill, see `skills/skill-creator/SKILL.md`.
+To retire a skill, move `skills/<name>/` to `deprecated/<name>/`. No installer looks there.
 
 ## Release
 

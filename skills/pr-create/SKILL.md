@@ -145,7 +145,7 @@ git push -u origin HEAD
 ## 5. Open a Pull Request
 
 **Configuration:**
-- **Draft:** always create the PR as draft (`gh pr create --draft`). The PR is born draft whatever the path afterwards; it goes ready later, by hand or via `/ci-watch`.
+- **Draft:** always create the PR as draft (`gh pr create --draft`). The PR is born draft whatever the path afterwards; it goes ready later, by hand.
 - **Base branch:** `develop` for **mk-copilot** projects, `master` for all other repos
 - **PR title format:** `{type}({scope}): description [{ID}]` — the scope is the primary package or domain modified (inferred from the diff, e.g. `api`, `web`, `backoffice`), and the issue ID goes in trailing square brackets, not in the scope.
   - **With issue ID:** `feat(api): add user auth [ENG-1234]` or `feat(web): add user auth [MITB-565]`

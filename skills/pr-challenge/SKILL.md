@@ -34,7 +34,7 @@ One JSON blob: the `pr` (with `head_sha`, `title`, `body`, size), `viewer`, `is_
 
 **`is_own_pr: true` → stop.** Reviewing your own branch is `gate-wf`; say so and offer it. Challenging your own code produces questions you already know the answer to.
 
-Then write down **the stated goal** in one sentence, from the title, the body, and any `issue_refs` worth reading (`gh issue view <n>`, or the `acli` skill for a Jira key). That sentence is the yardstick for §4's scope pass and the thing every question is measured against. A PR whose body is empty has no stated goal, and that is itself the first comment of the review.
+Then write down **the stated goal** in one sentence, from the title, the body, and any `issue_refs` worth reading (`gh issue view <n>`, or `acli jira workitem view <key>` for a Jira key). That sentence is the yardstick for §4's scope pass and the thing every question is measured against. A PR whose body is empty has no stated goal, and that is itself the first comment of the review.
 
 **Done when**: the PR is resolved for the user (`#<n> — <url>`, author, size), the stated goal is written down in one sentence, and the diff is in hand.
 

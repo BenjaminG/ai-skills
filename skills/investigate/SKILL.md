@@ -25,7 +25,7 @@ Summarize who said what, decisions, open questions. Collect every `[A-Z]+-\d+` a
 
 ## 3. Resolve the tracker and read the issue
 
-Linear and Jira IDs share one shape, so probe: `linear issue view <ID>` succeeds → Linear (use the `linear-cli` skill for details, comments, related issues, attachments); otherwise Jira (use the `acli` skill). Record the tracker next to each ID.
+Linear and Jira IDs share one shape, so probe: `linear issue view <ID>` succeeds → Linear (use the `linear-cli` skill for details, comments, related issues, attachments); otherwise Jira (`acli jira workitem view <ID>`). Record the tracker next to each ID.
 
 ## 4. Read the evidence (both sources)
 

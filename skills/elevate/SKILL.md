@@ -79,7 +79,7 @@ Ranking heuristic: favor **high Impact + low Effort + low Risk + high Confidence
 
 ## Scope — explicitly refuse to propose
 
-- **Pure code cleanup** — dead code, renames, file splits belong to `simplify` / `code-slop` / `quality-gate`
+- **Pure code cleanup** — dead code, renames, file splits belong to `simplify` / `code-slop`
 - **Single-bug fixes** — if it's scoped to one bug, it isn't an architectural leap
 - **Feature additions** — product capabilities are `innovate`'s turf
 - **Speculative rewrites** — no "rewrite in Rust" or "migrate to microservices" unless the codebase genuinely demands it; bias toward proven, reversible changes
