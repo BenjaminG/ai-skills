@@ -10,3 +10,4 @@ skills/*/.impeccable/
 
 # eval run outputs
 evals/results/
+__pycache__/
