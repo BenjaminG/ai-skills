@@ -1,0 +1,417 @@
+{
+ "pr": {
+  "number": 17603,
+  "url": "https://github.com/naboo-team/naboo/pull/17603",
+  "author": "robinthiry-naboo",
+  "owner": "naboo-team",
+  "repo": "naboo",
+  "head": "feat/rar-1399-remove-stale-portfolio-companies",
+  "base": "dev",
+  "state": "MERGED",
+  "draft": false,
+  "mergeable": "UNKNOWN"
+ },
+ "threads": [],
+ "settled_threads": [
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 417,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "cursor",
+     "is_bot": true,
+     "body": "### Race unmonitors a newly claimed company\n\n**Medium Severity**\n\n<!-- DESCRIPTION START -->\n`removeSupersededCompany` decides nobody claims the old company, then calls `removePortfolioCompany`. That vendor `DELETE` can run for seconds with retries. In that window another venue can write a report for the same `connectId` and enrol it; the in-flight delete then drops it, leaving that venue bound but unmonitored until a later selection or reconcile.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: 1c7e04a6-bc82-4281-a1d7-50c3683999c5 -->\n\n<!-- LOCATIONS START\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L414-L433\nLOCATIONS END -->\n<div><a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmUwYjNkOGYzLTAwMzItNDZjNS1hOGQzLTA0MjFkNmVmOGUwNCIsImVuY3J5cHRpb25LZXkiOiJidktIcF8tQ1pBNXpYOEF3QUFxcWthZEJmek91Nmp0eDJCenk0aEFvdkNBIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/agents?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmUwYjNkOGYzLTAwMzItNDZjNS1hOGQzLTA0MjFkNmVmOGUwNCIsImVuY3J5cHRpb25LZXkiOiJidktIcF8tQ1pBNXpYOEF3QUFxcWthZEJmek91Nmp0eDJCenk0aEFvdkNBIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJOdW1iZXIiOjE3NjAzLCJjb21taXRTaGEiOiIzMzkwNjdmNWNlYzkxZTFiZTdhZmNmZTIyNGRlZDVhYzk4ODBhMDNjIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-web-light.png\"><img alt=\"Fix in Web\" width=\"99\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-web-dark.png\"></picture></a></div>\n\n\n<sup>Triggered by project rule: BUGBOT.md</sup>\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 339067f5cec91e1be7afcfe224ded5ac9880a03c. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 412,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Fire-and-forget chain can now reject unhandled via unguarded Mongo reads\",\"severity\":\"warning\",\"category\":\"convention\"} -->\n### Fire-and-forget chain can now reject unhandled via unguarded Mongo reads\n\n**Warning Severity**\n\n`enrolInMonitoringPortfolio` is invoked detached (`void this.enrolInMonitoringPortfolio(...)`), and the new fall-through now awaits `removeSupersededCompany` after the try/catch, where `creditsafeReport.distinct` and the `findOne` calls inside `matchIsStillClaimed` run outside any error handling. A Mongo failure on those reads rejects the detached promise with no handler \u2014 every promise must have error handling, and before this change the only fallible operation in the detached chain (the vendor add) was fully guarded.\n\n**Fix:**\n```\nWrap the `removeSupersededCompany` call (or its `distinct`/`matchIsStillClaimed` reads) in a try/catch that logs, matching the guard already applied to the vendor calls in the same detached chain.\n```"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed on the defect, fixed at the boundary rather than around `removeSupersededCompany` \u2014 and one premise of the report needs correcting.\n\nThe chain already had an unguarded `await` before this PR: the feature-flag read sits outside the try/catch that guards the vendor calls, and it did on the base branch too.\n\nhttps://github.com/naboo-team/naboo/blob/b3877081c0837fa555aef17e4fab31dfa8016067/packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L336-L342\n\nSo a try/catch around `removeSupersededCompany` would have left that one open and put a second guard where one suffices. The fix is a `.catch()` on the detached call itself, which is also how `typescript.md` spells the rule (\"Every promise must have error handling. `fetchUser(id).catch(handleError)`\"):\n\n    void this.enrolInMonitoringPortfolio({ \u2026 }).catch((error: unknown) => {\n      this.logger.error('partner-health.enrolment.detached-failed', error, {\n        houseId,\n        connectId,\n      })\n    })\n\nThat covers the new `distinct` and `matchIsStillClaimed` reads, the pre-existing flag read, and anything later added to the chain. Covered by a new case: \"should log and swallow a read that rejects inside the detached chain\"."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 439,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "cursor",
+     "is_bot": true,
+     "body": "### Missing company counted as removal failure\n\n**Low Severity**\n\n<!-- DESCRIPTION START -->\nA CreditSafe 404 from `removePortfolioCompany` is logged and counted as `partner-health.unenrolment` `outcome:failure`. That status means the superseded company was never in the portfolio, which is the desired end state after a first enrolment that was skipped or failed.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: 64e80b2c-a034-487f-a9c6-1fb4d3b6e677 -->\n\n<!-- LOCATIONS START\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L436-L447\nLOCATIONS END -->\n<div><a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjMwOTIyNGE1LWQ5MGUtNDljYy05NDc5LTEwZjlhZTc3ZGI4ZSIsImVuY3J5cHRpb25LZXkiOiJFQk9IbzQzNnRPVDFwYWpZczlWUzVDTzdEZlNuakxET29QdHZkZjVEVVB3IiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/agents?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjMwOTIyNGE1LWQ5MGUtNDljYy05NDc5LTEwZjlhZTc3ZGI4ZSIsImVuY3J5cHRpb25LZXkiOiJFQk9IbzQzNnRPVDFwYWpZczlWUzVDTzdEZlNuakxET29QdHZkZjVEVVB3IiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJOdW1iZXIiOjE3NjAzLCJjb21taXRTaGEiOiJiMzg3NzA4MWMwODM3ZmE1NTVhZWYxN2U0ZmFiMzFkZmE4MDE2MDY3IiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-web-light.png\"><img alt=\"Fix in Web\" width=\"99\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-web-dark.png\"></picture></a></div>\n\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit b3877081c0837fa555aef17e4fab31dfa8016067. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, fixed. A 404 here is now counted as `outcome:already_absent` and no longer logged as a failure, with `outcome:failure` kept for every other status \u2014 covered by two new cases.\n\nWorth recording why the status is safe to read that way on this path, since the vendor declares the 404 on `DELETE /monitoring/portfolios/{portfolioId}/companies/{companyId}` without describing what raises it, and its 404 elsewhere means the portfolio itself is unknown (`packages/creditsafe-sdk/README.md:382`). What settles it is the call order: `removeSupersededCompany` is only reached when `addPortfolioCompany` answered 200 or 409 against this same `portfolioId` moments earlier \u2014 any other status returns before it. The portfolio is therefore proven to exist, so the 404 can only be about the company. That reasoning is the comment on the new `matchIsCompanyAbsent`."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 416,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "cursor",
+     "is_bot": true,
+     "body": "### Claim check races concurrent selection\n\n**Medium Severity**\n\n<!-- DESCRIPTION START -->\n`removeSupersededCompany` decides from other venues' latest rows and then deletes. A concurrent `selectCompany` onto that same `connectId` can write and enrol after the claim check and before the delete, so the new claimant is left unmonitored. Reconcile is add-only and will eventually repair it, but alerts in the gap still resolve through `connectId`.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: f027a209-3a2c-47c0-b718-eea56776e7e2 -->\n\n<!-- LOCATIONS START\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L414-L432\nLOCATIONS END -->\n<div><a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjJjZGZjNjJmLTY0YTYtNDZjNC04ZjY0LWUxOWY3ZjkyMDFmMSIsImVuY3J5cHRpb25LZXkiOiJCVnpRellpMHh5QXRIX3Bvb0wwRC1Jai1tMFhUMkdkRncxQlF0YV9lekxBIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/agents?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjJjZGZjNjJmLTY0YTYtNDZjNC04ZjY0LWUxOWY3ZjkyMDFmMSIsImVuY3J5cHRpb25LZXkiOiJCVnpRellpMHh5QXRIX3Bvb0wwRC1Jai1tMFhUMkdkRncxQlF0YV9lekxBIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJOdW1iZXIiOjE3NjAzLCJjb21taXRTaGEiOiJhMWNkNzY2YTA0ZjBjMTI4NjdjNTRlOTYyNWQ0OTFjNmQ1MzVhNWUwIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-web-light.png\"><img alt=\"Fix in Web\" width=\"99\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-web-dark.png\"></picture></a></div>\n\n\n<sup>Triggered by project rule: BUGBOT.md</sup>\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit a1cd766a04f0c12867c54e9625d491c6d535a5e0. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Known and accepted, and worth writing down this time \u2014 Bugbot raised the same race earlier on this PR and it was resolved without a note, which is why it came back.\n\nThe window is real: the claim check reads other venues' latest rows, and a concurrent `selectCompany` onto the same `connectId` can enrol between that read and the vendor `DELETE`. Closing it properly needs a lock across the vendor call, which this PR is not the place for.\n\nWhat makes it tolerable is that the repair already exists and is add-only: `reconcile-portfolio.ts` only ever calls `addPortfolioCompany` (line 97) and never `removePortfolioCompany`, so a company dropped by this race is re-enrolled on the next reconciliation rather than left out. Running that reconciliation on a cron is RAR-1411, in progress.\n\nThe residual exposure is what you name: alerts raised in the gap resolve through `connectId`, so a venue can miss events until the reconciliation runs. That is the cost being accepted, not an oversight."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 407,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "cursor",
+     "is_bot": true,
+     "body": "### Detached removal rejects on query failure\n\n**Low Severity**\n\n<!-- DESCRIPTION START -->\n`distinct` and `matchIsStillClaimed` sit outside the catch that swallows vendor failures, and `enrolInMonitoringPortfolio` is invoked with `void`. A Mongo error on the claim check therefore becomes an unhandled rejection on a request that already succeeded, with no `partner-health.unenrolment.failed` log or metric.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: 955ec6da-ba53-4d53-a170-1f0fee6ac523 -->\n\n<!-- LOCATIONS START\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L414-L423\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L382-L388\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L208-L213\nLOCATIONS END -->\n<details>\n<summary>Additional Locations (2)</summary>\n\n- [`packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L382-L388`](https://github.com/naboo-team/naboo/blob/a1cd766a04f0c12867c54e9625d491c6d535a5e0/packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L382-L388)\n- [`packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L208-L213`](https://github.com/naboo-team/naboo/blob/a1cd766a04f0c12867c54e9625d491c6d535a5e0/packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L208-L213)\n\n</details>\n\n<div><a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmUwN2M1OWNmLTA5ZmQtNGQ0OS05MDNjLTQwNjU1ZDRmOTlhZSIsImVuY3J5cHRpb25LZXkiOiJMZG9ubWpJZHdiSF9yaDlNcmptaHFTX3BKcEtWSmx2SkZqaWdnZUk2cnIwIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/agents?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmUwN2M1OWNmLTA5ZmQtNGQ0OS05MDNjLTQwNjU1ZDRmOTlhZSIsImVuY3J5cHRpb25LZXkiOiJMZG9ubWpJZHdiSF9yaDlNcmptaHFTX3BKcEtWSmx2SkZqaWdnZUk2cnIwIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJOdW1iZXIiOjE3NjAzLCJjb21taXRTaGEiOiJhMWNkNzY2YTA0ZjBjMTI4NjdjNTRlOTYyNWQ0OTFjNmQ1MzVhNWUwIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-web-light.png\"><img alt=\"Fix in Web\" width=\"99\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-web-dark.png\"></picture></a></div>\n\n\n<sup>Triggered by project rule: BUGBOT.md</sup>\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit a1cd766a04f0c12867c54e9625d491c6d535a5e0. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Stale \u2014 this was reviewed against the previous head. The fix landed in `6a89d5a6c9e`: the detached call now carries a `.catch()` at the boundary, so a Mongo failure on `distinct` or `matchIsStillClaimed` is caught and logged rather than becoming an unhandled rejection.\n\nhttps://github.com/naboo-team/naboo/blob/6a89d5a6c9e38a359dd596800a588e94a72f40b3/packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L206-L220\n\nIt logs `partner-health.enrolment.detached-failed` rather than `partner-health.unenrolment.failed`, on purpose: the guard sits on the whole detached chain, not on the removal alone, so it also covers the feature-flag read that was already unguarded before this PR. Covered by \"should log and swallow a read that rejects inside the detached chain\"."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 73,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"RemoveSupersededCompanyParams hand-writes a shape derivable from EnrolInMonitoringPortfolioParams\",\"severity\":\"suggestion\",\"category\":\"convention\"} -->\n### RemoveSupersededCompanyParams hand-writes a shape derivable from EnrolInMonitoringPortfolioParams\n\n**Suggestion Severity**\n\n`RemoveSupersededCompanyParams` is exactly `EnrolInMonitoringPortfolioParams` plus `portfolioId`, repeating the houseId/connectId/supersededConnectId triple. Per the derive-never-hand-write rule and the dedicated *Params reuse rule, the shared contract should be expressed once.\n\n**Fix:**\n```\ntype RemoveSupersededCompanyParams = EnrolInMonitoringPortfolioParams & { portfolioId: number }\n```"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, applied:\n\n    type RemoveSupersededCompanyParams = EnrolInMonitoringPortfolioParams & {\n      portfolioId: number\n    }\n\nBeyond the line count, the intersection states something true that the duplication left implicit: `removeSupersededCompany` is called from inside `enrolInMonitoringPortfolio` with exactly its parameters plus the portfolio it resolved, so the shapes are not merely alike \u2014 one is the other extended. A field added to the enrolment params now reaches the removal by construction rather than by someone remembering.\n\n`typescript.md` lists `T & { extra: string }` among the derivation forms, so this is the spelling the rule asks for. Typecheck clean, 56 tests green on the service."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "### [BUG-001] A skipped removal is never retried, and nothing reconciles the surplus: Medium\n\n**Confidence:** HIGH\n\n**Issue:** this comment says a company left behind is \"the drift RAR-1399's reconciliation half is there to catch\", but `reconcilePortfolio` stays add-only: its dependency is `Pick<CreditsafeService, 'addPortfolioCompany' | 'listPortfolioCompanies'>` and `driftCount` only counts partners missing from the portfolio. The comment added at `reconcile-portfolio.ts:127-132` says the opposite (\"nothing here counts a company the portfolio holds that nothing selects any more\"). Ticket piece (2), \"the surplus in `reconcilePortfolio` ... a diff against the selected connect ids\", is not in this PR.\n\nThe removal candidate is only ever the latest row at selection time, so once that row moves on, the old company is never looked at again. Traced path:\n1. Venue bound to A (enrolled). Admin re-selects B, `addPortfolioCompany` answers 503: early `return` at L378, A kept (intended, pinned by the test at L852). Row B is already written (L191, awaited before the detached call).\n2. Admin refreshes B later: `supersededConnectId === connectId` (both B), early `return` at L416.\n3. A stays in the portfolio for good.\n\nSame end state for a non-404 DELETE failure (logged here, never retried). The reconcile comment also understates the residue: it is not only \"a removal the vendor refused\", it includes every failed add followed by a refresh.\n\n**Impact:** a billed monitored line nobody watches, and rating events on A resolved through `connectId` to a venue that is no longer A once RAR-1197's poll ships, which is exactly what this PR sets out to prevent. No metric counts the surplus, so it is silent.\n\n**Fix:** either implement piece (2) (surplus = enrolled ids minus latest selected ids, counted in the drift or its own metric, removed only under `isConfirmed`, `Pick` widened to `removePortfolioCompany`), or get the de-scope explicitly agreed on the ticket with a follow-up, and correct this comment so it does not promise a catch that does not exist."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "You are right, and the comment was the wrong half of a contradiction I wrote myself: `reconcile-portfolio.ts` already says \"nothing here counts a company the portfolio holds that nothing selects any more\", while this one claimed the reconciliation catches exactly that. Three things confirm your reading \u2014 the `Pick` is `'addPortfolioCompany' | 'listPortfolioCompanies'` with no removal at all, `driftCount` sums only missing-from-portfolio categories, and the ticket itself calls the blind spot structural: \"This is the opposite direction \u2014 held by the portfolio but no longer selected.\"\n\nYour traced path holds too. The add fails, the early return keeps A while row B is already written; the next refresh hits `supersededConnectId === connectId` and returns; A is never looked at again.\n\nThe comment now says what is true:\n\n    // Swallowed, and nothing picks it up: the reconciliation only adds what\n    // the portfolio lacks, so a company left behind stays billed until the\n    // surplus diff ships.\n\nOn piece (2) itself, I am de-scoping it here rather than squeezing it in, and there is a concrete reason beyond size: #17655 deletes `scripts/enrol-monitoring-portfolio/reconcile-portfolio.ts` and folds it into `services/reconcile-portfolio.ts` on the cron. Writing the surplus diff in the file that another in-flight PR moves guarantees a conflict and lands the logic in the version that is going away. It belongs on top of #17655, where the reconciliation already reads the membership set every week.\n\nNo follow-up ticket opened yet \u2014 that is the author's call, not mine to make on a review thread. Flagging it here so the de-scope is explicit rather than silent, which was your second option."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "### [CONV-001] Comment blocks against the zero-comment rule: Low\n\n**Confidence:** HIGH\n\n**Rule:** `.claude/rules/code-style.md`: \"Ship zero comments: names reveal the intent, the code is its own comment\"; rare exception: \"code that reads as a mistake but is deliberate, where one line says why it stays\".\n\n**Issue:** this 14-line JSDoc is the largest of the blocks the PR adds or grows:\n- service: L179-181, L204-208 (grown), L359-365 (grown from 2 to 7 lines), L375-377, L381-382, L396-409, L443-446, L455-457\n- `scripts/enrol-monitoring-portfolio/reconcile-portfolio.ts:124-132` (9 lines, the whole change to that file)\n- `match-is-company-absent.utils.ts:4-8`\n- `creditsafe-sdk/src/schemas/monitoring.schema.ts:158`\n- unit test: L42-44, L950\n\n**Fix:** move the reasoning to the PR description or commit message. Keep at most one line where the code reads as a deliberate oddity, e.g. L375 (keep the old company because the add failed) and the 404-means-absent check."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, and this is the third time today this rule has caught me on this stack \u2014 it should have been the default.\n\nRemoved outright: the read-before-write note, the `removeSupersededCompany` JSDoc, the `settleDetachedEnrolment` block and the detached-chain note in the test, and the `id` note in the SDK schema.\n\nCut back to one line where the code reads as a deliberate oddity, which is the exception you name: the detached `void` call, the 409-is-ordinary branch, the 404-means-absent branch, the kept-old-company return, the one-directional drift count, and `matchIsCompanyAbsent`.\n\nThe reasoning that was in them is in the commit message and the PR description."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "### [ADR-008] Test titles without a `when <condition>`: Low\n\n**Confidence:** HIGH\n\n**Rule:** `adr/008-solitary-unit-testing-strategy.md` L60: \"`it` names use the form `\"should <do X> when <condition Y>\"`\" (and the checklist at L94).\n\n**Issue:** two new titles have no condition:\n- L874 `should count a company already gone apart from a removal failure`\n- L951 `should log and swallow a read that rejects inside the detached chain`\n\n**Fix:**\n- `should count the removal as already absent when the vendor answers 404`\n- `should log and swallow the error when a read inside the detached chain rejects`"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, both retitled to your wording:\n\n- `should count the removal as already absent when the vendor answers 404`\n- `should log and swallow the error when a read inside the detached chain rejects`\n\nChecked the rule at `adr/008-solitary-unit-testing-strategy.md:60` \u2014 the `.claude/rules/` mirror has no 008 file, so the source ADR is the reference here."
+    }
+   ]
+  },
+  {
+   "path": "packages/creditsafe-sdk/src/resources/monitoring.ts",
+   "line": 117,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "### [ADR-025] New public method missing from the SDK README: Low\n\n**Confidence:** HIGH\n\n**Rule:** `adr/025-external-api-sdk-architecture.md` \u00a722: \"Every SDK package includes a `README.md` documenting: constructor options, resource list with method signatures, error types, usage examples, and testing subpath usage.\"\n\n**Issue:** `packages/creditsafe-sdk/README.md` is not in the diff and has no mention of `removePortfolioCompany`.\n\n**Fix:**\n- a `#### removePortfolioCompany(params: RemovePortfolioCompanyParams): Promise<RemovePortfolioCompanyResult>` section next to `addPortfolioCompany` (README L214), with the `DELETE /monitoring/portfolios/{portfolioId}/companies/{companyId}` route\n- `RemovePortfolioCompanyParams`, `RemovePortfolioCompanyResult` in the exports table (L492)\n- the in-memory removal in the testing double paragraph (L385)"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, added \u2014 `removePortfolioCompany` is new in this PR and the README had no mention of it at all.\n\nA `removePortfolioCompany` section next to `addPortfolioCompany` with the `DELETE /monitoring/portfolios/{portfolioId}/companies/{companyId}` route, `RemovePortfolioCompanyParams` and `RemovePortfolioCompanyResult` in the exports table, and the in-memory removal in the testing-double paragraph.\n\nThe section also records what the vendor does not: it declares 200/400/401/403/404 without saying what raises the 404, so it is only readable as \"company absent\" where the portfolio is known to exist. I verified the double's behaviour before documenting it \u2014 it filters the entry and answers the same message whether or not one was there, never a 404."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "### [STYLE-503] Bare HTTP status in the new tests: Low (advisory)\n\n**Confidence:** HIGH\n\n**Rule:** `.claude/rules/code-style.md`: \"Magic numbers \u2192 named constants\".\n\n**Issue:** `status: 503` here and at L928, while the new 404 test (L885) uses `HttpStatus.NOT_FOUND`, already imported.\n\n**Fix:** `status: HttpStatus.SERVICE_UNAVAILABLE` at L858 and L928."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, both new sites now use `HttpStatus.SERVICE_UNAVAILABLE`.\n\nLeft the two older ones at L538 and L682 as bare `503` \u2014 they predate this PR and changing them would widen the diff past what is under review. Happy to sweep them in a follow-up if you would rather the file be consistent."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 182,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "### The superseded read can fail the selection after the CreditSafe credit is spent\n\n**Medium Severity**\n\nThis `findOne` exists only to feed the detached monitoring chain, but it is awaited on the mutation's critical path \u2014 after `getReport` (`:160`) has already spent a billed CreditSafe credit \u2014 and it carries no `.catch()`. Any rejection (query timeout, read-preference hiccup) propagates straight out of `selectCompany`.\n\nThe file treats both properties as contracts in its own comments: *\"an unknown `houseId` costs no CreditSafe credit\"* and *\"on failure nothing is written\"*. The second still holds; the first no longer does. Before this PR nothing between `getReport` and `create` could reject this way, so a Mongo blip on a read that serves only best-effort monitoring now fails the whole admin selection: no report row, no audit entry, no billing autofill, and the credit burnt.\n\nThe new detached-chain test covers a rejecting `distinct`, but not a rejecting `findOne` \u2014 that one no longer reaches the chain.\n\n**Fix:** move the read above the `getReport` call at `:160`. Nothing writes to `creditsafeReport` between the two points, so the read-before-the-write property it needs is preserved, and a read failure then costs nothing.\n\nA `.catch(() => null)` at the read site also works, but silently degrades monitoring instead of failing loudly, so the move is the better of the two."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, and the property you quote is the right frame: the file promises \"an unknown `houseId` costs no CreditSafe credit\", and this read broke it by sitting between the billed call and the write.\n\nMoved above `getReport` rather than wrapped, for the reason you give \u2014 a `.catch(() => null)` keeps the selection alive but degrades monitoring silently, and a superseded company that is silently forgotten is exactly the bug this PR exists to fix. Nothing writes to `creditsafeReport` between the old and new positions, so the read-before-the-write property it needs is untouched.\n\nYou are also right that the detached-chain test does not cover this: it rejects `distinct`, which runs inside the chain. After the move a rejecting `findOne` fails the mutation before any credit is spent, which the existing \"should write nothing when the vendor call fails\" shape already covers from the other side."
+    }
+   ]
+  },
+  {
+   "path": "packages/creditsafe-sdk/src/schemas/monitoring.schema.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "### An empty 204 body would count every successful removal as a failure\n\n**Medium Severity**\n\nThis result schema is modelled on `addPortfolioCompanyResultSchema` \u2014 a POST that genuinely returns a body \u2014 rather than on the precedent nine lines up in this same file for a write verb that commonly answers 204:\n\n```ts\nexport const putEventRulesResultSchema = z.preprocess(\n  (value) => {\n    // A 204 carries no body, yet the vendor also declares a `{ message }` payload on it.\n    if (value === '') { return {} }\n    return value\n  },\n  z.object({ message: z.string().nullish() }).loose(),\n)\n```\n\n`BaseResource.request` ends with `schema.safeParse(response.data)` (`base.ts:113`), and axios hands back `''` for an empty body.\n\n**Impact:** if CreditSafe answers the DELETE 204/empty, `safeParse` fails \u2192 `CreditsafeValidationError` \u2192 `throwUpstream('removePortfolioCompany', \u2026)` \u2192 `CreditsafeUpstreamError` with `status: null`. `matchIsCompanyAbsent` is then false, so every *successful* removal is logged `partner-health.unenrolment.failed` and counted `naboo.partner_health.unenrolment{outcome:failure}` \u2014 a monitor on `outcome:failure` would be permanently red, which is the one thing the new metric was split three ways to avoid.\n\nThe new SDK spec only covers a 200-with-body, so nothing catches it.\n\n**Fix:** wrap the result schema the same way `putEventRulesResultSchema` is wrapped, and add the empty-204 case next to the 200 case in `tests/monitoring.spec.ts`."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Caught a real one, and the chain you trace is exactly right \u2014 a 204 would have made every successful removal log `partner-health.unenrolment.failed` and count `outcome:failure`, permanently reddening the one signal the three-way split was meant to keep meaningful.\n\nWrapped the same way as the precedent you point at nine lines up:\n\n    export const removePortfolioCompanyResultSchema = z.preprocess(\n      (value) => {\n        // A DELETE commonly answers 204 with no body, which axios hands back as ''.\n        if (value === '') {\n          return {}\n        }\n        return value\n      },\n      z.object({ correlationId: \u2026, message: \u2026 }).loose(),\n    )\n\nAdded `should resolve the removal when the vendor answers 204 with no body` to `tests/monitoring.spec.ts` next to the 200 case. I checked it fails against the unwrapped schema before fixing it, so the test earns its place."
+    }
+   ]
+  },
+  {
+   "path": "packages/creditsafe-sdk/src/resources/monitoring.ts",
+   "line": 117,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "### The new method ships without its README entry (ADR 025 \u00a722)\n\n**Medium Severity**\n\nADR 025 \u00a722: *\"Every SDK package includes a `README.md` documenting: constructor options, **resource list with method signatures**, error types, usage examples, and testing subpath usage.\"*\n\n`README.md` carries a `#### <method>(params): Promise<Result>` section for each of the seven existing monitoring methods (`createPortfolio` L150 \u2026 `listNotificationEvents` L244). The eighth is absent, so the resource list the ADR requires is now incomplete.\n\nThree spots are not merely incomplete but now factually wrong:\n\n- **L146** \u2014 *\"**Seven** methods against the Global Monitoring API\"*.\n- **L385** \u2014 *\"`createPortfolio` and `addPortfolioCompany` write into `store.monitoringPortfolios` and `store.monitoringPortfolioCompanies`\"*, while the new `InMemoryCreditsafeClient.removePortfolioCompany` *filters* `store.monitoringPortfolioCompanies` \u2014 a mutation that sentence does not admit.\n- **L408** \u2014 the `simulateError` key list omits `\"monitoring.removePortfolioCompany\"`, although `this.checkError('monitoring.removePortfolioCompany')` is wired in the double.\n\n**Fix:** one section after `addPortfolioCompany`, plus the three amendments:\n\n```md\n#### `removePortfolioCompany(params: RemovePortfolioCompanyParams): Promise<RemovePortfolioCompanyResult>`\n\n`DELETE /monitoring/portfolios/{portfolioId}/companies/{companyId}` \u2014 drop **one** company.\n\n```ts\nawait client.monitoring.removePortfolioCompany({\n  portfolioId: 589960,\n  id: \"US-X-US22384484\", // a Safe Number or a connectId, as the add takes\n});\n```\n```"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "The section itself had just landed when you wrote this \u2014 it is in the commit pushed a few minutes ago, along with the exports table and the testing-double paragraph at L385.\n\nYour other two were genuinely still wrong and are fixed now:\n\n- L146 said \"Seven methods against the Global Monitoring API\" \u2014 now eight.\n- The `simulateError` key list gained `\"monitoring.removePortfolioCompany\"`, which the double wires through `checkError` but the README never mentioned.\n\nThanks for reading the doc as a whole rather than just checking the section existed \u2014 the count and the key list are the parts that go stale invisibly."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.unit.test.ts",
+   "line": 903,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "### The `dogstatsd` spy leaks into the rest of the file when an assertion fails\n\n**Medium Severity**\n\nThis test and the one at `:919` install `vi.spyOn(dogstatsd, 'increment').mockImplementation(...)` and call `incrementSpy.mockRestore()` as the **last statement of the test body**.\n\n`vitest.legacy.config.ts:98` sets `clearMocks: true` (call history only) but not `restoreMocks`, and this file has no `afterEach` cleanup for the spy. These two tests are the first and only place in the file that patches `dogstatsd` \u2014 every other test, including the other six in this `describe`, leaves it as the real module singleton.\n\n**Impact:** if any `expect(...)` inside either test throws before reaching `mockRestore()`, the no-op implementation stays installed on the shared module singleton for the remainder of the run, silently swallowing every later `dogstatsd.increment` \u2014 including in unrelated `describe` blocks further down the file. One genuine failure becomes a cascade of misleading green.\n\n**Fix:** make the restore unconditional:\n\n```ts\ntry {\n  // assertions\n} finally {\n  incrementSpy.mockRestore()\n}\n```\n\nor hoist the spy and its restore into a `beforeEach`/`afterEach` pair scoped to these two tests, so cleanup does not depend on the body succeeding."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, and the blast radius you describe is the part that makes it worth fixing: a no-op left on the shared `dogstatsd` singleton turns one real failure into a run of misleading green.\n\nTook your second option, scoped to the describe that owns both tests:\n\n    // `clearMocks` clears call history, never the implementation, so a spy on\n    // the shared `dogstatsd` singleton outlives a test that throws mid-body.\n    afterEach(() => {\n      vi.restoreAllMocks()\n    })\n\nThe two inline `mockRestore()` calls are gone. These are the only two `vi.spyOn` in the file, so nothing else is affected by the blanket restore."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "### Two comments narrate the code instead of explaining a non-obvious why\n\n**Low Severity**\n\n`.claude/rules/code-style.md`: *\"Ship zero comments: names reveal the intent, the code is its own comment\"*, with a rare exception for code that reads as a mistake but is deliberate. `.cursor/BUGBOT.md` #10 bans comments *\"explaining WHAT the code does\u2026 narrating the change, or referencing the task/caller\"*.\n\nMost of this diff's comments clear that bar easily \u2014 `match-is-company-absent.utils.ts`, the `removeSupersededCompany` JSDoc and the 409 rationale all carry vendor contracts that are genuinely not recoverable from the code. Two do not:\n\n- **`:381`** \u2014 *\"Already in the portfolio is monitored, so the superseded company below is still owed its removal.\"* narrates the fall-through to the `removeSupersededCompany` call on the next lines; the control flow already says it.\n- **`:457`** \u2014 *\"A company left behind is the drift RAR-1399's reconciliation half is there to catch.\"* references the ticket, the pattern BUGBOT calls out by name.\n\n**Fix:** drop both."
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Both gone.\n\n`:457` had already been rewritten in the commit pushed just before your review \u2014 Sarah flagged the same line for a different reason, that it promised a reconciliation catch which does not exist. It now states the opposite, that a company left behind stays billed until the surplus diff ships.\n\n`:381` is deleted outright, as you asked: the fall-through to `removeSupersededCompany` is visible in the control flow."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "cursor",
+     "is_bot": true,
+     "body": "### Stale superseded company snapshot\n\n**Medium Severity**\n\n<!-- DESCRIPTION START -->\nThe superseded-report read now sits above `getReport`, so `supersededConnectId` is frozen for the whole vendor round trip. A second selection can append a newer row in that window, and removal still targets the older company, leaving the one this venue just left enrolled.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: 18a969f0-d9fb-48b8-967a-acbaf9c19d2f -->\n\n<!-- LOCATIONS START\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L162-L170\nLOCATIONS END -->\n<div><a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjEzZDQ2MjgyLTlkYjktNDI0OS05N2ZlLTc0NDE1NjA4YzI4OSIsImVuY3J5cHRpb25LZXkiOiJreGhMcjFlWFBGYlJZLVdOQXFBTHpnMW5KNDBfMG5rYXZucDQxWnFEVlpVIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/agents?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjEzZDQ2MjgyLTlkYjktNDI0OS05N2ZlLTc0NDE1NjA4YzI4OSIsImVuY3J5cHRpb25LZXkiOiJreGhMcjFlWFBGYlJZLVdOQXFBTHpnMW5KNDBfMG5rYXZucDQxWnFEVlpVIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJOdW1iZXIiOjE3NjAzLCJjb21taXRTaGEiOiJkYTE2NjgzYjU1M2UwOTBkMmMyYzIwYTQzOGI3OTJlODIzZWUzNjdlIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-web-light.png\"><img alt=\"Fix in Web\" width=\"99\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-web-dark.png\"></picture></a></div>\n\n\n<sup>Triggered by project rule: BUGBOT.md</sup>\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit da16683b553e090d2c2c20a438b792e823ee367e. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, and the fix is the read moved back down \u2014 under `getReport`, next to the write it feeds.\n\nThe scenario holds exactly as you describe it. Venue on company A, two selections overlapping the vendor round trip: the first reads `A`, the second also reads `A` (nothing has written yet), writes its row and removes `A`; the first then writes its own row and removes `A` again \u2014 a 404, counted `already_absent`. The company the second selection left behind is never removed, and `reconcilePortfolio` is add-only, so nothing downstream catches it.\n\nOne premise of the counter-argument that put the read up there needs correcting, though \u2014 it is what makes the move safe. The read was raised above `getReport` so a Mongo failure could not sink a mutation whose CreditSafe credit was already spent. But that property was already gone: `house.findById` is awaited between the billed call and the write, with no `.catch()`, and has been since before this PR.\n\nhttps://github.com/naboo-team/naboo/blob/da16683b553e090d2c2c20a438b792e823ee367e/packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L172-L191\n\nIf Mongo is down at that point the `create` two statements later fails anyway, so the credit is lost either way. Putting the superseded read beside it therefore costs nothing that still stands, and the promise the file actually makes \u2014 an unknown `houseId` costs no CreditSafe credit \u2014 is carried by the opening `findById`, which has not moved.\n\nWhat remains is the read-then-create window, which is the same family as the claim-check race already accepted on this PR: closing it needs a lock spanning the vendor call, out of scope here."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts",
+   "line": 411,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "cursor",
+     "is_bot": true,
+     "body": "### Removal ignores this venue's latest claim\n\n**High Severity**\n\n<!-- DESCRIPTION START -->\nThe claim check drops the current venue with `$ne` on `houseId`, then only inspects other venues' latest rows. Claiming is defined as holding the company on the most recent row, which already ignores this venue's history, so the exclusion is unnecessary and hides a later row on the same venue. Enrolment is detached and includes a vendor round trip, so a quick re-select back onto the old company can land first; the original request then removes that company and leaves the venue monitored by nothing.\n<!-- DESCRIPTION END -->\n\n<!-- BUGBOT_BUG_ID: 92aef887-c0f5-4d45-a82f-2cdbf1757083 -->\n\n<!-- LOCATIONS START\npackages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L395-L408\nLOCATIONS END -->\n<div><a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmQzMmJiMjJjLTFhYmMtNDJmZC1hYmU0LTllN2Q5ZDY0YzEyYiIsImVuY3J5cHRpb25LZXkiOiJqUHVmTUpjOXVJVVVLeHdURTk3V244THB1Y2RWZkZENVVDTVhmd1pyaXlNIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/agents?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmQzMmJiMjJjLTFhYmMtNDJmZC1hYmU0LTllN2Q5ZDY0YzEyYiIsImVuY3J5cHRpb25LZXkiOiJqUHVmTUpjOXVJVVVLeHdURTk3V244THB1Y2RWZkZENVVDTVhmd1pyaXlNIiwiYnJhbmNoIjoiZmVhdC9yYXItMTM5OS1yZW1vdmUtc3RhbGUtcG9ydGZvbGlvLWNvbXBhbmllcyIsInJlcG9Pd25lciI6Im5hYm9vLXRlYW0iLCJyZXBvTmFtZSI6Im5hYm9vIiwicHJOdW1iZXIiOjE3NjAzLCJjb21taXRTaGEiOiIzYzg4OTBlNmJhNDVjOThlOTRiZWFhNTE2ZTY5YjE3MGU2ZGEwMTAwIiwicHJvdmlkZXIiOiJnaXRodWIifX0\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-web-light.png\"><img alt=\"Fix in Web\" width=\"99\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-web-dark.png\"></picture></a></div>\n\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 3c8890e6ba45c98e94beaa516e69b170e6da0100. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+    },
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "Agreed, and this one is worse than the window it sits next to \u2014 the venue ends up monitored by nothing at all. Fixed by dropping the exclusion.\n\nYour reading of the claim check is right: `matchIsStillClaimed` reads each venue's most recent row and compares it, so history is already not a claim \u2014 the sort does the work the `$ne` was meant to do.\n\nhttps://github.com/naboo-team/naboo/blob/3c8890e6ba45c98e94beaa516e69b170e6da0100/packages/wome-api/src/domain-modules/listing/house/sub-modules/house-partner-health/sub-modules/creditsafe-report/services/creditsafe-report.service.ts#L442-L458\n\nThat made the exclusion redundant on the nominal path and harmful on the one you describe: by the time the detached chain runs, this venue's most recent row is already the new company, so it claims nothing and the removal proceeds exactly as before. The only row the `$ne` ever hid was the one that matters \u2014 a re-selection back onto the superseded company, landing while the first chain was still inside its vendor round trip.\n\nThe filter is now `{ connectId: supersededConnectId }`, and a test pins it: it asserts both the filter shape and that no removal is issued when this venue's latest row carries the superseded company again. Putting the `$ne` back fails it."
+    }
+   ]
+  }
+ ],
+ "reviews": [
+  {
+   "author": "cursor",
+   "state": "COMMENTED",
+   "body": "<!-- BUGBOT_REVIEW -->\n<!-- BUGBOT_REVIEW_STALE -->\nStale Bugbot comment from a previous run."
+  },
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\n> 0 critical \u00b7 1 warning \u00b7 0 suggestion\n\nThe diff implements removal of a superseded company from the CreditSafe monitoring portfolio on venue re-selection. The review surfaced one real convention violation: the detached fire-and-forget chain now includes Mongo reads (`distinct`, `matchIsStillClaimed`) outside any error handling, so an infrastructure failure can produce an unhandled rejection. An efficiency finding about a sequential per-house lookup loop was judged as a small, bounded N+1 on a low-QPS manual path and dropped per the review rules.\n\n\n---\n<sub>bug-hunter: success (0) \u00b7 adr-conventions: success (1) \u00b7 efficiency: success (1)</sub>\n\n---\n<sub>Risk: full \u00b7 Mode: coordinator \u00b7 Agents: 3</sub>\n\n<!-- ai-review-run: {\"headSha\":\"b3877081c0837fa555aef17e4fab31dfa8016067\"} -->"
+  },
+  {
+   "author": "cursor",
+   "state": "COMMENTED",
+   "body": "<!-- BUGBOT_REVIEW -->\n<!-- BUGBOT_REVIEW_STALE -->\nStale Bugbot comment from a previous run."
+  },
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\nAll findings already tracked in open threads \u2014 nothing new to post.\n\n<!-- ai-review-run: {\"headSha\":\"a1cd766a04f0c12867c54e9625d491c6d535a5e0\",\"markerOnly\":true} -->"
+  },
+  {
+   "author": "cursor",
+   "state": "COMMENTED",
+   "body": "<!-- BUGBOT_REVIEW -->\n<!-- BUGBOT_REVIEW_STALE -->\nStale Bugbot comment from a previous run."
+  },
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\nAll three specialist reviewers completed successfully and returned no findings on the current diff. The bug-hunter found no defects, the adr-conventions reviewer found no convention or ADR violations, and the efficiency reviewer raised no performance concerns. The implementation appears consistent with the RAR-1399 intent without introducing issues.\n\n\n---\n<sub>bug-hunter: success (0) \u00b7 adr-conventions: success (0) \u00b7 efficiency: success (0)</sub>\n\n> Linked tickets: [RAR-1399](https://linear.app/naboo-team/issue/RAR-1399/remove-a-company-from-the-monitoring-portfolio-when-a-venue-is-re), [RAR-1197](https://linear.app/naboo-team/issue/RAR-1197/private-api-for-the-creditsafe-monitoring-calls) \u2014 no findings; changes look consistent with ticket intent\n\n---\n<sub>Risk: full \u00b7 Mode: coordinator \u00b7 Agents: 3</sub>\n\n<!-- ai-review-run: {\"headSha\":\"332013cd84ad4281d7030f2ed15303a7cdff9ad4\"} -->"
+  },
+  {
+   "author": "sarah-bourgeois",
+   "state": "COMMENTED",
+   "body": "## PR Review: COMMENT (no blocking finding, one spec gap to settle before merge)\n\n- **[BUG-001] Medium**: a superseded company whose removal is skipped (new add failed, or vendor refused the DELETE) is never removed afterwards; ticket piece (2), the surplus diff in `reconcilePortfolio`, is not implemented, and the service comment promises a catch that the reconcile comment says does not exist.\n- **[CONV-001] Low**: large comment blocks against `.claude/rules/code-style.md` \"Ship zero comments\".\n- **[ADR-008] Low**: two new test titles without a `when <condition>`.\n- **[ADR-025] Low**: `packages/creditsafe-sdk/README.md` does not document `removePortfolioCompany`.\n- **[STYLE-503] Low, advisory**: bare `503` in the new tests.\n\nAlready discussed threads (claim-check race, detached `.catch`, 404 outcome, Params type) are not repeated.\n\n---\n*Reviewed by `/pr-review` (ultra mode): 5 inline comments posted*"
+  },
+  {
+   "author": "cursor",
+   "state": "COMMENTED",
+   "body": "<!-- BUGBOT_REVIEW -->\n<!-- BUGBOT_REVIEW_STALE -->\nStale Bugbot comment from a previous run."
+  },
+  {
+   "author": "gwenaelmonier-naboo",
+   "state": "DISMISSED",
+   "body": ""
+  },
+  {
+   "author": "gwenaelmonier-naboo",
+   "state": "DISMISSED",
+   "body": ""
+  },
+  {
+   "author": "cursor",
+   "state": "COMMENTED",
+   "body": "<!-- BUGBOT_REVIEW -->\nCursor Bugbot has reviewed your changes using default effort and found 1 potential issue.\n\n\n\n<!-- BUGBOT_FIX_ALL -->\n<a href=\"https://cursor.com/open?link=eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9BTExfSU5fQ1VSU09SIiwiZGF0YSI6eyJyZWRpc0tleSI6ImJ1Z2JvdC1tdWx0aTpmMGY3NmJlMS0yZjU0LTQwOTYtOTIzMC0xMTQwY2FjOWJkNTciLCJlbmNyeXB0aW9uS2V5IjoiampSeGJGN1JkV0VoREdEYXhENFdsWlZoemxUdlp5MkViSmFqSFYtM3o4ayIsImJyYW5jaCI6ImZlYXQvcmFyLTEzOTktcmVtb3ZlLXN0YWxlLXBvcnRmb2xpby1jb21wYW5pZXMiLCJyZXBvT3duZXIiOiJuYWJvby10ZWFtIiwicmVwb05hbWUiOiJuYWJvbyIsInByb3ZpZGVyIjoiZ2l0aHViIn19\" target=\"_blank\" rel=\"noopener noreferrer\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/fix-in-cursor-light.png\"><img alt=\"Fix All in Cursor\" width=\"115\" height=\"28\" src=\"https://cursor.com/assets/images/fix-in-cursor-dark.png\"></picture></a>\n<!-- /BUGBOT_FIX_ALL -->\n\n<!-- BUGBOT_AUTOFIX_REVIEW_FOOTNOTE_BEGIN -->\n<sup>\u274c Bugbot Autofix is OFF. To automatically fix reported issues with cloud agents, enable autofix in the [Cursor dashboard](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- BUGBOT_AUTOFIX_REVIEW_FOOTNOTE_END -->\n\n<sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 3c8890e6ba45c98e94beaa516e69b170e6da0100. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>"
+  },
+  {
+   "author": "gwenaelmonier-naboo",
+   "state": "APPROVED",
+   "body": ""
+  }
+ ],
+ "comments": [
+  {
+   "author": "linear[bot]",
+   "is_bot": true,
+   "body": "<!-- linear-linkback -->\n<details>\n<summary><a href=\"https://linear.app/naboo-team/issue/RAR-1399/remove-a-company-from-the-monitoring-portfolio-when-a-venue-is-re\">RAR-1399 Remove a company from the monitoring portfolio when a venue is re-selected</a></summary>\n<p>\n\nEnrolment is add-only today, so a venue re-selected onto a different company stays monitored on the first one \u2014 billed, and attributable.\n\n## What happens\n\nAn admin picks company A for venue X by mistake, then re-selects the right company B. `selectCompany` appends a second report row and posts B into the portfolio. Nothing removes A.\n\nThe venue is now bound to B \u2014 its most recent row \u2014 while the portfolio holds both. Two costs follow:\n\n* **A is still monitored**, so the recurring vendor spend continues for a company nobody watches.\n* \u26a0\ufe0f **Once [RAR-1197](<https://linear.app/naboo-team/issue/RAR-1197>)'s poll attributes notifications through the** `connectId` **index, a rating move on A raises an alert against X.** X's superseded row still carries A and is not deleted, so the lookup resolves. The alert names a venue on the strength of a click that was corrected.\n\n## Why the drift check cannot see it\n\n`reconcilePortfolio` counts partners *selected but missing from the portfolio*. This is the opposite direction \u2014 *held by the portfolio but no longer selected*. The backlog script reads one row per venue sorted on `fetchedAt`, so it only ever sees B, classifies the venue `alreadyEnrolled`, and reports `drift: 0`. The blind spot is structural, not a bug in the counter.\n\n## What it takes\n\nCreditSafe exposes the removal, our SDK simply does not wrap it yet:\n\n`DELETE /monitoring/portfolios/{portfolioId}/companies/{companyId}` \u2014 *Delete Company From Portfolio*, declared in both Connect 1.10.9 and Global Monitoring 1.0.0. The `{companyId}` path parameter takes *\"A company Safe Number or Connect ID\"*, so the stored `connectId` works as-is. Declared responses: 200, 400, 401, 403, 404 \u2014 a 404 for a company already absent makes a re-run safe.\n\nThree pieces:\n\n1. `removePortfolioCompany` on the SDK monitoring resource and on `CreditsafeService`.\n2. The surplus in `reconcilePortfolio`: the membership set is already read, so it is a diff against the selected connect ids.\n3. The removal itself, plus whether it belongs on the live selection path or only in the reconciliation run \u2014 a live removal on every re-selection spends a vendor call on an event nobody measured yet.\n\n\u26a0\ufe0f **Not urgent while the poll is unshipped.** The estate is 75 venues and the second cost above is the one that bites; the first is small. This was found during review of [RAR-1192](<https://linear.app/naboo-team/issue/RAR-1192>) and deliberately left out of it to keep that PR scoped.\n</p>\n</details>\n<!-- linear-review-link -->\n<p><a href=\"https://linear.app/naboo-team/review/featapi-drop-the-company-a-venue-is-no-longer-bound-to-rar-1399-1d4b2115cd8b\">Review in Linear</a></p>"
+  },
+  {
+   "author": "snyk-io-eu[bot]",
+   "is_bot": true,
+   "body": "### :white_check_mark: **Snyk checks have passed. No issues have been found so far.**\n\n| Status | Scan Engine | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-critical.svg) Critical | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-high.svg) High | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-medium.svg) Medium | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-low.svg) Low | Total (0) |\n|---|---|---|---|---|---|---|\n| :white_check_mark: | Open Source Security| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/pr-checks/5a2df461-f557-46dd-9649-3b921d9e1f6a?refs=552d411eb3fffcdbc60c33893899e2ef9ec58494&source=prChecksComment) |\n| :white_check_mark: | Licenses| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/pr-checks/5a2df461-f557-46dd-9649-3b921d9e1f6a/license?refs=552d411eb3fffcdbc60c33893899e2ef9ec58494&source=prChecksComment) |\n| :white_check_mark: | Code Security| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/project/0b59393b-524b-4516-be2e-c90e2c94cb93/pr-check/6a2d65cd-9207-4c55-a24a-d7b21ca0eadf?refs=552d411eb3fffcdbc60c33893899e2ef9ec58494&source=prChecksComment) |\n\n:computer: Catch issues earlier using the plugins for [VS Code](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner), [JetBrains IDEs](https://plugins.jetbrains.com/plugin/10972-snyk-security), [Visual Studio](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner-vs-2022), and [Eclipse](https://marketplace.eclipse.org/content/snyk-security#external-install-button)."
+  },
+  {
+   "author": "github-actions[bot]",
+   "is_bot": true,
+   "body": "## E2E Test Results\n\nRun: [#36162583068](https://github.com/naboo-team/naboo/actions/runs/36162583068/attempts/1)\n\n### :warning: Silent Flaky Tests (1)\n\n| Test | File | Shard |\n|---|---|---|\n| should add a MESSAGE section with title and highlight | app/builder/builder.spec.ts | [app](https://github.com/naboo-team/naboo/actions/runs/36162583068/job/108165987919) |"
+  }
+ ],
+ "failing_checks": [],
+ "errors": []
+}

@@ -2,6 +2,7 @@
 """Fetch everything pr-feedback triage needs about a PR, as one compact JSON blob.
 
 Usage: fetch-pr.py [pr-number-or-url]   (no arg = detect from current branch)
+       fetch-pr.py <pr> --full          (no body truncation, for harness-review)
        fetch-pr.py --self-check         (offline assertions on the normalisation)
 """
 import concurrent.futures as cf
@@ -16,6 +17,7 @@ SETTLED_CAP = 300
 LOG_LINES = 50
 LOG_CHARS = 3000
 BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
+FULL = "--full" in sys.argv
 
 
 def gh(*args, check=True):
@@ -27,7 +29,7 @@ def gh(*args, check=True):
 
 def trunc(s, cap=BODY_CAP):
     s = (s or "").strip()
-    return s if len(s) <= cap else s[:cap] + " […]"
+    return s if FULL or len(s) <= cap else s[:cap] + " […]"
 
 
 def is_bot(login, typename):

@@ -1,0 +1,318 @@
+{
+ "pr": {
+  "number": 17667,
+  "url": "https://github.com/naboo-team/naboo/pull/17667",
+  "author": "sarah-bourgeois",
+  "owner": "naboo-team",
+  "repo": "naboo",
+  "head": "fix/impersonation-prod-readiness",
+  "base": "dev",
+  "state": "MERGED",
+  "draft": false,
+  "mergeable": "UNKNOWN"
+ },
+ "threads": [],
+ "settled_threads": [
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.host.resolver.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Mongoose layer bleed in resolver: isValidObjectId guard and ImpersonationRequestModel type (ADR 018)\",\"severity\":\"suggestion\",\"category\":\"convention\"} -->\n### Mongoose layer bleed in resolver: isValidObjectId guard and ImpersonationRequestModel type (ADR 018)\n\n**Suggestion Severity**\n\nThe new `findRequestOrNull` helper imports `isValidObjectId` from 'mongoose' and annotates its return as `ImpersonationRequestModel | null`, putting Mongoose-level identifier validation and the persistence type into the resolver/transport layer. ADR 018's layering states resolvers consume DTOs while models never leave the repository/service layer; the sibling audit service shows the correct home for this guard (it uses `isValidObjectId` inside the service).\n\n**Fix:**\n```\nMove the invalid-ObjectId check into ImpersonationRequestService.findById so an invalid id translates to ImpersonationRequestNotFoundError (or a null contract); the resolver then keeps its existing try/catch on the domain error and needs no direct 'mongoose' import or ImpersonationRequestModel annotation.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The ObjectId guard now lives in `ImpersonationRequestService.findById`, which throws `ImpersonationRequestNotFoundError` for an invalid id without querying Mongo (new unit test in `impersonation-request.service.unit.test.ts`). The resolver no longer imports `mongoose` and no longer annotates the model type."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/domains/outputDto/impersonation-consent.output.dto.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Enum registration moved out of its definition file, breaking the impersonation module pattern\",\"severity\":\"suggestion\",\"category\":\"convention\"} -->\n### Enum registration moved out of its definition file, breaking the impersonation module pattern\n\n**Suggestion Severity**\n\nEvery other impersonation enum (ImpersonationRequestStatusEnum, ImpersonationTargetAppEnum, ImpersonationAuditEventTypeEnum) calls registerEnumType in its own enum file under domains/enums/. The new ImpersonationConsentAccessEnum instead registers from the outputDto, so the enum file (impersonation-consent-access.enum.ts) is not self-registering like its siblings; a future second registration site would crash Nest's boot with a duplicate-name error.\n\n**Fix:**\n```\nMove registerEnumType(ImpersonationConsentAccessEnum, { name: 'ImpersonationConsentAccessEnum' }) into domains/enums/impersonation-consent-access.enum.ts and remove it (and the registerEnumType import) from impersonation-consent.output.dto.ts.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. `ImpersonationConsentAccessEnum` now registers itself in its own enum file, like its three siblings, and the output DTO no longer registers it:\n\nhttps://github.com/naboo-team/naboo/blob/64732566c3401100ae3e766155ee98e946180f41/packages/wome-api/src/shared/infrastructure/authentication/impersonation/domains/enums/impersonation-request-status.enum.ts#L1-L13"
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-audit.service.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"New neighbour unit test hand-rolls mock scaffolding instead of Suites TestBed.solitary() (ADR 031 \u00a716)\",\"severity\":\"suggestion\",\"category\":\"convention\"} -->\n### New neighbour unit test hand-rolls mock scaffolding instead of Suites TestBed.solitary() (ADR 031 \u00a716)\n\n**Suggestion Severity**\n\nADR 031 \u00a716 (superseding ADR 008) requires every `*.unit.test.ts` outside `cells/` to use `TestBed.solitary(ServiceUnderTest).compile()` with `unitRef.get<T>(T)` typed mocks, explicitly rejecting hand-rolled scaffolding because it drifts with constructor changes and relies on `as unknown as` casts. This new file builds the `ImpersonationAuditService` with `new` and casts every collaborator (`dataService as unknown as IDataServices`, `logger as unknown as Logger`). The sibling impersonation tests follow the same hand-rolled pattern, so this may be an established directory lane predating the ADR.\n\n**Fix:**\n```\nMigrate the suite to `TestBed.solitary(ImpersonationAuditService).compile()` and retrieve typed mocks via `unitRef.get(IDataServices)` / `unitRef.get(Logger)`, keeping the existing `it.each` cases and assertions unchanged.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The suite now builds `ImpersonationAuditService` with `TestBed.solitary(...).compile()` and `unitRef.get<T>(T)` (with `@ts-expect-error` on the `IDataServices` token, as \u00a716 requires). Returned documents are typed `mockDeep<Model>()` instances, so no `as unknown as` cast remains."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.host.resolver.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"New neighbour resolver unit test bypasses the Suites TestBed.solitary() container (ADR 031 \u00a716)\",\"severity\":\"suggestion\",\"category\":\"convention\"} -->\n### New neighbour resolver unit test bypasses the Suites TestBed.solitary() container (ADR 031 \u00a716)\n\n**Suggestion Severity**\n\nADR 031 \u00a716 mandates `TestBed.solitary()` with `unitRef.get<T>(T)` for neighbour `*.unit.test.ts` files. This new suite constructs `ImpersonationHostResolver` directly with manually built stub objects (`requestService = { findById: vi.fn() }`, `dataServices as unknown as IDataServices`), which will silently miss newly injected constructor dependencies. Behaviour, naming (`should <X> when <Y>`), and AAA structure otherwise match the ADR.\n\n**Fix:**\n```\nRebuild with `TestBed.solitary(ImpersonationHostResolver).compile()` and retrieve mocks for `ImpersonationRequestService`, `ImpersonationAuditService`, `PosthogService` and `IDataServices` via `unitRef.get`, preserving the existing test cases.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The resolver suite now uses `TestBed.solitary(ImpersonationHostResolver).compile()` and gets `ImpersonationRequestService`, `ImpersonationAuditService`, `PosthogService` and `IDataServices` through `unitRef.get<T>(T)`. The request and context fixtures are typed `mockDeep` instances."
+    }
+   ]
+  },
+  {
+   "path": "packages/app-host/app/[locale]/impersonation/consent/_components/ConsentStatusCard.tsx",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Hardcoded colors instead of design-system theme tokens\",\"severity\":\"suggestion\",\"category\":\"i18n\"} -->\n### Hardcoded colors instead of design-system theme tokens\n\n**Suggestion Severity**\n\nThe new card uses raw Tailwind palette classes (bg-gray-50, bg-white, bg-amber-50, text-amber-600) and a hardcoded rgba shadow (rgba(16,31,52,0.1)) instead of theme variables. Other surfaces in the component correctly use tokens (bg-background, text-foreground, border-border), so these bypass the design system and break dark mode / theme overrides.\n\n**Fix:**\n```\nReplace bg-gray-50 with bg-muted (or bg-background), bg-white with bg-card, bg-amber-50/text-amber-600 with the DS warning tokens (e.g. bg-warning-muted / text-warning), and use the shadow-sm/shadow-card token instead of the literal rgba value.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed for the card: `bg-background`, `bg-warning-background`, `text-warning` and `shadow-sm` replace the raw palette and the rgba shadow. They render the same values in the default theme; under `data-ds-theme=\"2026\"` the card now follows that theme's `--background` (#fdfdfd) instead of hard white, which is the point of the token. The page background stays `bg-gray-50`: no semantic token maps to gray-50 (`muted` is gray-100), and the sibling consent screens use the same page background.\n\nhttps://github.com/naboo-team/naboo/blob/64732566c3401100ae3e766155ee98e946180f41/packages/tailwind-config/variables.css#L23-L36"
+    }
+   ]
+  },
+  {
+   "path": "packages/app-host/app/[locale]/impersonation/consent/_components/WrongAccountContent.tsx",
+   "line": 55,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Hardcoded Tailwind palette color instead of design-system token\",\"severity\":\"suggestion\",\"category\":\"i18n\"} -->\n### Hardcoded Tailwind palette color instead of design-system token\n\n**Suggestion Severity**\n\nThe inline error message uses `text-red-600`, a raw palette shade rather than the app's semantic tokens (e.g. `text-destructive` / `text-error`). Other status screens in this PR use token-based classes; this one drifts from the DS color system.\n\n**Fix:**\n```\nUse the design-system destructive/error token, e.g. `<p className='mt-3 text-destructive'>`.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed with `text-error` rather than `text-destructive`, because `destructive` is deprecated in favour of `error` in the shared Tailwind config:\n\nhttps://github.com/naboo-team/naboo/blob/64732566c3401100ae3e766155ee98e946180f41/packages/tailwind-config/tailwind.config.js#L186-L194"
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.admin.resolver.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "The resolver is built with `new` and hand-rolled collaborators cast with `as unknown as \u2026`, three of which are empty `{} as \u2026` stubs. ADR 031 \u00a716 says: \"Neighbour units are solitary and use Suites `TestBed.solitary(X).compile()` with `unitRef.get<T>(T)`, never hand-rolled mocks\".\nImpact: the mocks are no longer type-checked against the real dependencies, so a constructor change can leave this test green with the wrong wiring.\nSuggestion: build it with `TestBed.solitary(ImpersonationAdminResolver).compile()` and get each collaborator through `unitRef.get<T>(T)`."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The resolver is now built with `TestBed.solitary(ImpersonationAdminResolver).compile()`, and each collaborator comes from `unitRef.get<T>(T)`. The admin, context and created request are typed `mockDeep` instances, so no hand-rolled `{} as ...` stub remains."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-request.service.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "The service is built with `new` and a hand-rolled `dataService as unknown as IDataServices`. ADR 031 \u00a716 requires `TestBed.solitary(X).compile()` with `unitRef.get<T>(T)` for neighbour units.\nImpact: the mocks are no longer type-checked against the real dependencies.\nSuggestion: use `TestBed.solitary(ImpersonationRequestService).compile()`. `IDataServices` is an abstract DI token, so per the ADR put `@ts-expect-error` on its `unitRef.get` line."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The service is built with `TestBed.solitary(ImpersonationRequestService).compile()`, and `IDataServices` comes from `unitRef.get` with `@ts-expect-error` on that line, as the ADR says."
+    }
+   ]
+  },
+  {
+   "path": "packages/womie-backoffice/src/components/templates/list/owners/owner/forms/impersonation-tab/ImpersonationRequestForm.tsx",
+   "line": 389,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "No test checks that `clientRequestId` reaches the `createImpersonationRequest` variables. The prop is optional, so removing it at the `ClientRequestImpersonationTab` call site, or removing this line, still typechecks.\nImpact: requests would be created without a link, `impersonation-audit.service.ts:136` would return early without logging anything, and the client request Activities tab would be empty again (the SEC2-198 defect) while every test stays green.\nSuggestion: render `ImpersonationRequestForm` with `clientRequestId=\"cr-1\"` and a mocked mutation, submit, and assert `dto.clientRequestId === \"cr-1\"`. Add a second case with no prop that asserts it is undefined."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Good catch, fixed with two tests. `ImpersonationRequestForm.unit.test.tsx` renders the form with `clientRequestId`, submits it and asserts the exact `dto` sent to the mutation, plus a case without the prop that asserts it is undefined. `ClientRequestImpersonationTab.unit.test.tsx` asserts the tab passes `clientRequestId` to the form. I checked that removing either the prop at the tab call site or the line in `handleSubmit` turns a test red."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-audit.service.boot.test.ts",
+   "line": 131,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "`req-close-twice` is not an ObjectId, so `writeClientRequestLog` returns at the `isValidObjectId` guard, both here and in every other boot case. The title says \"skip the feed entry\", but only `endReason` is asserted. Outside the mocked unit tests, nothing exercises the feed write against real Mongo.\nImpact: if the `clientRequestId` `@Prop` is lost, Mongoose strict mode strips it silently. If the `impersonation` subdocument is rejected (its `requestId` is required), the catch only logs it. In both cases the Activities feed stays empty and CI stays green.\nSuggestion: in this suite, create a real impersonation request with an ObjectId `clientRequestId`, call `logEvent(REQUEST_CREATED)`, and assert that one `logs` document exists with type `IMPERSONATION_REQUEST_CREATED`, the matching `clientRequestId` and `impersonation.requestId`. For this close-twice case, use a real linked request and assert exactly one `IMPERSONATION_SESSION_ENDED` log."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Good catch, fixed. The boot suite now creates a real impersonation request with an ObjectId `clientRequestId`, calls `logEvent(REQUEST_CREATED)` and asserts one `logs` document with the type, the `clientRequestId` and `impersonation.requestId`. The close-twice case now uses a linked request and asserts a single `IMPERSONATION_SESSION_ENDED` entry. I checked that removing the `clientRequestId` `@Prop` makes both tests fail."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-audit.service.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "This single flat `describe` mixes `logEvent`, `openSession` and `closeSession` tests. ADR 031 (\"Style \u2014 both populations\") says `describe` nests subject \u2192 method \u2192 behaviour.\nSuggestion: nest `describe(ImpersonationAuditService)` > `describe(logEvent)` / `describe(openSession)` / `describe(closeSession)`."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The suite now nests `describe('ImpersonationAuditService')` > `logEvent` / `openSession` / `closeSession`."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-request.service.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "ADR 031 (\"Style \u2014 both populations\") says `it` reads `should <X> when <Y>`. This title has no triggering condition.\nSuggestion: add the condition, for example \"\u2026 when the target is a host with a linked client request\"."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The title now ends with \"when the target is a host linked to a client request\"."
+    }
+   ]
+  },
+  {
+   "path": "packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.host.resolver.unit.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "chrispop22",
+     "is_bot": false,
+     "body": "ADR 031 (\"Style \u2014 both populations\") says `it` reads `should <X> when <Y>`. The condition here is only implied.\nSuggestion: for example \"should propagate the error when the request lookup fails with a non-NotFound error\"."
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Fixed. The title is now \"should propagate the error when the request lookup fails with a non-NotFound error\"."
+    }
+   ]
+  },
+  {
+   "path": "packages/app-host/app/[locale]/impersonation/consent/_components/ConsentStatusCard.tsx",
+   "line": 21,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Hardcoded palette color instead of semantic design token\",\"severity\":\"suggestion\",\"category\":\"i18n\"} -->\n### Hardcoded palette color instead of semantic design token\n\n**Suggestion Severity**\n\nThe page background uses `bg-gray-50`, a raw palette color, while the rest of the component correctly uses semantic tokens (`bg-background`, `text-foreground`, `border-border`). This bypasses the design system's theme variables and won't adapt if a semantic surface token changes.\n\n**Fix:**\n```\nReplace `bg-gray-50` with the semantic surface token, e.g. `bg-muted` (or whatever token the DS defines for page backgrounds).\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Keeping `bg-gray-50` on purpose. No semantic token maps to gray-50: `--muted` is gray-100, so `bg-muted` would darken the page, and there is no page-surface token in the shared config.\n\nhttps://github.com/naboo-team/naboo/blob/1df6d9bd90bf58c1504c11939d225dbe79db55bc/packages/tailwind-config/variables.css#L23-L36\n\nThe sibling consent screens use the same page background, so switching only this one would make the consent flow inconsistent:\n\nhttps://github.com/naboo-team/naboo/blob/1df6d9bd90bf58c1504c11939d225dbe79db55bc/packages/app-host/app/%5Blocale%5D/impersonation/consent/_components/ConsentPageContent.tsx#L53-L55"
+    }
+   ]
+  },
+  {
+   "path": "packages/app-host/app/[locale]/impersonation/consent/_components/ConsentStatusCard.tsx",
+   "line": 25,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Decorative icon not hidden from assistive technology\",\"severity\":\"suggestion\",\"category\":\"i18n\"} -->\n### Decorative icon not hidden from assistive technology\n\n**Suggestion Severity**\n\n`ShieldPersonFillIcon` is purely decorative and sits inside the accessibility tree next to the heading. Add `aria-hidden='true'` so screen readers skip it.\n\n**Fix:**\n```\nAdd `aria-hidden='true'` to the `<ShieldPersonFillIcon />` element.\n```"
+    },
+    {
+     "author": "sarah-bourgeois",
+     "is_bot": false,
+     "body": "Already handled by the icon component: generated icons set `aria-hidden` themselves when no `aria-label` or `title` is passed, so this unlabeled icon is already hidden from assistive technology.\n\nhttps://github.com/naboo-team/naboo/blob/1df6d9bd90bf58c1504c11939d225dbe79db55bc/packages/icons/src/generated/material/shield-person-fill.tsx#L15-L33"
+    }
+   ]
+  }
+ ],
+ "reviews": [
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\n> 0 critical \u00b7 0 warning \u00b7 2 suggestion\n\nAll nine specialist reviewers completed successfully. The combined output contained only minor, non-blocking observations in test fixtures and a new app-host UI component: a low-impact test fixture typing mismatch (dropped as theoretical) and two accessibility/design-token suggestions in ConsentStatusCard.tsx. No bugs, security issues, or efficiency problems were confirmed in the diff.\n\n\n---\n<sub>bug-hunter-1: success (0) \u00b7 bug-hunter-2: success (0) \u00b7 security-1: success (0) \u00b7 security-2: success (0) \u00b7 adr-conventions-1: success (0) \u00b7 adr-conventions-2: success (1) \u00b7 efficiency-1: success (0) \u00b7 efficiency-2: success (0) \u00b7 i18n-ds: success (2)</sub>\n\n---\n<sub>Risk: full (packages/wome-api/src/shared/infrastructure/authentication/impersonation/domains/enums/impersonation-consent-access.enum.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/domains/outputDto/impersonation-consent.output.dto.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.admin.resolver.unit.test.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.host.resolver.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/resolvers/impersonation.host.resolver.unit.test.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-audit.service.boot.test.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-audit.service.unit.test.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-request.service.ts, packages/wome-api/src/shared/infrastructure/authentication/impersonation/services/impersonation-request.service.unit.test.ts) \u00b7 Mode: coordinator \u00b7 Agents: 9</sub>\n\n<!-- ai-review-run: {\"headSha\":\"1df6d9bd90bf58c1504c11939d225dbe79db55bc\"} -->"
+  },
+  {
+   "author": "chrispop22",
+   "state": "APPROVED",
+   "body": ""
+  }
+ ],
+ "comments": [
+  {
+   "author": "linear[bot]",
+   "is_bot": true,
+   "body": "<!-- linear-linkback -->\n<details>\n<summary><a href=\"https://linear.app/naboo-team/issue/SEC2-198/impersonation-audit-trail-confirm-visibility-in-main-client-activity\">SEC2-198 Impersonation audit trail \u2014 confirm visibility in main client activity log</a></summary>\n<p>\n\n## Context\n\nDuring live testing on PR-14550, no impersonation action (request created, cancelled, expired) appeared in the client record's general \"Activit\u00e9s\" tab \u2014 only in the dedicated Impersonation \"Historique des demandes\" table.\n\n## Scope\n\nConfirm with Sarah Bourgeois whether this is intended final behavior. If yes, assess whether isolated audit trail is sufficient for ISO 27001 / SOC 2 audit traceability requirements, or whether it should also surface in the main activity log.\n\n## Status / decisions\n\nSarah confirmed (Slack, 09/07): events are correctly stored in ActivityTracking (same collection, correct architecture), but the BO only surfaces them in the dedicated Impersonation tab, not in the general activity feed.\n\n**Decision: this is a blocking prerequisite for vCISO go/no-go on production release.** Rationale: audit trail for privileged support access must be discoverable in the main activity flow for ISO 27001 A.8.15 / SOC 2 CC7.2 traceability \u2014 an external auditor or client shouldn't need to be told to look in a separate tab.\n\nFix does not need to be exhaustive/polished for go-live, just needs to make impersonation events visible in the main activity flow.\n</p>\n</details>\n<!-- linear-review-link -->\n<p><a href=\"https://linear.app/naboo-team/review/fixapi-show-impersonation-consent-states-and-audit-feed-sec2-198-76ccb80fff54\">Review in Linear</a></p>"
+  },
+  {
+   "author": "snyk-io-eu[bot]",
+   "is_bot": true,
+   "body": "### :white_check_mark: **Snyk checks have passed. No issues have been found so far.**\n\n| Status | Scan Engine | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-critical.svg) Critical | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-high.svg) High | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-medium.svg) Medium | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-low.svg) Low | Total (0) |\n|---|---|---|---|---|---|---|\n| :white_check_mark: | Open Source Security| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/pr-checks/b55aec64-59ef-4310-ae75-dd412fd6be2a?refs=295da18e3e5fe8b51f2d0522decaf3d221bbdf43&source=prChecksComment) |\n| :white_check_mark: | Licenses| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/pr-checks/b55aec64-59ef-4310-ae75-dd412fd6be2a/license?refs=295da18e3e5fe8b51f2d0522decaf3d221bbdf43&source=prChecksComment) |\n| :white_check_mark: | Code Security| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/project/0b59393b-524b-4516-be2e-c90e2c94cb93/pr-check/8c72a8f3-07e3-45fe-bf1c-ad9085df93d9?refs=295da18e3e5fe8b51f2d0522decaf3d221bbdf43&source=prChecksComment) |\n\n:computer: Catch issues earlier using the plugins for [VS Code](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner), [JetBrains IDEs](https://plugins.jetbrains.com/plugin/10972-snyk-security), [Visual Studio](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner-vs-2022), and [Eclipse](https://marketplace.eclipse.org/content/snyk-security#external-install-button)."
+  },
+  {
+   "author": "github-actions[bot]",
+   "is_bot": true,
+   "body": "## E2E Test Results\n\nRun: [#36151298485](https://github.com/naboo-team/naboo/actions/runs/36151298485/attempts/1)\n\n### :warning: Silent Flaky Tests (1)\n\n| Test | File | Shard |\n|---|---|---|\n| should display the sent invitations list with statuses in the My Invitations tab | marketplace/referral-program/invitations-list.spec.ts | [marketplace](https://github.com/naboo-team/naboo/actions/runs/36151298485/job/108129150656) |"
+  }
+ ],
+ "failing_checks": [],
+ "errors": []
+}

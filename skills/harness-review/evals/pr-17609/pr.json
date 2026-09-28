@@ -1,0 +1,281 @@
+{
+ "pr": {
+  "number": 17609,
+  "url": "https://github.com/naboo-team/naboo/pull/17609",
+  "author": "gwenaelmonier-naboo",
+  "owner": "naboo-team",
+  "repo": "naboo",
+  "head": "rar-1403-billing-form-name-the-row-whose-registration-type-is-not",
+  "base": "dev",
+  "state": "MERGED",
+  "draft": false,
+  "mergeable": "UNKNOWN"
+ },
+ "threads": [],
+ "settled_threads": [
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"Empty-list gate does not cover the back-office country switch, where the stale previous country's list is non-empty\",\"severity\":\"warning\",\"category\":\"bug\"} -->\n### Empty-list gate does not cover the back-office country switch, where the stale previous country's list is non-empty\n\n**Warning Severity**\n\n`isTypeListLoaded` infers \"loaded\" from non-empty maps, but the back-office hook (`house-billing.hook.ts` `useRegistrationTypesByCategory`) uses `keepPreviousData: true`, so during a country switch the schema receives the previous country's non-empty list and the not-offered check runs against the wrong list \u2014 exactly the state the PR description claims the gate protects against. A registration type valid for the new country entered (or a row whose type is edited) during the in-flight window is flagged \"This type is not offered in the billing country\" and Save is blocked until the fetch resolves and revalidation reruns. The hook already computes the correct signal (`areRegistrationTypesLoaded`, which accounts for `isPreviousData`) but never feeds it to the schema, unlike the app-host hook which passes `[]` while loading/erroring.\n\n**Fix:**\n```\nHave `useRegistrationTypesByCategory` return `EMPTY_REGISTRATION_TYPES` (or have the back-office hook pass `[]`) while `!areRegistrationTypesLoaded`, so the schema's empty-list gate also covers the previous-data window, mirroring the app-host behavior.\n```"
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [be6e975e709](https://github.com/naboo-team/naboo/pull/17609/commits/be6e975e709) \u2014 the back-office now passes `areRegistrationTypesLoaded` to the schema, so the previous-data window keeps the gate off."
+    },
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "\u2705 Developer fixed by commit be6e975e709: the back-office now passes `areRegistrationTypesLoaded` to the schema so the loaded-state gate no longer relies on non-empty maps during the previous-data window; reviewers found no remaining occurrence."
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [ARCH-001] The load signal is inferred from data content, while both callers already hold the real one \u2014 Medium\n\n**Confidence:** HIGH\n\nThe invariant this comment asserts is false in two reachable cases:\n\n**1. A country that offers no registration types at all.** The gate then stays off permanently. `listRegistrationTypes` returns `[]` for a country outside the taxonomy, the server rejects *every* type (`validTypesByCategory[BUSINESS] ?? new Set()`), and the schema still requires at least one business registration. Net result: an unsaveable form, the generic toast, and no row named \u2014 precisely the symptom RAR-1403 targets, left unfixed on that country.\n\n**2. The back-office country switch.** `useRegistrationTypesQuery` runs with `keepPreviousData: true`, and `house-billing.hook.ts:189-196` feeds the schema the **ungated** lists \u2014 even though the hook already computes `areRegistrationTypesLoaded` (which accounts for `isPreviousData`) and applies it only to the select options at `:315-320`.\n\nOn case 2 specifically, and to correct the bot's earlier assessment on this thread: the practical impact is much smaller than stated there. During the in-flight window Save is *already* blocked by `onFormValid(!areRegistrationTypesUnavailable)` and the select renders no options, so nothing new can be entered and the wrong error is transient and self-clearing. Case 1 is the permanent one, and the one worth fixing.\n\nWorth noting `app-host` already handles this correctly: `registrationTypesForBillingCountry === null` yields `[]` to the schema *and* refuses the submit at the hook boundary. Only the back-office diverges.\n\n**Fix.** Reusing the signal that already exists closes case 2:\n\n```ts\n// packages/womie-backoffice/.../house-billing.hook.ts:189\nconst schema = useMemo(() => {\n  return getHouseBillingSchema({\n    intl,\n    businessRegistrationTypes: areRegistrationTypesLoaded ? businessRegistrationTypes : [],\n    taxRegistrationTypes: areRegistrationTypesLoaded ? taxRegistrationTypes : [],\n  })\n}, [intl, areRegistrationTypesLoaded, businessRegistrationTypes, taxRegistrationTypes])\n```\n\nCase 1 needs the boolean passed explicitly rather than derived \u2014 an `isTypeListLoaded` param on `getHouseBillingSchema`, fed by `areRegistrationTypesLoaded` in the back office and by `registrationTypesForBillingCountry !== null` in app-host. The comment then disappears along with the inference."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [be6e975e709](https://github.com/naboo-team/naboo/pull/17609/commits/be6e975e709) \u2014 `areRegistrationTypesLoaded` is now a required param of `getHouseBillingSchema`, fed by the back-office hook's own flag and by `registrationTypesForBillingCountry !== null` in app-host. The inference and its comment are gone; a country loaded with no type at all is covered by a new test."
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [UX-005] A type the country does offer, but in the other category, reads as \"not offered\" \u2014 Low\n\n**Confidence:** MEDIUM\n\nThe check is per-category (`businessValidationMap` / `taxValidationMap`), so a tax-category type sitting in `businessRegistrations` reports \"This type is not offered in the billing country\". For an FR house, `FR-TVA` **is** offered by France \u2014 just as a tax identifier, not a business one. Verified against the patched schema:\n\n```\ntax type used in business slot => [\"businessRegistrations.0.type: This type is not offered in the billing country\"]\n```\n\nThe select cannot produce this (its options come from `businessRegistrationTypes`), but CSV import and the CreditSafe autofill write registrations without going through the form \u2014 exactly the legacy-data population this feature exists to surface.\n\n**Impact:** the admin is told the country does not support a type the country plainly supports, with no hint that the row is simply in the wrong section.\n\n**Fix:** phrase the message around the section rather than the country, e.g. `'This type is not valid for this section'`. One line, and I would stop there."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [8040f5ac7bb](https://github.com/naboo-team/naboo/pull/17609/commits/8040f5ac7bb) \u2014 message is now \"This type is not valid for this section\"."
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.test.ts",
+   "line": 426,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [TEST-003] The only structural change in the diff is pinned by nothing \u2014 Low\n\n**Confidence:** HIGH\n\nAll four new tests use a non-empty `value` (`'ANYTHING'`, `'FR12345678901'`). Moving the not-offered check back *below* `if (!entry.value) continue` and re-running them: **all four still pass**. So the one structural change this PR makes \u2014 splitting `!entry.type || !entry.value` so the not-offered check runs first \u2014 has zero coverage.\n\n**Impact:** a later refactor silently restores the old ordering, and a row with a not-offered type plus an empty value goes back to reporting only \"Enter a value\". The user fixes the value, presses Save again, and only then learns the type was the real blocker \u2014 two round-trips instead of one.\n\n**Fix:** one case in this same `describe`. The expectation below is the actual verified output, issue order included:\n\n```ts\nit('flags a type the country does not offer even when its value is empty', () => {\n  const issues = getIssues(schemaWithPatterns, {\n    ...buildValidInput(),\n    businessRegistrations: [{ type: 'UNKNOWN', value: '' }],\n  })\n\n  expect(issues).toStrictEqual([\n    { path: 'businessRegistrations.0.value', message: 'Enter a value' },\n    {\n      path: 'businessRegistrations.0.type',\n      message: 'This type is not offered in the billing country',\n    },\n  ])\n})\n```"
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [2dd84eb3de8](https://github.com/naboo-team/naboo/pull/17609/commits/2dd84eb3de8)"
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.test.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [TEST-004] This test discards the message `getIssues` hands it \u2014 Low\n\n**Confidence:** MEDIUM\n\n`getIssues` returns `{ path, message }`, and this assertion `.map()`s the message away to keep only the path. Same pattern again at `:399-403`.\n\nThat path is also producible by the entry schema's `\"Select a type\"` and by `refineUniqueTypes`' `\"This type is already used\"` \u2014 both target `[index, 'type']`. So a regression emitting a *different* message on the right field leaves both tests green, which is exactly the failure mode these tests exist to catch: the whole point of the PR is the right message under the right select. The first test just above already asserts the full object.\n\n**Fix:** assert the objects, as that first test does.\n\n```ts\nexpect(issues).toStrictEqual([\n  {\n    path: 'taxRegistrations.0.type',\n    message: 'This type is not offered in the billing country',\n  },\n])\n```"
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [80d9230c735](https://github.com/naboo-team/naboo/pull/17609/commits/80d9230c735)"
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.ts",
+   "line": 199,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "naboo-ai-reviews",
+     "is_bot": true,
+     "body": "<!-- ai-review: {\"title\":\"New validation message contradicts the stated acceptance criteria\",\"severity\":\"warning\",\"category\":\"i18n\"} -->\n### New validation message contradicts the stated acceptance criteria\n\n**Warning Severity**\n\nThe new `registrationTypeNotValidForSection` message ships the English default 'This type is not valid for this section', while both the linked ticket (RAR-1403) and this PR's own test steps state the error under the row's select should read 'This type is not offered in the billing country'. The wording also describes a 'section' mismatch, but the refinement actually rejects a type absent from the billing country's list, so the default copy names the wrong condition and diverges from the documented AC.\n\n**Fix:**\n```\nSet the defaultMessage to 'This type is not offered in the billing country' (with a matching id such as `registrationTypeNotOfferedByCountry`), or verify before merge that the SimpleLocalize entry for `feature-views.house-billing.validation.registrationTypeNotValidForSection` carries the AC wording.\n```"
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Not changed. The wording was switched to \"This type is not valid for this section\" in [8040f5ac7bb](https://github.com/naboo-team/naboo/pull/17609/commits/8040f5ac7bb) at the reviewer's request (UX-005 above): the check runs per category, so a tax type stored in a business row would otherwise be told the billing country does not offer it while the country plainly does. The section wording covers both cases. The PR test steps are updated to match; the ticket AC will follow."
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.ts",
+   "line": 131,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [BUG-001] Countries with no taxonomy get every row flagged, with the wrong cause \u2014 Medium\n\n**Confidence:** HIGH\n\n**Issue:** The gate tests \"the query resolved\", not \"it returned something\". `REGISTRATION_TYPES_TAXONOMY` (`packages/wome-api/src/domain-modules/listing/house/sub-modules/house-billing/domain/constants/registration-type-taxonomy.constants.ts`) covers 119 of the 245 `Iso3166Alpha2Enum` members, even after `21cdddec1b0`. For the other 126, `listRegistrationTypes` returns `[]`, the query succeeds, the gate flips to `true`, and every row gets \"This type is not valid for this section\".\n\nThat is deliberate \u2014 `be6e975e709` says so \u2014 but the copy misstates the cause: the section has no valid type because **the country has no taxonomy at all**, which is not a section problem. The API words the same condition better: `HBL_INVALID_REGISTRATION_TYPE` \u2192 \"not available for your billing address country\".\n\n**Impact:** Not a saveability regression \u2014 `businessRegistrations` is `min(1)`, the select has no options, and `validateRegistrationTypes` already refused server-side, so the form was a dead end before this PR; it now fails inline instead of through a toast. But the admin reads a cause that is false and has no way to clear it.\n\n**Fix:** Either restore a per-section `validationMap.size > 0` guard (the test `flags a tax type when the country offers business types only` depends on the current behaviour and would need reworking), or keep the behaviour and split the copy: a \"this country offers no registration type\" message when both lists are empty, the section message otherwise."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [46ad0b9](https://github.com/naboo-team/naboo/pull/17609/commits/46ad0b9dffa5dcd537d3c50f02ae48714262e5cd)\n\nKept the behaviour and split the copy: a country with no registration type at all now reads \"The billing country offers no registration type\"; the section message stays for a type the country offers in the other category. The refine param became `rejectedTypeMessage` since it now carries either."
+    }
+   ]
+  },
+  {
+   "path": "packages/feature-views/src/features/house-billing/house-billing.types.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [CONV-001] `typeNotOfferedMessage` no longer describes its condition \u2014 Medium\n\n**Confidence:** HIGH\n\n**Issue:** `8040f5ac7bb` renamed both the string and the id (`registrationTypeNotValidForSection`) to cover UX-005 \u2014 a type the country *does* offer, but in the other category. The variable, this field on `RefineTypePatternsParams`, and both call-site keys stayed `typeNotOfferedMessage`. `code-style.md` asks for \"Descriptive names\" and, under Self-Documented Code, \"names reveal the intent, the code is its own comment\".\n\n**Impact:** The name reinstates exactly the assumption UX-005 disproved: a reader will take the branch to be about \"the country does not offer this type\" and may narrow the check back down on that belief.\n\n**Fix:** Rename to `typeNotValidForSectionMessage` across the six occurrences (lines 112, 122, 135, 198, 259, 274)."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [b502faf](https://github.com/naboo-team/naboo/pull/17609/commits/b502faf63f353585170a41bcc8b88335c656b009)"
+    }
+   ]
+  },
+  {
+   "path": "packages/womie-backoffice/src/components/templates/list/houses/house/forms/house-billing-form/house-billing.hook.ts",
+   "line": 192,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [TEST-001] The `keepPreviousData` / `loading` window has no hook-level test \u2014 Medium\n\n**Confidence:** HIGH\n\n**Issue:** The schema itself is well covered, but neither hook test file is touched by this PR. `grep isPreviousData|keepPreviousData|areRegistrationTypesLoaded` over `house-billing.hook.test.tsx` returns nothing. In `useHouseBillingDetails.test.tsx` the `registrationTypesLoading` / `registrationTypesError` cases exist but only assert `isSaveDisabled`, which is driven by `areRegistrationTypesUnavailable` \u2014 a different guard from the one that now also suppresses the per-row error.\n\n**Impact:** The comment on line 96 describes a precise regression \u2014 a row wrongly flagged during a country switch \u2014 and nothing protects it. Dropping `!isPreviousData` breaks no test.\n\n**Fix:** One case per hook. Back office: country A loaded, switch to B, mock `isPreviousData: true`, assert no \"not valid for this section\" error on a row whose type belongs to A only. app-host: `registrationTypesLoading: true`, then `registrationTypesError`, same assertion for an unrecognised type."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [e63a29f](https://github.com/naboo-team/naboo/pull/17609/commits/e63a29fba9a9163057fd3cf1b7b500519cd584cf)\n\nBoth cases fail with the guard removed (`!isPreviousData` in the back office, `loading || error` in app-host)."
+    }
+   ]
+  },
+  {
+   "path": "packages/app-host/app/[locale]/(app)/listing/house/billing-details/_utils/hooks/useHouseBillingDetails.ts",
+   "line": null,
+   "resolved": true,
+   "outdated": true,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [CONV-002] This derivation is already named 40 lines below \u2014 Low\n\n**Confidence:** HIGH\n\n**Issue:** `areRegistrationTypesUnavailable = registrationTypesForBillingCountry === null` is declared at line 202, with the comment that justifies the rule. This line writes the negation again inline, so one concept carries two names in the same file.\n\nFor the record, factoring this across the two packages is *not* called for: ADR-004 forbids feature-views from depending on react-query or Apollo, and the two derivations come from different clients. This is only about the duplication inside this one file.\n\n**Fix:** Move `areRegistrationTypesUnavailable` above the `useMemo` and pass `areRegistrationTypesLoaded: !areRegistrationTypesUnavailable`."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Fixed by [63bf38a](https://github.com/naboo-team/naboo/pull/17609/commits/63bf38a6894ef43d7af8c7443bb4f66179d4c6e0)"
+    }
+   ]
+  },
+  {
+   "path": "packages/womie-backoffice/src/components/templates/list/houses/house/forms/house-billing-form/house-billing.hook.test.tsx",
+   "line": 619,
+   "resolved": true,
+   "outdated": false,
+   "comments": [
+    {
+     "author": "robinthiry-naboo",
+     "is_bot": false,
+     "body": "### [TEST-002] The \"previous country list\" fixture is the incoming country's list \u2014 Low\n\n**Confidence:** HIGH\n\n**Issue:** The test is named *while the previous country list is still served*, but it serves `GERMAN_HRB_TYPE` (`countryIsoCode: DE`) while the house, the billing address and the row are all French \u2014 `buildBilling` defaults to an `FR` address with a `SIREN` business registration. In the scenario the name describes (user switches FR \u2192 DE, `keepPreviousData` keeps serving the FR list) the served list would *contain* `SIREN`, and the test would pass with or without the guard. Inverting the fixture is exactly what makes the branch observable, so the test is effective \u2014 the name just describes a situation the setup does not reproduce.\n\n**Impact:** No coverage loss; the `!isPreviousData` branch is genuinely pinned. The cost is readability: someone reconciling the name with the `DE` fixture may \"fix\" it to an `FR` list and silently turn the test vacuous.\n\n**Fix:** Either rename to what it actually asserts \u2014 `holds the not-valid check while react-query still serves a stale type list` \u2014 or make the switch explicit: render with `houseCountryIsoCode: Iso3166Alpha2Enum.DE` and `buildBilling({ address: { ...countryIsoCode: DE } })` while the row keeps the outgoing `SIREN`. `GERMAN_HRB_TYPE` then reads as the incoming list and `isPreviousData` as the in-flight window."
+    },
+    {
+     "author": "gwenaelmonier-naboo",
+     "is_bot": false,
+     "body": "Renamed in [413e5bc](https://github.com/naboo-team/naboo/pull/17609/commits/413e5bc1833234d23d2412f2f4e4e266d6d614f7) to `holds the not-valid check while react-query still serves a stale type list`. The fixture stays inverted on purpose: that is what makes the `!isPreviousData` branch observable."
+    }
+   ]
+  }
+ ],
+ "reviews": [
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\n> 0 critical \u00b7 1 warning \u00b7 0 suggestion\n\nThe review surfaced one substantive issue: the new not-offered-type zod refinement's empty-list gate fails to cover the back-office country switch because that hook's keepPreviousData behavior supplies a stale non-empty type list, so rows can be falsely flagged as not offered and Save blocked during the in-flight window. This contradicts the fix's intent of naming the offending row without blocking valid rows. No convention or i18n findings were raised.\n\n\n---\n<sub>bug-hunter: success (1) \u00b7 adr-conventions: success (0)</sub>\n\n---\n<sub>Risk: lite \u00b7 Mode: coordinator \u00b7 Agents: 2</sub>\n\n<!-- ai-review-run: {\"headSha\":\"37879e82f2b748dc3b59580dd0abc4046ae740a5\"} -->"
+  },
+  {
+   "author": "robinthiry-naboo",
+   "state": "COMMENTED",
+   "body": "## PR Review \u2014 APPROVE\n\nNo blocking issues. 5 advisory findings; two of them (ARCH-001, UX-002) are worth a call before merge, because they leave the ticket's symptom intact on one reachable path.\n\n**What holds up well:** the refinement mirrors the server rule faithfully \u2014 `validateRegistrationTypes` also validates **per category** against `listRegistrationTypes({ countryIsoCode })`, so the client is never stricter than the server. The `path: [index, 'type']` shape composes correctly with react-hook-form (same shape as the shipped `refineUniqueTypes`), and there is no collision with the clearing effect in `registration-entries-field.tsx`: that effect only fires on a country *change*, while this check targets stored data at load \u2014 the two cases are disjoint.\n\n**On zod semantics**, settled empirically against the installed **zod 4.5.4** (not v3 \u2014 in v4 checks live on the schema and are skipped only on an `aborted` payload, which a non-abort `.min(1)` does not produce): `superRefine` on `z.array(objectSchema)` *does* still run when an element failed its own `.min(1)`. So the reorder makes a row with a not-offered type and an empty value emit two issues \u2014 but on two distinct paths (`.value` and `.type`), one message per field, nothing overwritten. That behaviour is correct. See TEST-003 for the one thing missing around it.\n\n### Top findings\n\n- **[ARCH-001] Medium** \u2014 `isTypeListLoaded` infers load state from data content, while both callers already hold the real signal. A country offering **zero** registration types leaves the gate off permanently, so the generic-toast bug this PR fixes survives there. Inline on `house-billing.types.ts:217`.\n- **[UX-002] Medium** \u2014 the billing form never maps `HBL_INVALID_REGISTRATION_TYPE`, so every path where the client gate is off still shows the generic toast. A message for that exact label already exists in the repo. Detailed below (the file is outside this diff).\n- **[TEST-003] Low** \u2014 the only structural change in the diff (moving the not-offered check above the `!entry.value` guard) has zero coverage; verified by reverting the order and watching all four new tests still pass.\n- **[TEST-004] Low** \u2014 two tests `.map()` away the message `getIssues` returns, so a regression emitting a *different* message on the right field keeps them green.\n- **[UX-005] Low** \u2014 a type the country *does* offer, but in the other category, reads as \"not offered in the billing country\".\n\n---\n\n### [UX-002] The generic toast survives on every path where the client gate is off \u2014 Medium\n\n**Location:** `packages/womie-backoffice/src/components/templates/list/houses/house/forms/house-billing-form/house-billing.hook.ts:47-72` (outside this diff, hence not inline)\n**Confidence:** HIGH\n\n`getBillingErrorMessage` maps `HBL_INVALID_REGISTRATION_VALUE`, `HBL_ADDRESS_RESOLUTION_FAILED` and `HBL_UNRESOLVED_BILLING_COUNTRY`, but not `HBL_INVALID_REGISTRATION_TYPE` \u2014 the label `InvalidRegistrationTypeError` actually raises (`house-billing.error.ts:29`). It therefore falls through to `bo.houseBilling.updateError`, \"Error updating the billing information\" \u2014 the exact toast RAR-1403 set out to replace.\n\nA dedicated message for that label already exists at `house-billing-import-messages.ts:79` (\"This registration type is not configured for the billing country\"), wired for the CSV import modal but never for the form.\n\n**Impact:** whenever the client-side check does not apply \u2014 the ARCH-001 zero-type country, or a failed `registrationTypes` query \u2014 the admin is back to the opaque toast with no row named.\n\n**Fix:** one more branch in `getBillingErrorMessage`, on the model of the three already there. Client-only, ~5 lines. Strictly outside the ticket's scope (\"No server change\" still holds \u2014 this is not a server change), but it is the safety net under the fix.\n\n---\n\n### Conventions / ADR\n\nNo MUST/SHALL violation. Boolean naming, the dedicated `*Params` type, destructuring in the signature, early returns, ADR 004 / 024 / 037: all compliant. ADR 008 does not match these paths. The replaced test (`skips pattern validation for types not in the provided list`) covered the behaviour this PR retires \u2014 not lost coverage, and both states of the new boolean are re-covered.\n\n---\n*Reviewed by `/pr-review` (quick mode) \u2014 4 inline comments posted*"
+  },
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\n> 0 critical \u00b7 1 warning \u00b7 0 suggestion\n\nRe-review of the house-billing validation change. The previously flagged empty-list gate issue was addressed by the developer's fix (passing `areRegistrationTypesLoaded` to the schema in commit be6e975e709), and no reviewer re-detected the stale-previous-country window. One new finding remains: the shipped validation default message ('This type is not valid for this section') contradicts the ticket's acceptance-criteria wording ('This type is not offered in the billing country') and describes the wrong condition (a section mismatch instead of a country-list mismatch).\n\n\n---\n<sub>bug-hunter: success (0) \u00b7 adr-conventions: success (1)</sub>\n\n---\n<sub>Risk: lite \u00b7 Mode: coordinator \u00b7 Agents: 2</sub>\n\n<!-- ai-review-run: {\"headSha\":\"80d9230c73540c7e245696f7e4df203d0f0f8524\"} -->"
+  },
+  {
+   "author": "robinthiry-naboo",
+   "state": "COMMENTED",
+   "body": "## PR Review \u2014 APPROVE\n\nNo blocking findings. Five advisory ones; the first two are worth settling before merge, because they concern what a reviewer believes they are approving.\n\n- **The PR description promises a guard the code no longer has** \u2014 removed on purpose two commits later (detailed below, no file to anchor it to)\n- **Countries with no taxonomy get every row flagged**, with a message that names the wrong cause\n- `typeNotOfferedMessage` no longer describes the condition the branch tests\n- **No hook-level test** covers the `keepPreviousData` / `loading` window \u2014 the exact regression the code comments warn about\n- app-host re-inlines a derivation already named 40 lines below in the same file\n\n---\n\n### [DOC-001] The description announces a guard removed in `be6e975e709` \u2014 Medium\n\n**Confidence:** HIGH\n\n**Issue:** The PR body states *\"The check only runs once either of the country's type lists is non-empty (a country can offer business types and no tax type)\"*. That held at `7299f428f11`, which set `isTypeListLoaded = businessValidationMap.size + taxValidationMap.size > 0`. `be6e975e709` dropped it for the `areRegistrationTypesLoaded` flag passed by the callers, and says so itself: *\"The schema inferred 'loaded' from non-empty type lists, which left the not-offered gate off for a country with no registration type\"*. The test `flags every type once the country is loaded with no type at all` pins the opposite of what the description claims.\n\n**Impact:** A reviewer signs off on a guard that is not there, and misses the empty-taxonomy case raised in the inline comment on `house-billing.types.ts`.\n\n**Fix:** Rewrite that paragraph around the real flag (`areRegistrationTypesLoaded`, derived from `!isPreviousData` in the back office and from `loading || error` in app-host) and state the empty-list behaviour explicitly.\n\n---\n\n### Verified, nothing to report\n\n- **Both gates are correct** in every window I could construct. Back office (`query-core@4.41.0`): `queryObserver.js:304` requires `status !== 'error'` before carrying previous data over, so an error leaves `data` undefined and the gate false; a country switch yields `isPreviousData: true` and the gate false. app-host (`@apollo/client@3.14.0`): `useResubscribeIfNecessary` resets `resultData.current = void 0` during render as soon as the variables change, so there is no render with `loading === false` over the previous country's list.\n- **Rendering:** `getTypeOptions` prepends the current value as an option when it is missing from the list, so the offending row shows `FR-SIREN` rather than a placeholder; `SelectField` renders `ErrorMessage` under the select, so the `businessRegistrations.<i>.type` path lands in the right place; the remove button stays rendered.\n- The early `continue` suppresses nothing: `refineUniqueTypes` is a separate loop and the `min(1)` checks live on the object schema. The `useMemo` deps are correct and referentially stable. RHF does not revalidate on a resolver identity change, so the gate flipping `false \u2192 true` cannot retroactively invalidate a form.\n- **i18n: nothing to do.** `packages/i18n/lang/` is gitignored, the `@formatjs/cli-lib` AST extraction recognises the `intl.formatMessage({ id, defaultMessage })` shape, and keys are pushed to SimpleLocalize on merge to `dev`. Checked against the sibling id `duplicateRegistrationType` (`e90573bb1e7`): no catalogue file in that commit. English `defaultMessage`, so ADR-024 \u00a71 holds.\n- Perf: the loop is bounded by `REGISTRATIONS_MAX_SIZE = 10`.\n- **Deduplicated** (already posted by `naboo-ai-reviews[bot]` and fixed since): ARCH-001, UX-005, TEST-003, TEST-004.\n\n---\n*Reviewed by `/pr-review` (quick mode) \u2014 4 inline comments posted*"
+  },
+  {
+   "author": "naboo-ai-reviews",
+   "state": "COMMENTED",
+   "body": "## AI Review\n\nBoth specialist reviewers completed their scoped reviews of the diff without reporting any findings. The proposed zod refinement in refineTypePatterns raises client-side validation errors on the offending row's type field without server changes, which aligns with the ticket's stated fix scope and avoids the server-side validation tightening risks noted in prior learnings. No PII, security, convention, or correctness issues surfaced.\n\n\n---\n<sub>bug-hunter: success (0) \u00b7 adr-conventions: success (0)</sub>\n\n> Linked tickets: [RAR-1403](https://linear.app/naboo-team/issue/RAR-1403/billing-form-name-the-row-whose-registration-type-is-not-offered-by) \u2014 no findings; changes look consistent with ticket intent\n\n---\n<sub>Risk: lite \u00b7 Mode: coordinator \u00b7 Agents: 2</sub>\n\n<!-- ai-review-run: {\"headSha\":\"e63a29fba9a9163057fd3cf1b7b500519cd584cf\"} -->"
+  },
+  {
+   "author": "robinthiry-naboo",
+   "state": "COMMENTED",
+   "body": "## PR Review \u2014 APPROVE (second pass)\n\nAll five findings from the [first pass](https://github.com/naboo-team/naboo/pull/17609#pullrequestreview-5315219383) are resolved. One residual finding, Low, on test readability \u2014 inline below. CI is green, 64/64.\n\n| Finding | Status | Verified |\n|---|---|---|\n| **DOC-001** description | Resolved | Now describes the real gate (`!isPreviousData` in the back office, `!loading && !error` in the partner app) and the new country-level message. |\n| **BUG-001** countries with no taxonomy | Resolved | `hasRegistrationTypes = business.size + tax.size > 0` (`house-billing.types.ts:222`) picks between `typeNotValidForSectionMessage` and `noRegistrationTypeForCountryMessage`. Gating on the *union* is the right call: a business-only country with a stray tax row still reads \"not valid for this section\", which is true \u2014 the country does offer types. |\n| **CONV-001** naming | Resolved | `rejectedTypeMessage` as the param, both messages as explicit consts, all six occurrences. |\n| **CONV-002** duplicated derivation | Resolved | `areRegistrationTypesUnavailable` hoisted to `:162` and reused by the `useMemo`, which also takes it as a dep. |\n| **TEST-001** load window | Resolved | Both halves, mutant killed \u2014 see below. |\n\n### TEST-001 \u2014 mutation analysis\n\nFor `areRegistrationTypesLoaded = Boolean(data) && !isPreviousData`: the `Boolean(data)` half was already pinned (`house-billing.hook.test.tsx:388`, `:401`); the `!isPreviousData` half is pinned by the new test at `:621`. Delete `!isPreviousData` and the flag turns `true`, `businessValidationMap` holds only `HRB`, the `SIREN` row misses, the issue fires and `toBeUndefined()` fails. The `rerender()` path is sound: `useZodForm` rebuilds the resolver every render and react-hook-form 7.66 reassigns `control._options` unconditionally, so `trigger()` evaluates the new schema. On the app-host side all three cases are there \u2014 `loading`, `error`, and a positive control \u2014 and they assert the **per-row** error rather than `isSaveDisabled`, so the two \"held\" tests cannot pass vacuously.\n\n### Verified, nothing to report\n\n- **i18n:** `noRegistrationTypeForCountry` uses the same static inline shape as its siblings \u2014 both messages are formatted, then a ternary picks one \u2014 so extraction sees two literals. No catalogue edit needed; `Translation keys diff` and `Pull i18n translations` pass.\n- **Mock hygiene:** `resetMocks` gained `isPreviousData` in this push and already covered the two app-host fields; `beforeEach` is wired on every top-level describe including the new one.\n- **Style:** neither test file imports `screen` globally, `getUnknownTypeError` mirrors the existing `dirtyCompanyName` helper, and the `as const satisfies` fixture typechecks.\n- **`44 passed`** is exact: 30 plain `it()` plus 14 cases from the four `it.each` (3+3+4+4). The earlier `42` was the stale number.\n- No react-query v4/v5 mismatch: `isPreviousData` is the v4 API and the package is on `^4.42.0`.\n\n---\n*Reviewed by `/pr-review` (quick mode) \u2014 1 inline comment posted*"
+  },
+  {
+   "author": "robinthiry-naboo",
+   "state": "APPROVED",
+   "body": ""
+  }
+ ],
+ "comments": [
+  {
+   "author": "linear[bot]",
+   "is_bot": true,
+   "body": "<!-- linear-linkback -->\n<details>\n<summary><a href=\"https://linear.app/naboo-team/issue/RAR-1403/billing-form-name-the-row-whose-registration-type-is-not-offered-by\">RAR-1403 Billing form: name the row whose registration type is not offered by the billing country</a></summary>\n<p>\n\nFound while reviewing [RAR-1229](https://linear.app/naboo-team/issue/RAR-1229/the-dedicated-save-endpoint-and-the-narrow-write-behind-it) (PR [naboo-team/naboo#17490](https://linear.app/naboo-team/review/featapi-add-the-confirmation-time-business-registration-save-rar-1229-8e0dbbcabbe1), thread BUG-102).\n\n## Problem\n\nA stored registration whose type is not offered by the stored billing country (e.g. `FR-SIREN` under a `DE` address) makes the billing form unsaveable with the generic toast \"Error updating the billing information\". The row is visible and editable, but nothing tells the admin which row is wrong.\n\nThe state is reachable today through the CreditSafe autofill (address written, no filable registration) followed by a partner-filed registration under another country ([RAR-1229](https://linear.app/naboo-team/issue/RAR-1229/the-dedicated-save-endpoint-and-the-narrow-write-behind-it) / [RAR-1230](https://linear.app/naboo-team/issue/RAR-1230/the-registration-modal-shown-before-booking-confirmation)), and more generally whenever a stored type stops being offered by its country. The clearing effect in `registration-entries-field.tsx` only runs on a country *change*, never on load, and the client zod schema does not check that a type belongs to the country's list.\n\n## Fix\n\nA zod refinement in `refineTypePatterns` (`packages/feature-views/src/features/house-billing/house-billing.types.ts`): when the country's type list is loaded and a row's type is not in it, add an issue on that row's `type` (\"This type is not offered in the billing country\"). Save then shows the error under the offending select and never reaches the server. Covers the back-office form and the partner billing page, which share `getHouseBillingSchema`.\n\nNo server change: the save endpoint keeps reading nothing from the stored billing, and `validateRegistrationTypes` keeps refusing an invalid document.\n</p>\n</details>\n<!-- linear-review-link -->\n<p><a href=\"https://linear.app/naboo-team/review/fixfeature-views-flag-a-registration-type-the-billing-country-does-not-9ee8b6e028b9\">Review in Linear</a></p>"
+  },
+  {
+   "author": "snyk-io-eu[bot]",
+   "is_bot": true,
+   "body": "### :white_check_mark: **Snyk checks have passed. No issues have been found so far.**\n\n| Status | Scan Engine | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-critical.svg) Critical | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-high.svg) High | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-medium.svg) Medium | ![](https://res.cloudinary.com/snyk/image/upload/r-d/scm-platform/snyk-pull-requests/severity-low.svg) Low | Total (0) |\n|---|---|---|---|---|---|---|\n| :white_check_mark: | Open Source Security| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/pr-checks/df7f4e0a-daf5-4503-b202-beaa152f1a1f?refs=413e5bc1833234d23d2412f2f4e4e266d6d614f7&source=prChecksComment) |\n| :white_check_mark: | Licenses| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/pr-checks/df7f4e0a-daf5-4503-b202-beaa152f1a1f/license?refs=413e5bc1833234d23d2412f2f4e4e266d6d614f7&source=prChecksComment) |\n| :white_check_mark: | Code Security| 0 | 0 | 0 | 0 | [ 0 issues](https://app.eu.snyk.io/org/naboo/project/0b59393b-524b-4516-be2e-c90e2c94cb93/pr-check/d8dcf45e-aafe-467a-97d3-73303a9574d0?refs=413e5bc1833234d23d2412f2f4e4e266d6d614f7&source=prChecksComment) |\n\n:computer: Catch issues earlier using the plugins for [VS Code](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner), [JetBrains IDEs](https://plugins.jetbrains.com/plugin/10972-snyk-security), [Visual Studio](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner-vs-2022), and [Eclipse](https://marketplace.eclipse.org/content/snyk-security#external-install-button)."
+  },
+  {
+   "author": "gwenaelmonier-naboo",
+   "is_bot": false,
+   "body": "> [DOC-001] The description announces a guard removed in be6e975e709\n\nDescription rewritten around `areRegistrationTypesLoaded` (`!isPreviousData` in the back office, `!loading && !error` in app-host), with the empty-taxonomy behaviour stated explicitly. The copy for that case changed in [46ad0b9](https://github.com/naboo-team/naboo/pull/17609/commits/46ad0b9dffa5dcd537d3c50f02ae48714262e5cd)."
+  },
+  {
+   "author": "github-actions[bot]",
+   "is_bot": true,
+   "body": "## E2E Test Results\n\nRun: [#36119168520](https://github.com/naboo-team/naboo/actions/runs/36119168520/attempts/1)\n\n### :warning: Silent Flaky Tests (1)\n\n| Test | File | Shard |\n|---|---|---|\n| should show link verification error when magic link token is expired or invalid (ALLOWLIST) | event/authentication/authentication-allowlist.spec.ts | [event](https://github.com/naboo-team/naboo/actions/runs/36119168520/job/108023486015) |"
+  }
+ ],
+ "failing_checks": [],
+ "errors": []
+}
