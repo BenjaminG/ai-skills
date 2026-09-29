@@ -23,6 +23,7 @@ from datetime import datetime
 
 
 STATUS_LABELS = {
+    "queued": "🚂 QUEUED",
     "ready": "✅ READY",
     "your-call": "🙋 YOUR CALL",
     "working": "🔧 TODO",
@@ -32,6 +33,7 @@ STATUS_LABELS = {
     "draft": "📝 DRAFT",
 }
 COLORS = {
+    "QUEUED": "\033[32m",
     "READY": "\033[32m",
     "YOUR CALL": "\033[33m",
     "WORKING": "\033[36m",
@@ -237,6 +239,8 @@ def stack_layout(prs, order):
 def github_status(row, scanner):
     """What GitHub alone says. No agent is coming, so nothing reads as one: bot threads and a
     red check or a conflict are the author's to take, or to hand to babysit-prs."""
+    if row.get("queued"):
+        return STATUS_LABELS["queued"]
     if row.get("unresolved_bot"):
         return f"🤖 BOT {row['unresolved_bot']}"
     if row.get("ci") == "FAILURE" or row.get("mergeable") == "CONFLICTING":
@@ -255,6 +259,8 @@ def github_status(row, scanner):
 def dashboard_status(number, row, prs, order, running, scanner, babysit):
     if not babysit:
         return github_status(row, scanner)
+    if row.get("queued"):
+        return STATUS_LABELS["queued"]
     if number in running:
         return "🔧 WORKING"
     if row.get("held"):
@@ -737,6 +743,7 @@ def self_check(scanner):
     assert bare["#44"][4] == "✅ READY"
     assert github_status(dict(base, unresolved_bot=2), scanner) == "🤖 BOT 2"
     assert github_status(dict(base, ci="SUCCESS", held=1), scanner) == "🙋 YOUR CALL"
+    assert github_status(dict(base, ci="PENDING", queued=True), scanner) == "🚂 QUEUED"
 
     os.environ["COLUMNS"] = "186"  # get_terminal_size reads it first
     colored = table(rendered, color=True, notes=True)

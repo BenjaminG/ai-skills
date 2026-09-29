@@ -38,7 +38,7 @@ state in a side pane.
 - It restarts itself when its script changes on disk, and a newer copy of the script replaces an
   older one's service.
 - Status without babysit-prs is GitHub's word alone: `🤖 BOT n` (bot threads waiting), `🔨 FIX`
-  (red check or conflict), `🙋 YOUR CALL`, `✅ READY`, `🧪 CI`, `👀 REVIEW`, `📝 DRAFT`. While
+  (red check or conflict), `🙋 YOUR CALL`, `🚂 QUEUED` (in the merge queue, above every other rung), `✅ READY`, `🧪 CI`, `👀 REVIEW`, `📝 DRAFT`. While
   babysit-prs follows the repo (it holds `babysit.lock`), the header says `babysit-prs on`, and
   its agents, notes and `WAITS` join the table.
 

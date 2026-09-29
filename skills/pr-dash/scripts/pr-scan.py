@@ -57,7 +57,7 @@ pageInfo { hasNextPage endCursor }
 
 FRAGMENT = """
 fragment S on PullRequest {
-  number url title state isDraft headRefName baseRefName mergeable mergeStateStatus
+  number url title state isDraft headRefName baseRefName mergeable mergeStateStatus isInMergeQueue
   author { login }
   additions deletions changedFiles
   stackEntry { position stack { number } }
@@ -192,6 +192,7 @@ def row(p, seen):
         "stack": ((p.get("stackEntry") or {}).get("stack") or {}).get("number"),
         "stack_pos": (p.get("stackEntry") or {}).get("position"),
         "mergeable": p["mergeable"],
+        "queued": p["isInMergeQueue"],
         "ci": rollup.get("state") or "NONE",
         "head": (commit.get("oid") or "")[:7],
         "additions": p["additions"],
@@ -318,6 +319,8 @@ def merge_ready(r):
 
 def status(r, prs, order, running):
     """Can it merge, in one word — the Status column. First rung that holds wins."""
+    if r.get("queued"):
+        return "queued"     # GitHub owns the merge now; a queue that ejects it clears the flag
     if needs_agent(r):
         # bot threads, red CI or a conflict — an agent owns it, unless another PR of its stack
         # holds the single agent that stack gets. A PR with nothing to fix never says `waits`:
@@ -887,6 +890,8 @@ def self_check():
     assert st1(unresolved_human=1, merge_state="BLOCKED") == "review"
     assert st1(draft=True, merge_state="DRAFT") == "draft"
     assert st1(draft=True) == "draft", "a green draft is still nobody's to merge"
+    assert st1(queued=True, ci="PENDING", merge_state="BLOCKED") == "queued", \
+        "in the merge queue, GitHub owns the merge: nothing waits on the author"
     assert is_bot("cursor", "User") and is_bot("x[bot]", "User") and not is_bot("viclafouch", "User")
 
     # Report on disk survives a dead agent, and reading it lifts that PR's mute.
