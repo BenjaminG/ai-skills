@@ -38,11 +38,14 @@ export const pane = (id: string): RenderInput<'Pane'> => ({
   },
 })
 
+type Answer = { stdout?: string; stderr?: string; exitCode?: number }
+
 /**
  * The world beneath the plugin: a session in /work, one process answering
- * `stdout` (or failing with `stderr`), panes and prompt fills kept.
+ * `stdout` (or failing with `stderr`), or `run` answering per argv; panes,
+ * prompt fills and suggestions kept; the AskUserQuestion dialog answered `ask`.
  */
-export function world(on: On, process: { stdout?: string; stderr?: string; python3?: { stdout?: string; stderr?: string; exitCode?: number } }) {
+export function world(on: On, process: Answer & { python3?: Answer; run?: (argv: readonly string[]) => Answer; ask?: string }) {
   const runs: string[][] = []
   // Every file's mtime as `date -r` prints it (kept out of `runs`); a test moves it to say
   // "the file changed".
@@ -50,6 +53,7 @@ export function world(on: On, process: { stdout?: string; stderr?: string; pytho
   const opened: string[] = []
   const closed: string[] = []
   const filled: string[] = []
+  const suggested: string[] = []
   const toasts: string[] = []
   const toolCalls: Record<string, unknown>[] = []
 
@@ -58,21 +62,22 @@ export function world(on: On, process: { stdout?: string; stderr?: string; pytho
 
   on('process.run', ($, e) => {
     if (e.argv[0] === 'date') {
-      return { value: { exitCode: 0, stdout: `${files.mtimeMs}\n`, stderr: '' } }
+      return { value: { exitCode: 0, stdout: `${files.mtimeMs}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
 
     runs.push([...e.argv])
 
-    const answer: { stdout?: string; stderr?: string; exitCode?: number } =
-      process.python3 !== undefined && e.argv[0] === 'python3'
-        ? process.python3
-        : process
+    const answer: Answer =
+      process.run?.(e.argv) ??
+      (process.python3 !== undefined && e.argv[0] === 'python3' ? process.python3 : process)
 
     return {
       value: {
         exitCode: answer.stderr === undefined ? 0 : (answer.exitCode ?? 1),
         stdout: answer.stdout ?? '',
         stderr: answer.stderr ?? '',
+        isStdoutTruncated: false,
+        isStderrTruncated: false,
       },
     }
   })
@@ -80,7 +85,7 @@ export function world(on: On, process: { stdout?: string; stderr?: string; pytho
   on('ui.open', ($, e) => {
     opened.push(e.id)
 
-    return { value: undefined }
+    return { value: { isPlaced: true } }
   })
 
   on('ui.close', ($, e) => {
@@ -103,15 +108,27 @@ export function world(on: On, process: { stdout?: string; stderr?: string; pytho
     return { isFilled: true }
   })
 
+  on('prompt.suggest', ($, e) => {
+    suggested.push(e.text)
+
+    return { isShown: true }
+  })
+
   on('tool.call', ($, e) => {
     toolCalls.push({ ...e })
+
+    if (e.tool === 'AskUserQuestion' && process.ask !== undefined) {
+      const question = (e as { questions?: { question: string }[] }).questions?.[0]?.question ?? ''
+
+      return { result: { questions: [], answers: { [question]: process.ask } } }
+    }
 
     return { result: 'ok' }
   })
 
   const clock = mock.clock(on)
 
-  return { runs, opened, closed, filled, toasts, toolCalls, clock, files }
+  return { runs, opened, closed, filled, suggested, toasts, toolCalls, clock, files }
 }
 
 /** A rendered tree's text as it reads: strings and Button labels, in order. */
