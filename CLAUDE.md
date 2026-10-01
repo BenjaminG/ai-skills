@@ -36,7 +36,7 @@ claude --plugin-dir .
 
 ## Mods (function hooks)
 
-`hooks/hooks.json` names one hooks module, `hooks/register.ts`, which registers the panes under `hooks/*.tsx` (`/prs`, `/wt`). Early access: the module loads only with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+`hooks/hooks.json` names one hooks module, `hooks/register.ts`, which registers the mods under `hooks/`: the panes `/prs`, `/wt` and `/xray` (skill usage and prompt cost), `next-step.ts` (proposes the chained skill after a turn, Tab to take) and `fixup-guard.ts` (asks before a commit that rewrites an earlier branch commit's lines). Early access: the module loads only with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
 
 ```bash
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .   # run from source
@@ -44,7 +44,7 @@ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .    # tests/*.test.ts
 tsc -p tsconfig.json                                        # typecheck against .claude/types
 ```
 
-Loader rules the tests enforce: one hook per event without a matcher per module (so `session.start` lives in `register.ts`); `$` may only be passed to a function declared at a module's top level; `on` only to a function imported by name. `.claude/types/claude-code.d.ts` is what `/plugin-types` writes — regenerate it after a Claude Code update.
+Loader rules the tests enforce: one hook per event without a matcher per module (so `session.start` lives in `register.ts`); `$` may only be passed to a function declared in the same file, never across an import (so each mod keeps its own small `git` helper); `on` only to a function imported by name. `.claude/types/claude-code.d.ts` is what `/plugin-types` writes — regenerate it after a Claude Code update.
 
 ## Key Conventions
 
