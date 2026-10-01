@@ -62,3 +62,17 @@ Loader rules the tests enforce: one hook per event without a matcher per module 
 - **CLI integrations** (`codex-cli`, `chrome-cdp`): Wrappers for external CLI tools.
 - **Investigation & planning** (`interview`, `investigate`, `elevate`, `innovate`, `retrospective`, `orchestrate`): Structured thinking workflows.
 - **Specialist agents** (`backend-developer`, `frontend-developer`): Domain-specific subagent definitions.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `BenjaminG/ai-skills` (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
