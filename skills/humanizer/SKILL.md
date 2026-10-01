@@ -159,12 +159,13 @@ Triggered by "humanizer update: <instruction>", "teach humanizer that ...", "rem
    - **Sentence rhythm** — sentence-level structural habits.
    - **Examples** — verbatim sample paragraphs.
    - **Rules** — anything that doesn't fit the above (catch-all section in the template).
-3. Check for redundancy:
+3. If the target section has `###` sub-sections, add the rule under the one matching the situation it applies to (e.g. a review-comment rule goes under `### Commentaire de review`), not at the end of the section. A file with no sub-sections is unaffected.
+4. Check for redundancy:
    - If the new rule duplicates an existing one, skip and tell the user.
    - If it refines an existing rule, **merge** rather than appending — replace the older line with a sharper version.
    - If it contradicts an existing rule, ask the user which one wins, then update.
-4. Write the change with `Edit` (single targeted edit, not a full rewrite).
-5. Confirm: "Added to STYLE.md → <section>: <one-line summary>."
+5. Write the change with `Edit` (single targeted edit, not a full rewrite).
+6. Confirm: "Added to STYLE.md → <section>: <one-line summary>."
 
 Keep STYLE.md tidy. Bullet points, no prose blocks except in the Examples section.
 
