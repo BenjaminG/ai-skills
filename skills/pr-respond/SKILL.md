@@ -38,8 +38,9 @@ Replies are drafted through the `humanizer` skill (see below) — that dependenc
 ```
 ## Batch — PR #<n>
 ### Code (<k> files)                    one line of delta per file
-### Fixup + push                        <n> fixups → <m> original commits,
-                                        git push --force-with-lease, <old> → <new>
+### Commit + push                       human items: one new commit, its message;
+                                        bot items: <n> fixups → <m> original commits;
+                                        git push (--force-with-lease if folded), <old> → <new>
 ### Reply to @<login> (thread <id>)     the humanizer draft, the reaction,
                                         resolved or left open
 ```
@@ -52,7 +53,12 @@ Show the **one batch preview**, then post everything only after a **single** con
 
 ## Ship the code first
 
-A reply saying "applied" is a lie until the code is on the remote. The reviewer clicks the thread and sees the old line. So once the batch is confirmed, and before any reply goes out, invoke the `fixup` skill if any item changed code. It folds each change into the commit that introduced it and force-pushes with lease.
+A reply saying "applied" is a lie until the code is on the remote. The reviewer clicks the thread and sees the old line. So once the batch is confirmed, and before any reply goes out, ship every code change. Who wrote the item decides how:
+
+- **Human item → one new commit on top, never folded.** The reviewer reads that commit to see what changed since their review; a fold rewrites the commit they already approved and hides the change. Stage only the human items' hunks (`git add -p` when a file carries both kinds) and commit them first, so the rebase below leaves that commit at the tip.
+- **Bot item, CI check → `fixup` skill.** It folds each change into the commit that introduced it and force-pushes with lease. Nobody re-reads a bot's thread, so the branch reads as if the bug never existed.
+
+Only human items changed code: push without force.
 
 If `fixup` stops, whether on a merged-base commit, a rebase conflict, or a non-empty verify diff, post nothing. Report the blocker and leave the threads open.
 
