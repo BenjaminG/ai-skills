@@ -187,7 +187,7 @@ describe('babysit', () => {
     expect(w.spawned.map(s => s.description)).toEqual(['Own PR #20', 'Own PR #21'])
   })
 
-  test('a blocked report holds the PR until its head moves', async ($, on) => {
+  test('a blocked report holds the PR until the scan lifts it', async ($, on) => {
     const w = engine(on)
     w.scan.prs = [row(40, { report: { blocked: 'OOM in jest' } })]
     await $.session.start(SESSION)
@@ -197,9 +197,9 @@ describe('babysit', () => {
     await w.emit('#40 ci PENDING→FAILURE')
     expect(w.spawned, 'the same failure on the same head').toHaveLength(0)
 
-    w.scan.prs = [row(40, { head: 'ddddddd', report: { blocked: 'OOM in jest' } })]
-    await w.emit('#40 head aaaaaaa→ddddddd')
-    expect(w.spawned.map(s => s.description)).toEqual(['Own PR #40'])
+    w.scan.prs = [row(40, { report: { blocked: null } })]
+    await w.emit('#40 unresolved_bot 0→5')
+    expect(w.spawned.map(s => s.description), 'new bot threads on the same head').toEqual(['Own PR #40'])
   })
 
   test('four agents at most at once: the rest wait for a slot', async ($, on) => {

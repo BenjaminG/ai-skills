@@ -604,14 +604,23 @@ def carry(prev, reports, prs):
     A held gist points at an open thread. That thread can be resolved by anyone — the next agent,
     or the author in another session, who read the gist and fixed it by hand. The scan sees it on
     the next pass; the report never would. So a gist outlives its thread by exactly zero passes.
-    Only PRs this scan actually looked at are touched.
+    A block judged one head and the bot threads open at the time: a new head, or a bot thread
+    opened since, is work the report never saw, so the block lifts. Only PRs this scan actually
+    looked at are touched.
     """
     out = {k: (prev.get(k) or {}).get("report") for k in prev}
     out.update(reports)
     for k, rep in out.items():
         r = prs.get(int(k))
-        if rep and r and not r["held"]:
-            out[k] = dict(rep, held=0, held_gist=None)
+        if not (rep and r):
+            continue
+        if k in reports:
+            rep = dict(rep, head=r["head"])
+        if not r["held"]:
+            rep = dict(rep, held=0, held_gist=None)
+        if rep.get("head") != r["head"] or r["unresolved_bot"]:
+            rep = dict(rep, blocked=None)
+        out[k] = rep
     return out
 
 
@@ -961,6 +970,18 @@ def self_check():
     assert cleared["pushed"] == 1, "pushed is history, not state — it survives"
     assert carry(prev, {}, {})["7"]["held_gist"] == rep["held_gist"], \
         "a PR this pass never scanned keeps its gist"
+    # A blocked report holds the head it judged, and no bot thread opened after it.
+    blocked = {"pushed": 0, "held": 0, "blocked": "boot lane OOMs"}
+    folded = carry({}, {"1": blocked}, {1: a})["1"]
+    assert (folded["blocked"], folded["head"]) == ("boot lane OOMs", "aaaaaaa")
+    prev = {"1": {"report": folded}}
+    assert carry(prev, {}, {1: a})["1"]["blocked"], "same head, no new thread: still blocked"
+    assert carry(prev, {}, {1: dict(a, head="bbbbbbb")})["1"]["blocked"] is None, \
+        "a new head lifts the block"
+    assert carry(prev, {}, {1: dict(a, unresolved_bot=5)})["1"]["blocked"] is None, \
+        "a bot thread opened after the report lifts the block"
+    assert carry({"1": {"report": blocked}}, {}, {1: a})["1"]["blocked"] is None, \
+        "a report folded before the head stamp holds nothing"
 
     # Readers filter the service's full state: babysit-prs sees its own selection only.
     state = {"1": dict(a, author="me", seen={"T": "c"}), "2": dict(a, number=2, author="me", draft=True),

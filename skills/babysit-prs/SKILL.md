@@ -78,8 +78,8 @@ on top of another one's head is its own stack, with its own agent, and the dashb
 head first, base at the bottom.
 
 An agent report is a snapshot; the scanner is the present. Use the scanner's live `held` count over
-`report.held`. A `report.blocked` suppresses another agent only while the named failure or conflict
-is unchanged; once that condition clears or the head moves, let the current scan decide again.
+`report.held`. A `report.blocked` suppresses another agent; the scanner lifts it once the head
+moves or a bot thread opens after the report, so a `report.blocked` still present is still true.
 
 Out-of-band work is safe while `held` is non-zero because the scanner will not spawn an agent on
 that PR. A stacked conflict belongs to the agent as a restack. A clean draft waits for the author.
@@ -89,10 +89,10 @@ the author owes — for `held`, `/pr-explain <n>`, which explains the thread in 
 
 ## 3. Spawn an agent, but only where one is needed
 
-For each PR with `needs_agent: true`, **`waits_on: null` and `agent_running: false`**, unless its
-`report.blocked` still names the unchanged failure or conflict — meaning it has at least one
-unresolved **bot** thread, a failing check, or `mergeable: "CONFLICTING"`, and nothing below it in
-its stack is being rewritten right now, and it does not already have an agent — mute it, then spawn its owner. Send them in a single message so they run
+For each PR with `needs_agent: true`, **`waits_on: null`, `agent_running: false`** and no
+`report.blocked` — meaning it has at least one unresolved **bot** thread, a failing check, or
+`mergeable: "CONFLICTING"`, nothing below it in its stack is being rewritten right now, it does
+not already have an agent, and no agent has called its current state blocked — mute it, then spawn its owner. Send them in a single message so they run
 concurrently. A PR that is green, mergeable and free of bot threads gets no agent: its state is complete,
 and an agent would have nothing to say that the script has not said.
 

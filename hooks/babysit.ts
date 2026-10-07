@@ -48,8 +48,6 @@ let seen = -1
 const started = new Set<number>()
 /** A PR whose agent ended a turn without a report → when that turn ended. */
 const lastTurn = new Map<number, number>()
-/** A blocked report holds its PR while the head it was written at is still the head. */
-const blockedAt = new Map<number, string>()
 /** `ready:<n>`, `held:<n>`, `would:<n>`: what was told already, until it stops being true. */
 const told = new Set<string>()
 
@@ -108,7 +106,6 @@ async function spawnFor($: Engine, r: Row, dir: string) {
     return
   }
 
-  blockedAt.delete(r.number)
   started.add(r.number)
 }
 
@@ -184,15 +181,7 @@ async function passOnce($: Engine) {
   const due: Row[] = []
 
   for (const r of scan.prs) {
-    const blocked = r.report?.blocked
-
-    if (!blocked) {
-      blockedAt.delete(r.number)
-    } else if (!blockedAt.has(r.number)) {
-      blockedAt.set(r.number, r.head)
-    }
-
-    const isDue = r.needs_agent && r.waits_on === null && !r.agent_running && blockedAt.get(r.number) !== r.head
+    const isDue = r.needs_agent && r.waits_on === null && !r.agent_running && !r.report?.blocked
     if (isDue) {
       due.push(r)
     }
