@@ -5,6 +5,7 @@ import { register as registerFixupGuard } from './fixup-guard'
 import { register as registerNextStep } from './next-step'
 import { COMMAND as PRS, register as registerPrs } from './prs'
 import { COMMAND as XRAY, register as registerXray } from './skill-xray'
+import { FOLLOW_COMMAND, UNFOLLOW_COMMAND, register as registerSlackThread } from './slack-thread'
 import { COMMAND as WT, register as registerWt } from './wt'
 
 /**
@@ -20,6 +21,8 @@ export const register: Register = (on, options) => {
     await $.command.register(WT)
     await $.command.register(XRAY)
     await $.command.register(BABYSIT)
+    await $.command.register(FOLLOW_COMMAND)
+    await $.command.register(UNFOLLOW_COMMAND)
 
     return next(e)
   })
@@ -30,4 +33,5 @@ export const register: Register = (on, options) => {
   registerNextStep(on, options)
   registerFixupGuard(on, options)
   registerBabysit(on, options)
+  registerSlackThread(on, options)
 }

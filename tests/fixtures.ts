@@ -14,10 +14,10 @@ export const SESSION: SessionStartInput = {
   cwd: '/work',
 }
 
-/** `/<name>` typed with no arguments, fullscreen on a 160-column terminal. */
-export const command = (name: string): CommandRunInput => ({
+/** `/<name> <args>` typed fullscreen on a 160-column terminal. */
+export const command = (name: string, args = ''): CommandRunInput => ({
   command: name,
-  args: '',
+  args,
   origin: { kind: 'composer' },
   presentation: { isFullscreen: true, columns: 160 },
 })
