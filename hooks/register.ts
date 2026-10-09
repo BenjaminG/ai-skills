@@ -1,7 +1,6 @@
 import type { Register } from 'claude-code'
 
 import { COMMAND as BABYSIT, register as registerBabysit } from './babysit'
-import { register as registerFixupGuard } from './fixup-guard'
 import { register as registerNextStep } from './next-step'
 import { COMMAND as PRS, register as registerPrs } from './prs'
 import { COMMAND as XRAY, register as registerXray } from './skill-xray'
@@ -31,7 +30,6 @@ export const register: Register = (on, options) => {
   registerWt(on, options)
   registerXray(on, options)
   registerNextStep(on, options)
-  registerFixupGuard(on, options)
   registerBabysit(on, options)
   registerSlackThread(on, options)
 }

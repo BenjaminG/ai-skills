@@ -36,7 +36,7 @@ claude --plugin-dir .
 
 ## Mods (function hooks)
 
-`hooks/hooks.json` names one hooks module, `hooks/register.ts`, which registers the mods under `hooks/`: the panes `/prs`, `/wt` and `/xray` (skill usage and prompt cost), `next-step.ts` (proposes the chained skill after a turn, Tab to take), `fixup-guard.ts` (asks before a commit that rewrites an earlier branch commit's lines), `/slack-follow` / `/slack-unfollow` (`slack-thread.ts`: polls a Slack thread through the claude.ai Slack MCP, submits new replies once the session is idle) and `/babysit` (`babysit.ts`: the babysit-prs manager in code, reading `pr-scan.py` and spawning unnamed agents with `skills/babysit-prs/references/agent-prompt.md`, the prompt the skill uses too). Early access: the module loads only with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+`hooks/hooks.json` names one hooks module, `hooks/register.ts`, which registers the mods under `hooks/`: the panes `/prs`, `/wt` and `/xray` (skill usage and prompt cost), `next-step.ts` (proposes the chained skill after a turn, Tab to take), `/slack-follow` / `/slack-unfollow` (`slack-thread.ts`: polls a Slack thread through the claude.ai Slack MCP, submits new replies once the session is idle) and `/babysit` (`babysit.ts`: the babysit-prs manager in code, reading `pr-scan.py` and spawning unnamed agents with `skills/babysit-prs/references/agent-prompt.md`, the prompt the skill uses too). Early access: the module loads only with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
 
 ```bash
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .   # run from source

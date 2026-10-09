@@ -1,4 +1,4 @@
 {
-  "description": "Panes: /prs lists my open PRs with checks and review state, a button per PR filling /pr-feedback; /wt lists worktrunk worktrees, a button per worktree entering it; /xray counts the skills that ran and their prompt cost. After a gate-wf, pr-feedback or commit turn, the next skill is proposed in the prompt box. A commit rewriting an earlier branch commit's lines asks whether to fold it in as a fixup. /babysit runs babysit-prs with no manager in the conversation: one Opus agent per PR that needs one. /slack-follow sends a Slack thread's new replies to the session",
+  "description": "Panes: /prs lists my open PRs with checks and review state, a button per PR filling /pr-feedback; /wt lists worktrunk worktrees, a button per worktree entering it; /xray counts the skills that ran and their prompt cost. After a gate-wf, pr-feedback or commit turn, the next skill is proposed in the prompt box. /babysit runs babysit-prs with no manager in the conversation: one Opus agent per PR that needs one. /slack-follow sends a Slack thread's new replies to the session",
   "modules": ["./register.ts"]
 }

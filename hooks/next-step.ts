@@ -29,7 +29,7 @@ function ran(skill: string) {
   }
 }
 
-/** `git <args>`'s trimmed stdout, or null when it fails. fixup-guard has its own: `$` never crosses an import. */
+/** `git <args>`'s trimmed stdout, or null when it fails. Not shared: `$` never crosses an import. */
 async function git($: Engine, args: readonly string[]): Promise<string | null> {
   const run = await $.process.run(['git', ...args]).catch(() => null)
 
