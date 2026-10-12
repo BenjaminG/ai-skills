@@ -226,6 +226,27 @@ own the moment its parent is rewritten under it, so the remedy is a restack (`gh
 judgment call on whose side of a conflict wins. Same hand-back, different sentence — and under
 `babysit-prs` the PR's own agent performs it.
 
+### Is it worth the fix?
+
+A confirmed claim earns a change only when the change is **worth** it. Every item headed for `fix`
+from a bot — taste items included — gets two scores before it keeps that disposition, each read off
+a fact, never off the comment's tone:
+
+| Score | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| **Value** — shipping it unchanged… | changes nothing a user or caller sees (taste) | stays correct, but reads or maintains worse | gives a wrong result on an edge case real input reaches | breaks a common path, or violates a project rule outright | loses or corrupts data, exposes a reachable hole, takes production down |
+| **Effort** — the smallest-fix clause… | one line | a few lines, one file | one function, or a test to add | several files | a new abstraction or file (already `reply` by the smallest-fix rule) |
+
+Then the **diagonal** decides:
+
+- Value ≥ 4, or Value ≥ Effort → `fix`.
+- Value 3 below its Effort → `reply`: a real bug whose remedy outweighs it is a choice, so under
+  `--auto` it is held with the trade-off as its gist.
+- Value ≤ 2 below its Effort → `decline`. The reply names both scores ("real, but value 2 against
+  effort 3: the change costs more than the defect"), and the thread closes like any settled claim.
+
+Carry the pair into the Verdict cell as `V3/E2`.
+
 ### Weigh the fix set as a whole
 
 Every rule above judges one claim. Nothing judges their sum, and a review loop only ever adds: a bot
@@ -271,7 +292,7 @@ Otherwise, one markdown table — pipes and header included, one row per item, r
 - **Where** — `path/to/file.ts:42`, the check name, or `merge` for the branch state.
 - **Who** — 👤 `<login>` for a human, 🤖 `<login>` when `author.__typename` is `Bot`, the login ends in `[bot]`, or it is a known bot account (`naboo-ai-reviews`, `cursor` / Bugbot), ⚙️ `check` for a failing check.
 - **Claim** — the item in one line, paraphrased. Quote only when the exact wording is the point.
-- **Verdict** — ✅ confirmed | ❌ refuted | ❓ unclear, then the `file:line` that settled it. `—` for taste items and checks, which carry no verdict.
+- **Verdict** — ✅ confirmed | ❌ refuted | ❓ unclear, then the `file:line` that settled it, then the worth pair (`V2/E3`) on a scored bot item. `—` for checks, and for taste items apart from their pair.
 - **Do** — fix | reply | decline | defer.
 
 Keep every cell to one line so rows stay scannable; the evidence that will not fit goes in a footnote under the table.

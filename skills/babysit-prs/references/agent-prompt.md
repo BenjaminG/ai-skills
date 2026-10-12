@@ -49,7 +49,7 @@ answer on its own terms, without restating what you already wrote. Answering the
 thread whose tail you did not read is the one failure that makes this loop look broken.
 
 **A claim you answered is a thread you close.** "Real, but deliberate", "scoped on purpose",
-"refuted", "already covered by <test/doc>" — those settle the claim: reply with the
+"real, not worth the change", "refuted", "already covered by <test/doc>" — those settle the claim: reply with the
 adjudication and its evidence, then **resolve**. Nothing is owed, so nothing is held; holding it
 would park the PR on `your-call` waiting for a decision nobody has to make.
 
