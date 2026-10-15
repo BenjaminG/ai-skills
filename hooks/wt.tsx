@@ -6,7 +6,9 @@ import type { EngineInterface as Engine, Register } from 'claude-code'
 const ID = 'wt'
 
 type Worktree = {
-  branch: string
+  /** null for a detached worktree: it is named by its commit instead. */
+  branch: string | null
+  commit: { short_sha: string }
   path: string
   is_current: boolean
   working_tree: {
@@ -69,12 +71,14 @@ async function enter($: Engine, w: Worktree) {
   const answer = await $.tool.call({
     tool: 'EnterWorktree',
     path: w.path,
-    consent: `The user pressed "${w.branch}" in the Worktrees pane`,
+    consent: `The user pressed "${nameOf(w)}" in the Worktrees pane`,
   })
 
-  $.ui.toast(answer.deny ?? `→ ${w.branch}`)
+  $.ui.toast(answer.deny ?? `→ ${nameOf(w)}`)
   void refresh($)
 }
+
+const nameOf = (w: Worktree) => w.branch ?? w.commit.short_sha
 
 /** The pane's hooks; `session.start` registers COMMAND once for every pane, in register.ts. */
 export const register: Register = on => {
@@ -110,13 +114,13 @@ export const register: Register = on => {
     const { Box, Text, Button } = await $.ui.resolve(e)
 
     const rows = (worktrees ?? []).map(w => (
-      <Box key={`wt:${w.branch}`} flexDirection="row" gap={1}>
+      <Box key={`wt:${nameOf(w)}`} flexDirection="row" gap={1}>
         <Text color="cyan">{w.is_current ? '❯' : ' '}</Text>
         {w.is_current ? (
-          <Text bold>{w.branch}</Text>
+          <Text bold>{nameOf(w)}</Text>
         ) : (
-          <Button key={`wt:${w.branch}`} plain onPress={() => void enter($, w)}>
-            {w.branch}
+          <Button key={`wt:${nameOf(w)}`} plain onPress={() => void enter($, w)}>
+            {nameOf(w)}
           </Button>
         )}
         <Text dimColor>{statusOf(w)}</Text>

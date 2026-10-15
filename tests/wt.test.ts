@@ -13,6 +13,8 @@ const WT = JSON.stringify([
     working_tree: { ...CLEAN, modified: true, diff: { added: 12, deleted: 3 } },
     remote: { ahead: 1, behind: 0 },
   },
+  // A detached worktree: wt reports no branch, only the commit.
+  { branch: null, path: '/tmp/detached', is_current: false, commit: { short_sha: '43fa7f5' }, working_tree: CLEAN, remote: null },
 ])
 
 describe('wt', () => {
@@ -29,9 +31,10 @@ describe('wt', () => {
 
     const drawn = textOf(await $.ui.render(pane('wt')))
 
-    expect(drawn).toContain('Worktrees · 2')
+    expect(drawn).toContain('Worktrees · 3')
     expect(drawn).toContain('❯main?/work')
     expect(drawn).toContain(' feat/pane+12 −3 * ↑1/work.feat-pane')
+    expect(drawn).toContain(' 43fa7f5/tmp/detached')
 
     expect(await $.ui.press({ plugin: PLUGIN, key: 'wt:feat/pane' })).toEqual({ element: 'wt:feat/pane' })
     await w.clock.settle()
