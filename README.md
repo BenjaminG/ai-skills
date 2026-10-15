@@ -50,6 +50,8 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `qa-plan` | Manual QA plan generation |
 | `qa-run` | Execute a manual QA plan |
+| `create-verification-skill` | Generate a project-local `verify-<app>` skill that drives the app and captures proof |
+| `maintain-verification-skill` | Re-check a `verify-<app>` skill's feature map against source and a live run |
 | **Developer tools** | |
 | `chrome-cdp` | Drive a local Chrome session via DevTools Protocol |
 | `codex-cli` | OpenAI Codex CLI for automated code analysis |
