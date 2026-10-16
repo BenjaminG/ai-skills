@@ -1,6 +1,6 @@
 # PR agent prompt
 
-The prompt of the agent that owns one PR, shared by the `babysit-prs` manager and the `/babysit`
+The prompt of the agent that owns one PR, shared by the `babysit-prs` manager and the `/shepherd`
 autopilot mod (`hooks/babysit.ts`), which reads this file. Everything between the two rules is the
 prompt. Substitute `<n>`, `<base>` and `<parent>` from the PR's scan row, `<head>` with its
 `branch`, and `<state_dir>` with the blob's, expanded to its absolute path, never `$STATE_DIR`. Keep the `[stacked: …]` clause's text without its

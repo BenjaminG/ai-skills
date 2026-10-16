@@ -51,7 +51,7 @@ const row = (number: number, over: Partial<Row> = {}): Row => ({
 type Spawn = { description: string; prompt: string; name?: string; model?: string; subagent_type?: string }
 
 /**
- * The world beneath /babysit: pr-scan answering `scan.prs` (and `scan.mtimeMs` as state.json's),
+ * The world beneath /shepherd: pr-scan answering `scan.prs` (and `scan.mtimeMs` as state.json's),
  * its `--follow` watch fed line by line, files, the session's agents (`agents`) and the status
  * line kept.
  */
@@ -136,7 +136,7 @@ function engine(on: On, { deny = false, prompt = true } = {}) {
   return { ...w, scan, files, spawned, agents, statuses, follow, emit }
 }
 
-const babysit = (args = '') => ({ ...command('babysit'), args })
+const babysit = (args = '') => ({ ...command('shepherd'), args })
 
 /** The final turn of an unnamed agent. */
 const finished = (id: string): TurnCompleteInput => ({
@@ -308,7 +308,7 @@ describe('babysit', () => {
     expect(w.statuses.at(-1)).toBe('babysit · 0 agents')
   })
 
-  test('merge-ready and held are told once each; /babysit again stops the watch', async ($, on) => {
+  test('merge-ready and held are told once each; /shepherd again stops the watch', async ($, on) => {
     const w = engine(on)
     w.scan.prs = [row(90, { needs_agent: false, merge_ready: true }), row(91, { needs_agent: false, held: 1 })]
     await $.session.start(SESSION)

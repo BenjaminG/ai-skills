@@ -9,9 +9,9 @@ argument-hint: "[--once] [--include-drafts] [PR…]"
 Keep open PRs moving without polling them by hand. There is no cadence here: the loop wakes on a
 real change and sleeps otherwise.
 
-With function hooks on (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), `/babysit` does this manager's
+With function hooks on (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), `/shepherd` does this manager's
 work in code, from the same scan and the same agent prompt, with no manager in the conversation
-(`/babysit dry` says what it would spawn). This skill is the manager where hooks do not run.
+(`/shepherd dry` says what it would spawn). This skill is the manager where hooks do not run.
 
 Two roles, and they never overlap. **You are the manager**: you own orchestration state, and no
 thread body, diff, or reply draft ever enters this context. **A subagent

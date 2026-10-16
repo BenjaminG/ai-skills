@@ -1,6 +1,6 @@
 import type { EngineInterface as Engine, Register, Timer } from 'claude-code'
 
-const ID = 'babysit'
+const ID = 'shepherd'
 // pr-scan's own first pass spawns in waves of about four; the same bound caps a runaway loop.
 const MAX_AGENTS = 4
 const DEBOUNCE_MS = 2_000
@@ -10,7 +10,7 @@ const POLL_MS = 5_000
 const GRACE_MS = 10 * 60_000
 const LOCKED = 'babysit-prs already active'
 const ARGS = /^(?:\d+|--include-drafts)$/
-const USAGE = 'Usage: /babysit [dry|stop] [PR…] [--include-drafts]'
+const USAGE = 'Usage: /shepherd [dry|stop] [PR…] [--include-drafts]'
 const SCAN = '/skills/pr-dash/scripts/pr-scan.py'
 const PROMPT = '/skills/babysit-prs/references/agent-prompt.md'
 
@@ -34,7 +34,7 @@ type Scan = { state_dir: string; prs: Row[] }
 type Follow = ReturnType<Engine['process']['spawn']>
 
 // Module state. A reload drops it: the watch dies with the module and the mutes on disk keep
-// every live agent's stack reserved until /babysit runs again.
+// every live agent's stack reserved until /shepherd runs again.
 let mode: 'off' | 'dry' | 'on' = 'off'
 let args: string[] = []
 let follow: Follow | null = null
@@ -332,8 +332,8 @@ export const register: Register = on => {
     return {
       text:
         verb === 'dry'
-          ? 'babysit dry: says which PR would get an agent, starts none. /babysit stop to end'
-          : 'babysit on: one Opus agent per PR that needs one, no manager in this conversation. /babysit stop to end',
+          ? 'babysit dry: says which PR would get an agent, starts none. /shepherd stop to end'
+          : 'babysit on: one Opus agent per PR that needs one, no manager in this conversation. /shepherd stop to end',
     }
   })
 
