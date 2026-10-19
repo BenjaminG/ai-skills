@@ -8,7 +8,13 @@ export const meta = {
   ],
 }
 
-// args: { tmpDir, reviewers: string[], prNumber: number|null, useJev?: boolean, jevScript?: string }
+// args: { tmpDir, reviewers: string[], prNumber: number|null, useJev?: boolean, jevScript?: string,
+//         deltaFrom?: string, openFindings?: {file, line, rule_id}[] }
+// deltaFrom (round ≥ 2, see render.py plan): style reviewers and rule synthesis read only
+// what changed since that commit; FULL_SCOPE reviewers keep the whole branch diff.
+// openFindings: last round's still-open findings — render.py carries them forward, so a
+// re-report on the same line is dropped here instead of paying for its skeptics again.
+// A reviewer suffixed `@inward` (security only, round 1) runs again from the entry points.
 // useJev (the skill's --jev flag): Jev first-passes every finding through
 // jev-verify's batch mode; only the escalate band (and any runner failure)
 // falls back to tier-scaled sonnet skeptics. Off by default — the gate's shape
@@ -70,10 +76,23 @@ const CONTEXT_SCHEMA = {
 const TSX_REVIEWERS = new Set([
   'ai-skills:react-reviewer', 'ai-skills:a11y-reviewer', 'ai-skills:i18n-reviewer',
 ])
-const diffBase = (reviewer) => (TSX_REVIEWERS.has(reviewer) ? 'diff-tsx' : 'diff-code')
+// Mirrors findings.py FULL_SCOPE: a bug the first round missed only turns up on a full read.
+const FULL_SCOPE = new Set([
+  'ai-skills:bug-reviewer', 'ai-skills:security-reviewer', 'ai-skills:migration-reviewer',
+])
+const agentOf = (reviewer) => reviewer.split('@')[0]
+const delta = (reviewer) => Boolean(A.deltaFrom) && !FULL_SCOPE.has(agentOf(reviewer))
+const diffBase = (reviewer) =>
+  (delta(reviewer) ? 'delta-' : 'diff-') + (TSX_REVIEWERS.has(agentOf(reviewer)) ? 'tsx' : 'code')
 
-const reviewPrompt = (reviewer) => `Review this branch's diff. You are ${reviewer}.
+const INWARD = `
+Angle: INWARD. Do not start from the changed lines. Start from the entry points this diff touches or exposes — HTTP routes, GraphQL resolvers/subscriptions, SSE streams, jobs, event listeners. For each, list what a caller controls (arguments, ids, collection/role/type selectors, file names, list contents) and trace those inputs down into the changed code, asking what a hostile or unusual caller can make it do: pass an access check it should fail, reach a wrong branch, read another tenant's data. Every finding is still anchored to a changed line.
+`
 
+const reviewPrompt = (reviewer) => `Review this branch's diff. You are ${agentOf(reviewer)}.
+${delta(reviewer) ? `
+This is a later review round: the diff below is only what changed since the last round (${A.deltaFrom.slice(0, 10)}). Code outside it was already reviewed — report only findings this change introduces or touches.
+` : ''}${reviewer.endsWith('@inward') ? INWARD : ''}
 Artifacts (scoped to your concern — files outside it are intentionally omitted as noise):
 - Diff: ${A.tmpDir}/${diffBase(reviewer)}.txt
 - Plus-lines (+ lines per file): ${A.tmpDir}/${diffBase(reviewer)}-plus.txt
@@ -103,7 +122,7 @@ Read the cited region (±40 lines) and every other file the finding cites. Budge
 const synthesizePrompt = () => `MODE: synthesize
 
 Read:
-- Diff: ${A.tmpDir}/diff-full.txt
+- Diff: ${A.tmpDir}/${A.deltaFrom ? 'delta-full' : 'diff-full'}.txt${A.deltaFrom ? ' (only what changed since the last review round)' : ''}
 - Context bundle: ${A.tmpDir}/context-bundle.md
 
 Walk the diff against the bundle's ## CLAUDE.md and ## ADR sections. Emit synthesized findings for documented-rule violations (claude-md-violation / adr-violation) per your instructions. There are no input findings yet — do NOT annotate. Return { annotations: [], synthesized: [...] }.`
@@ -130,6 +149,7 @@ const synthP = agent(synthesizePrompt(), {
 // The duplicate still surfaces via the primary; acceptable. Upgrade path: collect all,
 // pick highest-tier primary, if false-positive rate on merged dupes bites.
 const claimed = new Map()
+const openKeys = new Set((A.openFindings || []).map((f) => `${f.file}:${f.line}:${f.rule_id}`))
 
 // --- --jev: Jev first pass over the findings ---------------------------------
 //
@@ -247,7 +267,7 @@ const verifyOne = (jevRows) => async (f) => {
 
 const reviewStage = (reviewer) =>
   agent(reviewPrompt(reviewer), {
-    agentType: reviewer, phase: 'Review', label: reviewer.replace('ai-skills:', ''), schema: FINDINGS_SCHEMA,
+    agentType: agentOf(reviewer), phase: 'Review', label: reviewer.replace('ai-skills:', ''), schema: FINDINGS_SCHEMA,
   })
 
 const verifyStage = async (review, reviewer) => {
@@ -258,6 +278,7 @@ const verifyStage = async (review, reviewer) => {
   }
   const toVerify = []
   for (const f of review?.findings || []) {
+    if (openKeys.has(`${f.file}:${f.line}:${f.rule_id}`)) continue // carried forward by render.py
     const key = `${f.file}:${f.line}`
     if (claimed.has(key)) {
       const primary = claimed.get(key)

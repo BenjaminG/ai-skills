@@ -1,7 +1,7 @@
 ---
 name: gate-wf
 description: Workflow-native quality gate for branch changes — parallel reviewers (Bug, SOLID, Security, Simplify+Slop, optionally React/a11y/i18n/migration) with tier-scaled adversarial verify, CLAUDE.md/ADR enforcement, and a stable PASS / PASS WITH NOTES / FAIL verdict. Read-only. Runs from a static shipped workflow script.
-argument-hint: "[base-branch] [--jev] [--force-fresh] [--ignore-scope-gate] [--resume <runId>]"
+argument-hint: "[base-branch] [--full] [--jev] [--force-fresh] [--ignore-scope-gate] [--resume <runId>]"
 ---
 
 # Gate-WF — Workflow-native quality gate
@@ -10,7 +10,19 @@ argument-hint: "[base-branch] [--jev] [--force-fresh] [--ignore-scope-gate] [--r
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `10`. v10: `--jev` routes the Verify phase through Jev
+**Skill version**: `11`. v11: rounds converge. A branch reviewed several times kept
+re-finding things: on 69 naboo runs, 21% of round-2+ findings repeated the last round
+and 42% sat on code the last round already saw. Now `render.py` carries the last
+round's findings forward by content anchor (still there → still open and still
+counted, without new skeptics; gone → listed as fixed), and from round 2 the style
+reviewers and rule synthesis read only what changed since the last round's commit —
+a tree diff, so a `/fixup` rewrite keeps the delta exact; a moved base falls back to
+a full review. Bug, security and migration keep the full branch diff: replaying
+PRs 16575/16728 showed the bugs a first round misses only come back on a full read.
+Round 1 (and any full review) runs `security-reviewer` a second time from the entry
+points (`@inward`), which found an auth bypass the default angle missed 2/2 vs 0/1.
+Round 3 with a BLOCKER left opens the report with a step-back line. `--full` forces
+a full review. v10: `--jev` routes the Verify phase through Jev
 (TypeSafe System One) before any skeptic spawns. `jev-verify`'s batch mode
 judges each finding over a ±80-line window — one HTTP call per finding, ~$0.042/M
 input tokens — and returns keep / kill / escalate. Only the escalate band
@@ -37,6 +49,7 @@ KILL_BELOW_CITED), not here. v9: Cache entries are keyed on this — bumping inv
   `TYPESAFE_API_KEY` in the env and the `jev-verify` skill reachable; missing
   either fails fast before any reviewer spawns, with the plain skeptic path as
   the documented fallback.
+- `--full` (flag): review the whole branch this round, even from round 2 on (before merging, or when the delta looks wrong).
 - `--force-fresh` (flag): bypass cache and re-fetch context bundle.
 - `--ignore-scope-gate` (flag): downgrade Step 2 hard-stops (file-count, suspicious-files) to top-of-report banners. Soft-warn (1–3 SUSPICIOUS) is unaffected.
 - `--resume <runId>`: resume a previous workflow run by ID (`wf_...`). Useful after editing any `agents/*.md` to re-run only the affected agent calls. Resume caches on `(prompt, opts)` pairs — see the resume note in Execution notes for the regeneration caveat.
@@ -90,6 +103,7 @@ If the project is not React/Next.js, `vercel-react-best-practices` is optional (
 ARGS="$@"
 BASE_ARG=""
 FORCE_FRESH=0
+FULL=0
 IGNORE_SCOPE_GATE=0
 USE_JEV=0
 RESUME_ID=""
@@ -107,6 +121,7 @@ for i in "${!TOKENS[@]}"; do
   case "$tok" in
     --jev)               USE_JEV=1 ;;
     --force-fresh)       FORCE_FRESH=1 ;;
+    --full)              FULL=1 ;;
     --ignore-scope-gate) IGNORE_SCOPE_GATE=1 ;;
     --show-dismissed)    SHOW_DISMISSED=1 ;;
     --resume)
@@ -351,6 +366,36 @@ plus_lines "$TMP_DIR/diff-code.txt" > "$TMP_DIR/diff-code-plus.txt"
 plus_lines "$TMP_DIR/diff-tsx.txt"  > "$TMP_DIR/diff-tsx-plus.txt"
 ```
 
+**Round plan.** Resolve `$WF_SCRIPT` now (Step 3b) and ask `render.py` which round this
+is and what to diff from:
+
+```bash
+RENDER="$(dirname "$WF_SCRIPT")/render.py"
+PLAN=$(python3 "$RENDER" plan --base-sha "$BASE_SHA" $([ $FULL -eq 1 ] && echo --full))
+DELTA_FROM=$(jq -r .delta_from <<<"$PLAN")
+PLAN_BANNER=$(jq -r .banner <<<"$PLAN")
+# Last round's still-open findings: the workflow skips re-reports of them, render.py carries them.
+OPEN_JSON=$(jq -c '[.findings[]? | select(.pre_existing|not) | {file, line, rule_id}]' "$STATE_FILE" 2>/dev/null || echo '[]')
+
+if [ -n "$DELTA_FROM" ]; then
+  # Tree diff, not range: /fixup rewrote history but the base is unchanged, so this is
+  # exactly what changed since the last round. Restricted to the branch's own files.
+  set -f
+  mapfile -t TSX_FILES < <(printf '%s\n' "${CHANGED_FILES_ARR[@]}" | grep -E '\.(tsx|jsx)$')
+  git diff $DELTA_FROM HEAD -- "${CHANGED_FILES_ARR[@]}"                        > "$TMP_DIR/delta-full.txt"
+  # CODE_EXCLUDES[0] is the '.' include; the branch's files replace it.
+  git diff $DELTA_FROM HEAD -- "${CHANGED_FILES_ARR[@]}" "${CODE_EXCLUDES[@]:1}" > "$TMP_DIR/delta-code.txt"
+  if [ ${#TSX_FILES[@]} -gt 0 ]; then git diff $DELTA_FROM HEAD -- "${TSX_FILES[@]}"; fi > "$TMP_DIR/delta-tsx.txt"
+  set +f
+  plus_lines "$TMP_DIR/delta-code.txt" > "$TMP_DIR/delta-code-plus.txt"
+  plus_lines "$TMP_DIR/delta-tsx.txt"  > "$TMP_DIR/delta-tsx-plus.txt"
+fi
+```
+
+From round 2 on, the style reviewers (`solid`, `simplify`, `slop`, `ponytail`, `react`,
+`a11y`, `i18n`) and rule synthesis read `delta-*`; `bug`, `security` and `migration`
+always read `diff-*`. The workflow picks the file from `deltaFrom` (Step 3c).
+
 The workflow (`scripts/workflow.js`) maps each reviewer to its diff: the JSX reviewers
 (`react`, `a11y`, `i18n`) read `diff-tsx*`; every other reviewer reads `diff-code*`; the
 context-checker's CLAUDE.md/ADR synthesis reads `diff-full.txt`.
@@ -424,6 +469,9 @@ REVIEWERS=(
 [ $SPAWN_MIGRATION -eq 1 ] && REVIEWERS+=("ai-skills:migration-reviewer")
 
 # JSON array for the workflow's args.reviewers
+# Full review (round 1, --full, moved base): security runs a second time from the entry points.
+[ -z "$DELTA_FROM" ] && REVIEWERS+=("ai-skills:security-reviewer@inward")
+
 REVIEWERS_JSON=$(printf '%s\n' "${REVIEWERS[@]}" | jq -R . | jq -sc .)
 ```
 
@@ -453,6 +501,8 @@ Workflow({
     tmpDir:   "<TMP_DIR>",
     reviewers: <REVIEWERS_JSON>,   // e.g. ["ai-skills:bug-reviewer", ...]
     prNumber:  <PR number or null>,
+    deltaFrom: <$DELTA_FROM, or omit when empty>,
+    openFindings: <$OPEN_JSON>,
     useJev:    <true when --jev, else omit>,
     jevScript: <$JV from Step 3e when --jev, else omit>
   }
@@ -558,7 +608,9 @@ python3 "$RENDER" ingest \
   --findings "$TMP_DIR/findings.json" \
   --run-id "$RUN_ID" --cache-key "$CACHE_KEY" \
   --files "$DIFF_FILES" --add "$DIFF_ADD" --del "$DIFF_DEL" \
-  --base-banner "$WRONG_BASE_BANNER" ${PR_NUMBER:+--pr "$PR_NUMBER"}
+  --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --delta-from "$DELTA_FROM" \
+  --base-banner "$(printf '%s\n' "$WRONG_BASE_BANNER" "$PLAN_BANNER" | sed '/^$/d')" \
+  ${PR_NUMBER:+--pr "$PR_NUMBER"}
 ```
 
 `ingest` writes `$STATE_FILE` (Step 5a is done — nothing else writes it),

@@ -8,6 +8,7 @@ outputs (a scannable terminal table, a full-detail markdown file).
 The model's only writing job is the 5-line summary, handed in via
 `--summary-file` so it lands above the table rather than below it.
 
+    render.py plan --base-sha <sha> [--full]   # round number + delta commit, as JSON
     render.py ingest --findings f.json --run-id wf_x --files 12 --add 998 --del 3
     render.py brief                        # compact digest, for writing the summary
     render.py show --summary-file s.md     # terminal report + report.md
@@ -121,6 +122,15 @@ def _tips(state: dict, active: list[dict], dismissed: list[dict]) -> list[str]:
     return tips[:2]
 
 
+def _step_back(state: dict, c: dict) -> str:
+    """Round 3 and still blocked: more line-by-line fixes rarely converge."""
+    rnd = int(state.get("round") or 1)
+    if rnd < 3 or not c["BLOCKER"]:
+        return ""
+    return (f"Round {rnd} with {c['BLOCKER']} BLOCKER left — step back and question the "
+            "approach before fixing line by line.")
+
+
 def terminal_report(p: F.Paths, state: dict, active, dismissed, summary: str) -> str:
     c = F.counts(active)
     v = state.get("verdict", "PASS")
@@ -129,14 +139,22 @@ def terminal_report(p: F.Paths, state: dict, active, dismissed, summary: str) ->
     bits = [head]
     if diff:
         bits.append(f"{diff.get('files', 0)} files, +{diff.get('add', 0)}/-{diff.get('del', 0)}")
+    rnd = int(state.get("round") or 1)
+    if rnd > 1:
+        bits.append(f"round {rnd}" + (" (delta)" if state.get("delta_from") else ""))
     if state.get("run_id"):
         bits.append(state["run_id"])
     lines = []
     if state.get("base_banner"):
         lines += [state["base_banner"], ""]
     lines.append(" · ".join(bits))
+    step_back = _step_back(state, c)
+    if step_back:
+        lines += ["", step_back]
 
     if not active and not dismissed:
+        if state.get("fixed_since"):
+            lines.append(f"{len(state['fixed_since'])} fixed since last round.")
         lines.append(f"No findings. Report: {p.report}")
         return "\n".join(lines) + "\n"
 
@@ -149,6 +167,11 @@ def terminal_report(p: F.Paths, state: dict, active, dismissed, summary: str) ->
         tally += f" · {sum(1 for f in active if f.get('fixed'))} fixed"
     if dismissed:
         tally += f" · {len(dismissed)} dismissed"
+    pre = [f for f in active if f.get("pre_existing")]
+    if pre:
+        tally += f" · {len(pre)} pre-existing"
+    if state.get("fixed_since"):
+        tally += f" · {len(state['fixed_since'])} fixed since last round"
     tally += (
         " — cannot merge until BLOCKER items are resolved."
         if v == "FAIL"
@@ -186,6 +209,8 @@ def _md_finding(f: dict) -> list[str]:
     if f.get("also_flagged_by"):
         who = ", ".join(a.get("reviewer", "?") for a in f["also_flagged_by"])
         extra += f" (also: {who})"
+    if f.get("still_open"):
+        extra += " (still open from last round)"
     if f.get("context_verdict") == "UNCERTAIN":
         extra += " ❔ ambiguous historical context"
     elif f.get("context_verdict") == "CONFLICT":
@@ -212,7 +237,12 @@ def markdown_report(state: dict, active, dismissed) -> str:
     out = [f"# Gate-WF Verdict: {state.get('verdict', 'PASS')}", ""]
     if state.get("base_banner"):
         out += [state["base_banner"], ""]
+    step_back = _step_back(state, c)
+    if step_back:
+        out += [step_back, ""]
     out += [
+        f"Round: {state.get('round') or 1}"
+        + (f" (delta since {str(state['delta_from'])[:10]})" if state.get("delta_from") else ""),
         f"Diff: {diff.get('files', 0)} files, +{diff.get('add', 0)}/-{diff.get('del', 0)}",
         f"Run: {state.get('run_id', '—')}",
         f"Generated: {state.get('cached_at', '—')}",
@@ -227,6 +257,17 @@ def markdown_report(state: dict, active, dismissed) -> str:
         out += [f"## {tier}", ""]
         for f in group:
             out += _md_finding(f)
+    pre = [f for f in active if f.get("pre_existing")]
+    if pre:
+        out += ["## Pre-existing (style on code last round already saw — not counted)", ""]
+        for f in pre:
+            out += _md_finding(f)
+    if state.get("fixed_since"):
+        out += ["## Fixed since last round", ""]
+        for f in state["fixed_since"]:
+            out += [f"- {f.get('tier')} `{f.get('rule_id')}` {f.get('file')}:{f.get('line')} — "
+                    f"{_one_line(f.get('message'))}"]
+        out += [""]
     fixed = [f for f in active if f.get("fixed")]
     if fixed:
         out += ["## Fixed by triage (not counted toward the verdict)", ""]
@@ -273,6 +314,7 @@ def cmd_ingest(p: F.Paths, a) -> int:
     # PR-thread dismissals the context-checker found this run enter the registry
     # before the partition, so they suppress in the same render.
     reg = F.load_registry(p)
+    prev = F.load_state(p)
     for f in items:
         # Ingest-time content identity — triage-findings compares against it to
         # drop findings whose code moved on since the gate ran.
@@ -293,8 +335,14 @@ def cmd_ingest(p: F.Paths, a) -> int:
             "dismissed_at": F.now_iso(),
         })
     F.save_registry(p, reg)
+    items, fixed_since = F.carry(p.root, prev, items, a.delta_from)
 
     state = {
+        "round": F.next_round(prev),
+        "head_sha": a.head_sha,
+        "base_sha": a.base_sha,
+        "delta_from": a.delta_from,
+        "fixed_since": fixed_since,
         "cache_key": a.cache_key or "",
         "cached_at": F.now_iso(),
         "run_id": a.run_id or "",
@@ -306,6 +354,11 @@ def cmd_ingest(p: F.Paths, a) -> int:
     }
     active, dismissed = _repartition(p, state)
     print(f"ingested {len(active)} active, {len(dismissed)} dismissed → {state['verdict']}")
+    return 0
+
+
+def cmd_plan(p: F.Paths, a) -> int:
+    print(json.dumps(F.plan(p.root, F.load_state(p), a.base_sha, a.full)))
     return 0
 
 
@@ -409,9 +462,16 @@ def main(argv=None) -> int:
     ing.add_argument("--cache-key", default="")
     ing.add_argument("--pr", default="")
     ing.add_argument("--base-banner", default="")
+    ing.add_argument("--head-sha", default="")
+    ing.add_argument("--base-sha", default="")
+    ing.add_argument("--delta-from", default="")
     ing.add_argument("--files", type=int, default=0)
     ing.add_argument("--add", type=int, default=0)
     ing.add_argument("--del", type=int, default=0, dest="del")
+
+    pl = sub.add_parser("plan")
+    pl.add_argument("--base-sha", required=True)
+    pl.add_argument("--full", action="store_true")
 
     sub.add_parser("brief")
 
@@ -428,6 +488,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     p = F.Paths()
     return {
+        "plan": cmd_plan,
         "ingest": cmd_ingest,
         "brief": cmd_brief,
         "show": cmd_show,

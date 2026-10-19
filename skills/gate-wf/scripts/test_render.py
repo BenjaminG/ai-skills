@@ -173,6 +173,84 @@ def test_end_to_end(tmp_state=True):
         assert "FAIL" in back
 
 
+def test_rounds_converge():
+    """Three gate runs on one branch, a /fixup rewrite between the first two:
+    an unfixed finding keeps failing the gate, a fixed one is reported as fixed,
+    a style finding on code the last round already saw stops counting, a bug
+    finding on that same code still counts, and round 3 with a BLOCKER asks
+    the author to step back."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "repo"
+        root.mkdir()
+        env = {**os.environ, "HOME": d, "NO_COLOR": "1"}
+        run = lambda *a: subprocess.run(a, cwd=root, env=env, capture_output=True, text=True)
+        git = lambda *a: run("git", "-c", "user.email=t@t", "-c", "user.name=t", *a)
+        script = str(Path(__file__).with_name("render.py"))
+        render = lambda *a: run(sys.executable, script, *a)
+        head = lambda: git("rev-parse", "HEAD").stdout.strip()
+
+        lines = [f"const v{i} = {i};" for i in range(1, 41)]
+        git("init", "-q", "-b", "main")
+        (root / "a.ts").write_text("\n".join(lines) + "\n")
+        git("add", "-A")
+        git("commit", "-qm", "c1")
+        c1 = head()
+
+        def ingest(fs, base="BASE1", sha=None):
+            p = Path(d) / "f.json"
+            p.write_text(json.dumps(fs))
+            return render("ingest", "--findings", str(p), "--head-sha", sha or head(),
+                          "--base-sha", base, "--delta-from",
+                          json.loads(render("plan", "--base-sha", base).stdout)["delta_from"])
+
+        mk = lambda tier, line, rule, reviewer, msg: {
+            "tier": tier, "file": "a.ts", "line": line, "rule_id": rule,
+            "reviewer": reviewer, "message": msg, "verifications": [{"refuted": False}]}
+
+        assert json.loads(render("plan", "--base-sha", "BASE1").stdout) == \
+            {"round": 1, "delta_from": "", "banner": ""}
+        out = ingest([mk("BLOCKER", 2, "bug-boundary", "bug-reviewer", "v2 overflows"),
+                      mk("NIT", 30, "slop-style-drift", "slop-reviewer", "v30 drifts")])
+        assert "FAIL" in out.stdout, out.stderr
+
+        # /fixup: rewrite c1 in place (amend), fixing line 30 only. c1 is no longer an
+        # ancestor of HEAD, yet the delta must still be just that fix.
+        lines[29] = "const v30 = 30 as const;"
+        (root / "a.ts").write_text("\n".join(lines) + "\n")
+        git("commit", "-qa", "--amend", "-m", "c1'")
+        plan = json.loads(render("plan", "--base-sha", "BASE1").stdout)
+        assert plan == {"round": 2, "delta_from": c1, "banner": ""}, plan
+
+        out = ingest([mk("NIT", 5, "simplify-redundant", "simplify-reviewer", "v5 redundant"),
+                      mk("MAJOR", 6, "bug-null-undefined", "bug-reviewer", "v6 can be null")])
+        assert "FAIL" in out.stdout, out.stderr  # the unfixed BLOCKER is carried forward
+        state = json.loads(next((Path(d) / ".claude/gate-wf-state").rglob("main.json")).read_text())
+        by_rule = {f["rule_id"]: f for f in state["findings"]}
+        assert by_rule["bug-boundary"].get("still_open") is True
+        assert by_rule["simplify-redundant"].get("pre_existing") is True  # style, unchanged line
+        assert not by_rule["bug-null-undefined"].get("pre_existing")  # bugs keep full scope
+        assert [f["rule_id"] for f in state["fixed_since"]] == ["slop-style-drift"]
+        assert F.counts(state["findings"]) == {"BLOCKER": 1, "MAJOR": 1, "NIT": 0}
+
+        shown = render("show").stdout
+        assert "round 2" in shown and "1 fixed since last round" in shown
+        assert "1 pre-existing" in shown
+        md = next((Path(d) / ".claude/gate-wf-state").rglob("*.report.md")).read_text()
+        assert "## Pre-existing" in md and "## Fixed since last round" in md
+
+        # Round 3, BLOCKER still there → step back.
+        git("commit", "-q", "--allow-empty", "-m", "c3")
+        out = ingest([])
+        shown = render("show").stdout
+        assert "FAIL" in shown and "step back" in shown.lower(), shown
+
+        # A rebase onto a new base turns the delta off.
+        plan = json.loads(render("plan", "--base-sha", "BASE2").stdout)
+        assert plan["round"] == 4 and plan["delta_from"] == "" and plan["banner"], plan
+        # --full too.
+        assert json.loads(render("plan", "--base-sha", "BASE1", "--full").stdout)["delta_from"] == ""
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,6 +104,13 @@ def now_iso() -> str:
 # --- content anchor ----------------------------------------------------------
 
 
+def _anchor_of(rule_id: str, file: str, raw: str) -> str | None:
+    txt = " ".join(raw.split())
+    if not txt:
+        return None
+    return hashlib.sha1(f"{rule_id}::{file}::{txt}".encode()).hexdigest()[:12]
+
+
 def anchor(root: Path, rule_id: str, file: str, line) -> str | None:
     """Content identity of a finding: sha(rule_id::file::normalized line at HEAD).
 
@@ -120,14 +128,130 @@ def anchor(root: Path, rule_id: str, file: str, line) -> str | None:
         with open(root / file, "r", errors="replace") as fh:
             for i, raw in enumerate(fh, 1):
                 if i == n:
-                    txt = " ".join(raw.split())
-                    if not txt:
-                        return None
-                    key = f"{rule_id}::{file}::{txt}"
-                    return hashlib.sha1(key.encode()).hexdigest()[:12]
+                    return _anchor_of(rule_id, file, raw)
     except OSError:
         return None
     return None
+
+
+def locate(root: Path, f: dict) -> int | None:
+    """Line where a finding's anchored text sits now — its own line first, so a
+    duplicate line elsewhere never steals it. None once the text is gone, which
+    is what "fixed since last round" means."""
+    a0 = f.get("anchor0")
+    if not a0:
+        return None
+    try:
+        lines = (root / f.get("file", "")).read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    try:
+        own = int(f.get("line") or 0)
+    except (TypeError, ValueError):
+        own = 0
+    order = ([own] if 1 <= own <= len(lines) else []) + list(range(1, len(lines) + 1))
+    for n in order:
+        if _anchor_of(f.get("rule_id", ""), f.get("file", ""), lines[n - 1]) == a0:
+            return n
+    return None
+
+
+# --- rounds ------------------------------------------------------------------
+
+# Reviewers that re-read the whole branch every round. A bug the first round
+# missed only turns up again on a full read (replayed on PRs 16575/16728), so
+# their findings count wherever they land. The rest — style and documented
+# rules — read only what changed since the last round.
+FULL_SCOPE = ("bug-reviewer", "security-reviewer", "migration-reviewer")
+PRE_EXISTING_MARGIN = 10
+
+
+def full_scope(f: dict) -> bool:
+    return str(f.get("reviewer", "")).split("@")[0] in FULL_SCOPE
+
+
+def _exists(root: Path, obj: str) -> bool:
+    return subprocess.run(["git", "cat-file", "-e", obj], cwd=root, capture_output=True).returncode == 0
+
+
+def next_round(prev: dict) -> int:
+    # A state written before rounds existed is still a previous round.
+    return int(prev.get("round") or (1 if prev else 0)) + 1
+
+
+def plan(root: Path, prev: dict, base_sha: str, full: bool = False) -> dict:
+    """Round number, and the commit to diff from when only the delta is reviewed.
+
+    Ancestry is not required: /fixup rewrites history, but `git diff A B` compares
+    trees, so the delta is exactly the fold. A moved base is the one case a tree
+    diff gets wrong (main's changes would leak in), so that falls back to a full
+    review — as does a last commit git has since pruned.
+    """
+    rnd = next_round(prev)
+    last, delta, banner = prev.get("head_sha", ""), "", ""
+    if last and not full:
+        if prev.get("base_sha") == base_sha and _exists(root, f"{last}^{{commit}}"):
+            delta = last
+        else:
+            banner = "Base moved or last round's commit is gone — full review this round."
+    return {"round": rnd, "delta_from": delta, "banner": banner}
+
+
+def delta_hunks(root: Path, since: str, file: str) -> list[tuple[int, int]] | None:
+    """New-side line ranges of `file` changed since `since`; None when the file
+    did not exist then (everything in it is new)."""
+    if not _exists(root, f"{since}:{file}"):
+        return None
+    out = _git("diff", "-U0", since, "HEAD", "--", file, cwd=str(root))
+    hunks = []
+    for m in re.finditer(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", out, re.M):
+        start, n = int(m[1]), int(m[2]) if m[2] is not None else 1
+        hunks.append((start, start + max(n, 1) - 1))
+    return hunks
+
+
+def pre_existing(root: Path, since: str, f: dict) -> bool:
+    """The flagged line was already there last round, away from anything changed since."""
+    hunks = delta_hunks(root, since, f.get("file", ""))
+    if hunks is None:
+        return False
+    try:
+        line = int(f.get("line") or 0)
+    except (TypeError, ValueError):
+        return False
+    m = PRE_EXISTING_MARGIN
+    return all(not (s - m <= line <= e + m) for s, e in hunks)
+
+
+def carry(root: Path, prev: dict, found: list[dict], delta_from: str) -> tuple[list, list]:
+    """Merge this round's findings with the last round's.
+
+    A finding last round raised whose text is still there stays open and keeps
+    counting — re-found or not — so an unfixed BLOCKER keeps failing the gate
+    without being re-verified. One whose text is gone is fixed. A new style
+    finding on code last round already saw is pre-existing: shown, not counted.
+    Returns (findings, fixed_since).
+    """
+    open_by_anchor, fixed = {}, []
+    for f in prev.get("findings", []):
+        if f.get("pre_existing"):
+            continue
+        n = locate(root, f)
+        if n is None:
+            fixed.append({k: f.get(k) for k in ("tier", "rule_id", "file", "line", "message")})
+            continue
+        f = {k: v for k, v in f.items() if k not in ("id", "fixed")}
+        f["line"], f["still_open"] = n, True
+        open_by_anchor[f["anchor0"]] = f
+    out = []
+    for f in found:
+        if f.get("anchor0") and f["anchor0"] in open_by_anchor:
+            open_by_anchor.pop(f["anchor0"])
+            f["still_open"] = True
+        elif delta_from and not full_scope(f) and pre_existing(root, delta_from, f):
+            f["pre_existing"] = True
+        out.append(f)
+    return out + list(open_by_anchor.values()), fixed
 
 
 # --- partition, verdict, ids -------------------------------------------------
@@ -164,8 +288,8 @@ def partition(root: Path, findings: list[dict], reg: dict) -> tuple[list, list]:
 def counted(active: list[dict]) -> list[dict]:
     """Findings that still weigh on the verdict. A finding triage-findings has
     fixed stays in the state file — the run's record of what was done — but
-    stops counting, the same way a dismissed one does."""
-    return [f for f in active if not f.get("fixed")]
+    stops counting, the same way a dismissed one does. So does a pre-existing one."""
+    return [f for f in active if not f.get("fixed") and not f.get("pre_existing")]
 
 
 def counts(active: list[dict]) -> dict:
