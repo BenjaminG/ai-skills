@@ -154,4 +154,4 @@ Print:
 
 - **Why a dedicated skill:** `qa-plan --linear` intentionally creates the sub-issue *without* a label (label names vary per team) and tells the user to add it manually — which, for this team's bot, silently fails to notify. This skill is the label-at-creation path that reliably triggers the announcement.
 - **The bot resolves the env itself** from the issue/parent's linked PR, but including the env block in the body gives the PM the links inline and survives if the bot's resolution changes.
-- **Scope:** announcement only. For the test checklist itself, use `qa-plan`; to execute it, use `qa-run`.
+- **Scope:** announcement only. For the test checklist itself, use `qa-plan`.
