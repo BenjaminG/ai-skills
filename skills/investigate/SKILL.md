@@ -58,6 +58,8 @@ Spawn both with `Agent` (`subagent_type: "Explore"`) in a single message, each c
 
 Done when every key term of §5 has been searched by at least one agent.
 
+**Bug** (§5 describes an observed symptom): in the same turn as the `Agent` calls, build and publish the explainer draft per [`references/bug-explainer.md`](references/bug-explainer.md), without waiting for either agent.
+
 **Bug with an error signature**: also query Datadog logs for that signature/tenant when the Datadog MCP is present, so the root cause is checked against production and not code alone.
 
 ## 7. Synthesize and plan
@@ -74,6 +76,11 @@ is left undefined, and old-vs-new fields are flagged as such.
 
 **Technical detail** — root cause with `file:line`, the evidence behind it, and
 the files, tests and docs to touch.
+
+**Bug**: republish the explainer with the diagnosis per
+[`references/bug-explainer.md`](references/bug-explainer.md). The artifact then
+carries **What is happening**; the terminal keeps the cause in two sentences,
+the artifact link, and **Technical detail**.
 
 If the issue is clear and actionable, switch to plan mode with those code
 changes. Otherwise, name the precise areas to dig next round.
