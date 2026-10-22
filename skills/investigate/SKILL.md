@@ -64,8 +64,15 @@ Done when every key term of §5 has been searched by at least one agent.
 
 ## 7. Synthesize and plan
 
-Merge both syntheses into one picture, then report it in two blocks — plain
-language first, technical detail second. Answer in the user's language.
+Merge both syntheses into one picture. Before reporting, check every factual
+claim yourself — the ticket's, the thread's, the user's and the agents' — against
+code, prod data (BigQuery, Datadog, local clone) and the attached files (open the
+PDF). Run a read-only check rather than ask whether to run it. A claim no source
+can confirm stays in the report labelled **not reproduced**, never stated as the
+cause.
+
+Then report it in two blocks — plain language first, technical detail second.
+Answer in the user's language.
 
 **What is happening** — apply the `explain-plainly` skill to your own conclusion:
 open with the purpose and the user-visible symptom in two sentences with zero
@@ -74,7 +81,8 @@ so if the real ones aren't at hand), then a one-row-per-term table mapping every
 identifier, field name and domain word to everyday words. No term you use below
 is left undefined, and old-vs-new fields are flagged as such.
 
-**Technical detail** — root cause with `file:line`, the evidence behind it, and
+**Technical detail** — root cause with `file:line`, each claim tagged
+**verified** (the query or `file:line` that proves it) or **not reproduced**, and
 the files, tests and docs to touch.
 
 **Bug**: republish the explainer with the diagnosis per
