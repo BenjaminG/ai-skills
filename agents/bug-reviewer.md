@@ -26,7 +26,7 @@ bug-async-ordering, bug-state-machine, bug-other
 | `bug-boundary`          | array index/length, integer overflow, empty input, single-element collection, exact-equality on float                                                                                                                     |
 | `bug-null-undefined`    | use of value that may be null/undefined without a guard; chained `.foo.bar` past an optional                                                                                                                              |
 | `bug-async-ordering`    | missing `await`, fire-and-forget, race between two awaits that share state, stale closure capturing old state                                                                                                             |
-| `bug-state-machine`     | invalid transition, action runs in a state that cannot reach the precondition, validation skipped on one path                                                                                                             |
+| `bug-state-machine`     | invalid transition, action runs in a state that cannot reach the precondition, validation skipped on one path. **Also**: the diff adds a new writer of a lifecycle field (step 4) that skips a guard another writer of that field enforces, leaves a field the old state stamped at creation, or drops rows a reader still selects on the old value |
 | `bug-other`             | correctness defect that does not fit above; default — prefer one of the above                                                                                                                                             |
 
 ## Process
@@ -37,8 +37,13 @@ bug-async-ordering, bug-state-machine, bug-other
    - **Spec parity**: does the PR body / commit message / context bundle describe a behavior that the code does NOT implement? Quote the claim, quote the code, show the gap.
    - **Cross-file parity**: does this diff implement a behavior that already exists canonically elsewhere in the repo? If yes, find the canonical implementation (`grep -rn`) and compare. Flag divergences.
 3. **Field-flow trace** (bounded): trace only fields whose read/write/forwarding the **diff changes** — not every field the changed lines touch. For each, open its definition (schema / DTO / type — even if not in the diff) and its consumers (`grep -rn`); stop tracing a field once two consumers confirm parity. A field honored on one path and silently ignored on another is `bug-cross-file-parity`. Pay special attention to `...rest`/spread/passthrough that carries a field into a stored payload past a derivation that never consults it. **Cap the whole trace phase at ~15 Read/Grep calls** — if a defect needs more than that to reach, it is out of scope for this gate.
-4. For `bug-silent-failure`: scan for error counters, `errors[]` arrays, `try { ... } catch { log }` blocks. Trace whether the caller can distinguish success from partial failure. If not, flag.
-5. Look at the **PR body / context bundle** (passed to you in the prompt). Any claim of the form "X is recomputed via Y", "rows where A are skipped", "fallback to B when C is missing" is a spec claim — verify the code matches.
+4. **Transition trace** (own budget, ~6 Grep/Read calls): when the diff **writes** a lifecycle field on an existing record (`status`, `is*`, `kind`, `type`: a flag flipped, a status moved), look outside the diff for its three neighbours. Each gap is `bug-state-machine`:
+   - **Other writers** of the same field and value: the guards and permissions they check before writing. One the new path skips is the finding (`updateHeader` refuses publishing an archived record without a permission, the new `validate()` publishes it anyway).
+   - **The builder of the old state**: the fields it stamps because the record was in that state (a placeholder slug, a draft-only default). Which ones turn wrong once the record leaves that state and nothing in the diff rewrites them?
+   - **Readers filtering on the old value** (`{ isPlaceholder: true }`, `status: DRAFT`): which lookup stops finding the record after the transition, and does it then create a duplicate or take another branch?
+   A reader or writer the diff itself updates is not a gap. Cite both sides with `file:line`.
+5. For `bug-silent-failure`: scan for error counters, `errors[]` arrays, `try { ... } catch { log }` blocks. Trace whether the caller can distinguish success from partial failure. If not, flag.
+6. Look at the **PR body / context bundle** (passed to you in the prompt). Any claim of the form "X is recomputed via Y", "rows where A are skipped", "fallback to B when C is missing" is a spec claim — verify the code matches.
 
 ## Anti-patterns — what NOT to flag
 
