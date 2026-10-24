@@ -2,8 +2,9 @@
 
 The prompt of the agent that owns one PR, shared by the `babysit-prs` manager and the `/shepherd`
 autopilot mod (`hooks/babysit.ts`), which reads this file. Everything between the two rules is the
-prompt. Substitute `<n>`, `<base>` and `<parent>` from the PR's scan row, `<head>` with its
-`branch`, and `<state_dir>` with the blob's, expanded to its absolute path, never `$STATE_DIR`. Keep the `[stacked: …]` clause's text without its
+prompt. Substitute `<n>`, `<base>` and `<parent>` from the PR's row of the pr-dash State, `<head>`
+with its `branch`, and `<state_dir>` with `pr-dash state-dir`'s output, an absolute path without its
+trailing `/`, never `$STATE_DIR`. Keep the `[stacked: …]` clause's text without its
 brackets when the row's `parent` is a PR number; drop the clause when `parent` is null.
 
 ---
@@ -59,7 +60,7 @@ memory, or the git history — reply in that bot's thread with your adjudication
 it leaves open**, **leave the thread open**, and count the item as held with a one-line gist. Do
 not decide for the author, and do not resolve the thread either: a resolved thread is one the
 author cannot find, and the dashboard only carries the gist. Your reply is the last word on it,
-which is what tells the scan this thread waits on a human and stops it spawning an agent here
+which is what tells the pr-dash Scan service this thread waits on a human and stops it spawning an agent here
 forever. Held is for a question, never for an explanation — if your reply ends the matter, resolve.
 
 **A check an earlier agent already tried to fix** means the obvious cause is not the cause. You

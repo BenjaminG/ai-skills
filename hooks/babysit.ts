@@ -1,22 +1,26 @@
 import type { EngineInterface as Engine, Register, Timer } from 'claude-code'
 
 const ID = 'shepherd'
-// pr-scan's own first pass spawns in waves of about four; the same bound caps a runaway loop.
+// The skill's first pass spawns in waves of about four; the same bound caps a runaway loop.
 const MAX_AGENTS = 4
 const DEBOUNCE_MS = 2_000
 const POLL_MS = 5_000
+const ENSURE_MS = 5 * 60_000
 // ponytail: a flat grace for an agent's background command; one running longer than this with no
 // report yet loses its mute early. Per-agent tracking of background children if that ever happens.
 const GRACE_MS = 10 * 60_000
 const LOCKED = 'babysit-prs already active'
 const ARGS = /^(?:\d+|--include-drafts)$/
 const USAGE = 'Usage: /shepherd [dry|stop] [PR…] [--include-drafts]'
-const SCAN = '/skills/pr-dash/scripts/pr-scan.py'
+const INSTALL = 'pr-dash not found: npm i -g github:BenjaminG/pr-dash'
+const SCHEMA_VERSION = 4
+const WATCH = '/skills/babysit-prs/scripts/watch.sh'
 const PROMPT = '/skills/babysit-prs/references/agent-prompt.md'
 
-/** One PR of pr-scan's blob, the fields the manager reads. */
+/** One row of pr-dash's state.json, the fields the manager reads. */
 type Row = {
   number: number
+  draft: boolean
   branch: string
   base: string
   head: string
@@ -29,7 +33,7 @@ type Row = {
   report: { blocked?: string | null } | null
 }
 
-type Scan = { state_dir: string; prs: Row[] }
+type State = { schema_version: number; error: { message: string } | null; prs: Row[] }
 
 type Follow = ReturnType<Engine['process']['spawn']>
 
@@ -39,6 +43,7 @@ let mode: 'off' | 'dry' | 'on' = 'off'
 let args: string[] = []
 let follow: Follow | null = null
 let poll: Timer | null = null
+let keepAlive: Timer | null = null
 let pending: Timer | null = null
 let passing = false
 let again = false
@@ -158,29 +163,62 @@ async function reap($: Engine, n: number, at: number) {
   await status($)
 }
 
-function parsed(stdout: string): Scan | null {
-  try {
-    return JSON.parse(stdout) as Scan
-  } catch {
-    return null
+/** The State's rows this run babysits: the named PRs, else every one but the drafts unless asked. */
+async function select($: Engine, prs: Row[]) {
+  const named = args.filter(a => a !== '--include-drafts').map(Number)
+
+  if (named.length === 0) {
+    return args.includes('--include-drafts') ? prs : prs.filter(r => !r.draft)
   }
+
+  for (const n of named) {
+    await tell($, `absent:${n}`, !prs.some(r => r.number === n), `babysit: #${n} is not one of your open PRs; skipped`)
+  }
+
+  return prs.filter(r => named.includes(r.number))
+}
+
+/** state.json, or why there is none to act on. */
+async function readState($: Engine, dir: string): Promise<State | string> {
+  const text = await $.fs.read(`${dir}/state.json`).catch(() => null)
+  const state = typeof text === 'string' ? (JSON.parse(text) as State) : null
+
+  if (state === null) {
+    return 'no State yet'
+  }
+
+  if (state.schema_version !== SCHEMA_VERSION) {
+    return `pr-dash writes State v${state.schema_version}, this reads v${SCHEMA_VERSION}; update ai-skills or pr-dash`
+  }
+
+  return state
 }
 
 async function passOnce($: Engine) {
-  const run = await shell($, ['python3', `${$.plugin.root}${SCAN}`, ...args])
-  const scan = run.exitCode === 0 ? parsed(run.stdout) : null
+  if (stateDir === null) {
+    return
+  }
 
-  if (scan === null) {
-    await tell($, 'scan', true, `babysit: pr-scan failed: ${(run.stderr.trim() || run.stdout.trim()).slice(0, 200)}`)
+  if (mode === 'on') {
+    // wake --wait exits 1 when no fresh State came in time; the last one is still worth a pass.
+    await shell($, ['pr-dash', 'wake', '--wait'])
+  }
+
+  const state = await readState($, stateDir)
+
+  if (typeof state === 'string') {
+    await tell($, 'scan', true, `babysit: ${state}`)
 
     return
   }
 
   told.delete('scan')
-  stateDir = scan.state_dir
+  // A failed pass keeps the last good rows: say why once, and act on them.
+  await tell($, 'error', state.error !== null, `babysit: pr-dash: ${state.error?.message}`)
+  const prs = await select($, state.prs)
   const due: Row[] = []
 
-  for (const r of scan.prs) {
+  for (const r of prs) {
     const isDue = r.needs_agent && r.waits_on === null && !r.agent_running && !r.report?.blocked
     if (isDue) {
       due.push(r)
@@ -195,10 +233,10 @@ async function passOnce($: Engine) {
   }
 
   if (mode === 'on') {
-    const slots = MAX_AGENTS - scan.prs.filter(r => r.agent_running).length
+    const slots = MAX_AGENTS - prs.filter(r => r.agent_running).length
 
     for (const r of due.slice(0, Math.max(0, slots))) {
-      await spawnFor($, r, scan.state_dir)
+      await spawnFor($, r, stateDir)
     }
   }
 
@@ -247,14 +285,16 @@ async function stop($: Engine) {
   const stream = follow
   follow = null
   poll?.cancel()
+  keepAlive?.cancel()
   pending?.cancel()
   poll = null
+  keepAlive = null
   pending = null
   void stream?.return({ code: null, signal: null })
   await status($)
 }
 
-/** pr-scan's watch: it holds babysit.lock and keeps the scan service alive; each line is a transition. */
+/** watch.sh holds babysit.lock around `pr-dash follow`, which keeps the service alive; each line is a transition. */
 async function watch($: Engine, stream: Follow) {
   try {
     for await (const { text } of stream) {
@@ -297,13 +337,27 @@ async function start($: Engine, next: 'dry' | 'on', selection: string[]) {
   mode = next
   args = selection
   told.clear()
+  const run = await $.process.run(['pr-dash', 'state-dir']).catch(() => null)
+
+  if (run?.exitCode !== 0) {
+    await $.ui.toast(`babysit: ${run === null ? INSTALL : run.stderr.trim()}`)
+    await stop($)
+
+    return
+  }
+
+  stateDir = run.stdout.trim().replace(/\/$/, '')
 
   if (next === 'on') {
-    const stream = $.process.spawn({ argv: ['python3', `${$.plugin.root}${SCAN}`, '--follow', ...selection] })
+    const stream = $.process.spawn({
+      argv: [`${$.plugin.root}${WATCH}`, ...selection.filter(a => a !== '--include-drafts')],
+    })
     follow = stream
     void watch($, stream)
     await pass($)
   } else {
+    await shell($, ['pr-dash', 'ensure'])
+    keepAlive = $.clock.every(ENSURE_MS, () => void shell($, ['pr-dash', 'ensure']))
     await pass($)
     seen = await stateMtime($)
     poll = $.clock.every(POLL_MS, () => void tick($))

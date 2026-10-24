@@ -1,9 +1,10 @@
 import type { On, TurnCompleteInput } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
 
-import { SESSION, command, world } from './fixtures'
+import { SESSION, command, stateOf, stateRow, world } from './fixtures'
 
 const DIR = '/state/naboo'
+const WATCH = new URL('../skills/babysit-prs/scripts/watch.sh', import.meta.url).pathname
 
 /** The shared agent prompt, as references/agent-prompt.md frames it. */
 const PROMPT = `# PR agent prompt
@@ -17,46 +18,22 @@ Own PR #<n> on <head> onto \`<base>\` [stacked: (stacked on **PR #<parent>**)], 
 ---
 `
 
-type Row = {
-  number: number
-  branch: string
-  base: string
-  head: string
-  parent: number | null
-  needs_agent: boolean
-  waits_on: number | null
-  agent_running: boolean
-  merge_ready: boolean
-  held: number
-  report: { blocked: string | null } | null
-}
+/** A state.json row with one bot thread waiting and no agent on it. */
+const row = (number: number, over: Record<string, unknown> = {}) =>
+  stateRow(number, { status: 'bot', unresolved_bot: 1, threads_bot_open: 1, needs_agent: true, ...over })
 
-/** A row of pr-scan's blob: a PR with one bot thread waiting, no agent on it. */
-const row = (number: number, over: Partial<Row> = {}): Row => ({
-  number,
-  branch: `feat/${number}`,
-  base: 'dev',
-  head: 'aaaaaaa',
-  parent: null,
-  needs_agent: true,
-  waits_on: null,
-  agent_running: false,
-  merge_ready: false,
-  held: 0,
-  report: null,
-  ...over,
-})
+type Row = ReturnType<typeof row>
 
 /** A spawn as the engine beneath receives it: the Agent tool's input. */
 type Spawn = { description: string; prompt: string; name?: string; model?: string; subagent_type?: string }
 
 /**
- * The world beneath /shepherd: pr-scan answering `scan.prs` (and `scan.mtimeMs` as state.json's),
- * its `--follow` watch fed line by line, files, the session's agents (`agents`) and the status
- * line kept.
+ * The world beneath /shepherd: pr-dash on PATH with its state dir at DIR, state.json holding
+ * `scan.prs` and `scan.error` (written at `scan.mtimeMs`), the watch fed line by line, files, the session's
+ * agents (`agents`) and the status line kept.
  */
-function engine(on: On, { deny = false, prompt = true } = {}) {
-  const scan = { prs: [] as Row[], mtimeMs: 1 }
+function engine(on: On, { deny = false, prompt = true, missing = false } = {}) {
+  const scan = { prs: [] as Row[], mtimeMs: 1, error: null as { at: string; message: string } | null }
   const files = new Set<string>()
   const spawned: Spawn[] = []
   const agents: { id: string; description: string; type: string; status: string; spawnedBy?: string }[] = []
@@ -74,11 +51,12 @@ function engine(on: On, { deny = false, prompt = true } = {}) {
 
   const w = world(on, {
     run: argv => {
-      if (argv[0] === 'python3') {
-        // As pr-scan reads it: a mute file on disk is an agent alive on that PR.
-        const prs = scan.prs.map(r => ({ ...r, agent_running: r.agent_running || files.has(`${DIR}/${r.number}.muted`) }))
+      if (argv[0] === 'pr-dash') {
+        if (missing) {
+          throw new Error('spawn pr-dash ENOENT')
+        }
 
-        return { stdout: JSON.stringify({ state_dir: DIR, prs }) }
+        return argv[1] === 'state-dir' ? { stdout: `${DIR}/\n` } : {}
       }
       if (argv[0] === 'rm') {
         files.delete(argv[2] ?? '')
@@ -91,6 +69,15 @@ function engine(on: On, { deny = false, prompt = true } = {}) {
   })
 
   on('fs.read', ($, e) => {
+    if (e.path === `${DIR}/state.json`) {
+      // As the Scan service writes it: a mute file on disk is an agent alive on that PR.
+      return {
+        value: stateOf(
+          scan.prs.map(r => ({ ...r, agent_running: r.agent_running || files.has(`${DIR}/${r.number}.muted`) })),
+          { error: scan.error },
+        ),
+      }
+    }
     if (!prompt) {
       throw new Error(`ENOENT: ${e.path}`)
     }
@@ -126,7 +113,7 @@ function engine(on: On, { deny = false, prompt = true } = {}) {
     }
   })
 
-  /** pr-scan's watch prints a transition line; the pass it sets off runs after the debounce. */
+  /** The watch prints an events.log line; the pass it sets off runs after the debounce. */
   const emit = async (line: string) => {
     follow.queue.push(line)
     follow.wake?.()
@@ -157,7 +144,11 @@ describe('babysit', () => {
     expect(await $.command.run(babysit())).toMatchObject({ text: expect.stringContaining('babysit on') })
     await w.clock.settle()
 
-    expect(w.follow.argv.slice(-1)).toEqual(['--follow'])
+    expect(w.follow.argv, 'the lock wrapper around pr-dash follow, every PR').toEqual([WATCH])
+    expect(w.runs.slice(0, 2), 'a pass reads the State a fresh wake wrote').toEqual([
+      ['pr-dash', 'state-dir'],
+      ['pr-dash', 'wake', '--wait'],
+    ])
     expect(w.files.has(`${DIR}/12.muted`)).toBe(true)
     expect(w.spawned).toHaveLength(1)
     expect(w.spawned[0]).toMatchObject({ subagent_type: 'general-purpose', model: 'opus', description: 'Own PR #12' })
@@ -228,10 +219,21 @@ describe('babysit', () => {
     await w.clock.advance(5_000)
 
     expect(w.toasts.filter(t => t.includes('would spawn an agent on #50'))).toHaveLength(1)
+
+    w.scan.prs = [row(50), row(51)]
+    w.scan.mtimeMs = 3
+    await w.clock.advance(5_000)
+    expect(w.toasts.filter(t => t.includes('would spawn')), 'state.json moved: one more pass').toEqual([
+      'babysit dry: would spawn an agent on #50',
+      'babysit dry: would spawn an agent on #51',
+    ])
+
+    await w.clock.advance(5 * 60_000)
     expect(w.spawned).toHaveLength(0)
     expect(w.files.size).toBe(0)
     expect(w.follow.argv, 'dry runs beside a manager: it never takes the watch lock').toEqual([])
-    expect(w.runs.filter(r => r[0] === 'python3'), 'a pass on start, one when state.json moved').toHaveLength(2)
+    expect(w.runs.filter(r => r[1] === 'wake'), 'dry never asks for a pass').toHaveLength(0)
+    expect(w.runs.filter(r => r[1] === 'ensure'), 'on start, then every 5 min').toHaveLength(2)
   })
 
   test('another manager holding the watch: a toast, no agent', async ($, on) => {
@@ -241,7 +243,7 @@ describe('babysit', () => {
     await $.command.run(babysit())
     await w.clock.settle()
     w.scan.prs = [row(60)]
-    await w.emit('scan error: babysit-prs already active (pid 4242)')
+    await w.emit('babysit-prs already active (pid 4242)')
 
     expect(w.toasts.some(t => t.includes('already babysitting'))).toBe(true)
     expect(w.spawned).toHaveLength(0)
@@ -308,22 +310,70 @@ describe('babysit', () => {
     expect(w.statuses.at(-1)).toBe('babysit · 0 agents')
   })
 
-  test('merge-ready and held are told once each; /shepherd again stops the watch', async ($, on) => {
+  test('named PRs are the selection: merge-ready and held told once each, one not in the State skipped', async ($, on) => {
     const w = engine(on)
-    w.scan.prs = [row(90, { needs_agent: false, merge_ready: true }), row(91, { needs_agent: false, held: 1 })]
+    w.scan.prs = [row(90, { needs_agent: false, merge_ready: true }), row(91, { needs_agent: false, held: 1 }), row(92)]
     await $.session.start(SESSION)
 
-    await $.command.run(babysit('90 91 --include-drafts'))
+    await $.command.run(babysit('90 91 99'))
     await w.clock.settle()
     await w.emit('#90 ci PENDING→SUCCESS')
 
-    expect(w.follow.argv.slice(-4)).toEqual(['--follow', '90', '91', '--include-drafts'])
+    expect(w.follow.argv).toEqual([WATCH, '90', '91', '99'])
+    expect(w.spawned, '#92 is not selected').toHaveLength(0)
+    expect(w.toasts.filter(t => t.includes('#99'))).toEqual(['babysit: #99 is not one of your open PRs; skipped'])
     expect(w.toasts.filter(t => t.includes('#90 is merge-ready'))).toHaveLength(1)
     expect(w.toasts.filter(t => t.includes('#91') && t.includes('/pr-explain 91'))).toHaveLength(1)
 
     expect(await $.command.run(babysit())).toMatchObject({ text: expect.stringContaining('babysit off') })
     await w.emit('#90 merge_state CLEAN→BEHIND')
     expect(w.follow.ended).toBe(true)
+    expect(w.statuses.at(-1)).toBeUndefined()
+  })
+
+  test('a draft gets no agent unless --include-drafts', async ($, on) => {
+    const w = engine(on)
+    w.scan.prs = [row(95, { draft: true }), row(96)]
+    await $.session.start(SESSION)
+
+    await $.command.run(babysit())
+    await w.clock.settle()
+    expect(w.spawned.map(s => s.description)).toEqual(['Own PR #96'])
+  })
+
+  test('--include-drafts babysits a draft like any PR', async ($, on) => {
+    const w = engine(on)
+    w.scan.prs = [row(95, { draft: true })]
+    await $.session.start(SESSION)
+
+    await $.command.run(babysit('--include-drafts'))
+    await w.clock.settle()
+    expect(w.spawned.map(s => s.description)).toEqual(['Own PR #95'])
+    expect(w.follow.argv, 'a flag of the selection, not of pr-dash follow').toEqual([WATCH])
+  })
+
+  test('a State with an error is told once and its last good rows still get their agent', async ($, on) => {
+    const w = engine(on)
+    w.scan.prs = [row(98)]
+    w.scan.error = { at: '2026-10-24T10:02:00.000Z', message: 'API rate limit exceeded' }
+    await $.session.start(SESSION)
+
+    await $.command.run(babysit())
+    await w.clock.settle()
+    await w.emit('scan error: API rate limit exceeded')
+    expect(w.toasts.filter(t => t.includes('rate limit'))).toEqual(['babysit: pr-dash: API rate limit exceeded'])
+    expect(w.spawned.map(s => s.description)).toEqual(['Own PR #98'])
+  })
+
+  test('a missing pr-dash stops with the install line', async ($, on) => {
+    const w = engine(on, { missing: true })
+    w.scan.prs = [row(97)]
+    await $.session.start(SESSION)
+
+    await $.command.run(babysit())
+    await w.clock.settle()
+    expect(w.toasts).toContain('babysit: pr-dash not found: npm i -g github:BenjaminG/pr-dash')
+    expect(w.spawned).toHaveLength(0)
     expect(w.statuses.at(-1)).toBeUndefined()
   })
 

@@ -38,18 +38,59 @@ export const pane = (id: string): RenderInput<'Pane'> => ({
   },
 })
 
+/** A row of pr-dash's state.json (schema v4): an open PR in review, green, nothing waiting on anyone. */
+export const stateRow = (number: number, over: Record<string, unknown> = {}) => ({
+  number,
+  url: `https://github.com/o/n/pull/${number}`,
+  title: `PR ${number}`,
+  author: 'me',
+  draft: false,
+  branch: `feat/${number}`,
+  base: 'dev',
+  merge_state: 'BLOCKED',
+  stack: null,
+  stack_pos: null,
+  mergeable: 'MERGEABLE',
+  queued: false,
+  ci: 'SUCCESS',
+  head: 'aaaaaaa',
+  additions: 1,
+  deletions: 0,
+  files: 1,
+  unresolved_bot: 0,
+  unresolved_human: 0,
+  held: 0,
+  humans: [],
+  threads_bot_open: 0,
+  threads_bot_closed: 0,
+  threads_human_open: 0,
+  threads_human_closed: 0,
+  seen: {},
+  status: 'review',
+  merge_ready: false,
+  parent: null,
+  stack_members: [number],
+  needs_agent: false,
+  waits_on: null,
+  agent_running: false,
+  report: null,
+  ...over,
+})
+
+/** state.json's text, as pr-dash's Scan service writes it. */
+export const stateOf = (prs: object[], over: Record<string, unknown> = {}) =>
+  JSON.stringify({ schema_version: 4, taken_at: '2026-10-24T10:00:00.000Z', repo: 'o/n', error: null, prs, ...over })
+
 type Answer = { stdout?: string; stderr?: string; exitCode?: number }
 
 /**
  * The world beneath the plugin: a session in /work, one process answering
- * `stdout` (or failing with `stderr`), or `run` answering per argv; panes,
+ * `stdout` (or failing with `stderr`), or `run` answering per argv (a throw is a
+ * command that cannot start); panes,
  * prompt fills and suggestions kept; the AskUserQuestion dialog answered `ask`.
  */
-export function world(on: On, process: Answer & { python3?: Answer; run?: (argv: readonly string[]) => Answer; ask?: string }) {
+export function world(on: On, process: Answer & { run?: (argv: readonly string[]) => Answer; ask?: string }) {
   const runs: string[][] = []
-  // Every file's mtime as `date -r` prints it (kept out of `runs`); a test moves it to say
-  // "the file changed".
-  const files = { mtimeMs: 1 }
   const opened: string[] = []
   const closed: string[] = []
   const filled: string[] = []
@@ -61,15 +102,9 @@ export function world(on: On, process: Answer & { python3?: Answer; run?: (argv:
   on('command.register', ($, e) => ({ value: { command: e.name } }))
 
   on('process.run', ($, e) => {
-    if (e.argv[0] === 'date') {
-      return { value: { exitCode: 0, stdout: `${files.mtimeMs}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-    }
-
     runs.push([...e.argv])
 
-    const answer: Answer =
-      process.run?.(e.argv) ??
-      (process.python3 !== undefined && e.argv[0] === 'python3' ? process.python3 : process)
+    const answer: Answer = process.run?.(e.argv) ?? process
 
     return {
       value: {
@@ -128,7 +163,7 @@ export function world(on: On, process: Answer & { python3?: Answer; run?: (argv:
 
   const clock = mock.clock(on)
 
-  return { runs, opened, closed, filled, suggested, toasts, toolCalls, clock, files }
+  return { runs, opened, closed, filled, suggested, toasts, toolCalls, clock }
 }
 
 /** A rendered tree's text as it reads: strings and Button labels, in order. */

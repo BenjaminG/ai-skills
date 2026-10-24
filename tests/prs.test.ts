@@ -1,42 +1,60 @@
+import type { On } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
 
-import { PLUGIN, SESSION, command, pane, textOf, world } from './fixtures'
+import { PLUGIN, SESSION, command, pane, stateOf, stateRow, textOf, world } from './fixtures'
 
-const TABLE = `pr-dash · naboo-team/naboo · updated 15:21:11
-│ S1 ╭ HEAD   │ #16579 map a re-invoicing extraction onto a quote │ ⏳ WAITS #16578 │
-│ S1 ╰ BASE   │ #16578 let a client read their own post-stay      │ ✅ READY        │`
-const DASH = JSON.stringify({
-  state: '/home/.claude/pr-state/naboo-team_naboo/state.json',
-  text: TABLE,
-  prs: [
-    { number: 42, title: 'the thing', url: 'u42', ci: 'SUCCESS', status: '✅ READY' },
-    { number: 7, title: 'another', url: 'u7', ci: 'PENDING', status: '📝 DRAFT' },
-    { number: 3, title: 'broken', url: 'u3', ci: 'FAILURE', status: '🤖 BOT 2' },
-  ],
-})
-const PR_DASH = ['python3', 'status', '--json']
+const STATE = '/state/o_n/state.json'
+const PRS = [
+  stateRow(42, { title: 'the thing', status: 'ready', merge_ready: true, merge_state: 'CLEAN' }),
+  stateRow(7, { title: 'a draft', draft: true, status: 'draft', ci: 'PENDING' }),
+  stateRow(3, { title: 'broken', status: 'bot', ci: 'FAILURE', unresolved_bot: 2, needs_agent: true }),
+]
+
+/** The world beneath /prs: pr-dash on PATH (unless `missing`), state.json holding `file.text` once written. */
+function dash(on: On, { missing = false } = {}) {
+  const file = { text: stateOf(PRS) as string | null }
+  const w = world(on, {
+    run: argv => {
+      if (missing) {
+        throw new Error('spawn pr-dash ENOENT')
+      }
+
+      return argv[1] === 'state-dir' ? { stdout: '/state/o_n/\n' } : {}
+    },
+  })
+
+  on('fs.read', ($, e) => {
+    if (e.path !== STATE || file.text === null) {
+      throw new Error(`ENOENT: ${e.path}`)
+    }
+
+    return { value: file.text }
+  })
+
+  return { ...w, file }
+}
 
 describe('prs', () => {
-  test('/prs opens the pane, lists my PRs, a press fills /pr-feedback', async ($, on) => {
-    const w = world(on, { python3: { stdout: DASH } })
+  test('/prs lists my open PRs without the drafts, a press fills /pr-feedback', async ($, on) => {
+    const w = dash(on)
 
     await $.session.start(SESSION)
-
     expect(await $.command.run(command('prs'))).toEqual({ text: 'PRs panel shown' })
     await w.clock.settle()
 
     expect(w.opened).toEqual(['prs'])
-    expect(w.runs.map(r => [r[0], ...r.slice(2)])).toEqual([PR_DASH])
-    expect(w.runs[0]?.[1], 'the script next to hooks/, in this plugin').toBe(
-      new URL('../skills/pr-dash/scripts/pr-dash.py', import.meta.url).pathname,
-    )
+    expect(w.runs).toEqual([
+      ['pr-dash', 'state-dir'],
+      ['pr-dash', 'ensure'],
+    ])
 
     const drawn = textOf(await $.ui.render(pane('prs')))
 
-    expect(drawn).toContain('PRs · 3')
-    expect(drawn).toContain('✓#42 the thing✅ READY')
-    expect(drawn).toContain('◐#7 another📝 DRAFT')
-    expect(drawn).toContain('✗#3 broken🤖 BOT 2')
+    expect(drawn).toContain('PRs · 2')
+    expect(drawn).toContain('✓#42 the thingready')
+    expect(drawn).toContain('✗#3 brokenbot')
+    expect(drawn).not.toContain('a draft')
+    expect(drawn).not.toContain('pr-scan')
 
     expect(await $.ui.press({ plugin: PLUGIN, key: 'pr:42' })).toEqual({ element: 'pr:42' })
     expect(w.filled).toEqual(['/pr-feedback 42'])
@@ -45,60 +63,69 @@ describe('prs', () => {
     expect(w.closed).toEqual(['prs'])
   })
 
-  test('pr-dash reruns when the state moves, once a minute regardless, never once closed', async ($, on) => {
-    const w = world(on, { python3: { stdout: DASH } })
+  test('a new taken_at redraws, the same one does not; ensure every 5 min; nothing once closed', async ($, on) => {
+    const w = dash(on)
 
     await $.session.start(SESSION)
     await $.command.run(command('prs'))
     await w.clock.settle()
-    expect(w.runs).toHaveLength(1)
 
-    await w.clock.advance(15_000)
-    expect(w.runs, 'an unchanged state costs a stat, not a run').toHaveLength(1)
+    w.file.text = stateOf([stateRow(42, { title: 'renamed' })])
+    await w.clock.advance(10_000)
+    expect(textOf(await $.ui.render(pane('prs'))), 'same pass: the drawn rows stand').toContain('the thing')
 
-    w.files.mtimeMs = 2
+    w.file.text = stateOf([stateRow(42, { title: 'renamed' })], { taken_at: '2026-10-24T10:01:00.000Z' })
     await w.clock.advance(5_000)
-    await w.clock.settle()
-    expect(w.runs, 'the service wrote: redraw').toHaveLength(2)
+    expect(textOf(await $.ui.render(pane('prs')))).toContain('#42 renamed')
 
-    await w.clock.advance(60_000)
-    await w.clock.settle()
-    expect(w.runs, 'a quiet minute still runs pr-dash, which keeps the service alive').toHaveLength(3)
+    await w.clock.advance(5 * 60_000)
+    expect(w.runs.filter(r => r[1] === 'ensure'), 'a Reader keeps the service alive').toHaveLength(2)
+    expect(w.runs.filter(r => r[1] === 'state-dir'), 'the dir is asked once').toHaveLength(1)
 
     await $.command.run(command('prs'))
-    await w.clock.advance(120_000)
-    expect(w.runs, 'closed: no more runs').toHaveLength(3)
+    const before = w.runs.length
+    await w.clock.advance(10 * 60_000)
+    expect(w.runs, 'closed: no more ensure').toHaveLength(before)
   })
 
-  test('the toggle draws pr-dash\'s table from the same run, then the rows again', async ($, on) => {
-    const w = world(on, { python3: { stdout: DASH } })
+  test('a State with an error shows it over the last good rows; another schema says outdated', async ($, on) => {
+    const w = dash(on)
+    w.file.text = stateOf(PRS, { error: { at: '2026-10-24T10:02:00.000Z', message: 'API rate limit exceeded' } })
 
     await $.session.start(SESSION)
     await $.command.run(command('prs'))
     await w.clock.settle()
 
-    expect(textOf(await $.ui.render(pane('prs')))).toContain('PRs · 3')
-    expect(await $.ui.press({ plugin: PLUGIN, key: 'prs:view' })).toEqual({ element: 'prs:view' })
-    expect(textOf(await $.ui.render(pane('prs')))).toContain('S1 ╭ HEAD   │ #16579')
-    expect(w.runs, 'no second run: both views read one').toHaveLength(1)
+    const drawn = textOf(await $.ui.render(pane('prs')))
+    expect(drawn).toContain('API rate limit exceeded')
+    expect(drawn).toContain('#42 the thing')
 
-    await $.ui.press({ plugin: PLUGIN, key: 'prs:view' })
-    expect(textOf(await $.ui.render(pane('prs'))), 'back to the rows').toContain('#42 the thing')
+    w.file.text = stateOf(PRS, { schema_version: 5, taken_at: '2026-10-24T10:03:00.000Z' })
+    await w.clock.advance(5_000)
+    expect(textOf(await $.ui.render(pane('prs')))).toContain('outdated')
   })
 
-  test('a failing pr-dash shows its error, and the next tick retries', async ($, on) => {
-    const w = world(on, {
-      python3: { exitCode: 1, stderr: 'pr-dash: cannot resolve the GitHub repository; run from its checkout' },
-    })
+  test('no State yet reads Loading until the first pass writes one', async ($, on) => {
+    const w = dash(on)
+    w.file.text = null
+
+    await $.session.start(SESSION)
+    await $.command.run(command('prs'))
+    await w.clock.settle()
+    expect(textOf(await $.ui.render(pane('prs')))).toContain('Loading')
+
+    w.file.text = stateOf(PRS)
+    await w.clock.advance(5_000)
+    expect(textOf(await $.ui.render(pane('prs')))).toContain('#42 the thing')
+  })
+
+  test('a missing pr-dash says how to install it', async ($, on) => {
+    const w = dash(on, { missing: true })
 
     await $.session.start(SESSION)
     await $.command.run(command('prs'))
     await w.clock.settle()
 
-    expect(textOf(await $.ui.render(pane('prs')))).toContain('cannot resolve the GitHub repository')
-
-    await w.clock.advance(5_000)
-    await w.clock.settle()
-    expect(w.runs, 'an error is not a state to wait on').toHaveLength(2)
+    expect(textOf(await $.ui.render(pane('prs')))).toContain('npm i -g github:BenjaminG/pr-dash')
   })
 })

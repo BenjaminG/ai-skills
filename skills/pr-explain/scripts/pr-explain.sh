@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One explainer tab per PR: a fresh Claude session runs /pr-feedback, then /explain-plainly.
-# Usage: pr-explain.sh [PR number or URL …] — no argument takes every held PR from the scan.
+# Usage: pr-explain.sh [PR number or URL …] — no argument takes every held PR from pr-dash's State.
 set -uo pipefail
 
 [ "${HERDR_ENV:-}" = 1 ] || { echo "pr-explain: not inside a herdr pane" >&2; exit 1; }
@@ -8,9 +8,11 @@ set -uo pipefail
 EXPLAIN="/explain-plainly explique-moi le thread ouvert et quelles sont les solutions que tu suggères ?"
 
 if [ $# -eq 0 ]; then
+  command -v pr-dash >/dev/null || { echo "pr-explain: pr-dash not found: npm i -g github:BenjaminG/pr-dash" >&2; exit 1; }
+  # A late pass still leaves the last State, which is worth reading.
+  pr-dash wake --wait || true
   # shellcheck disable=SC2046 # PR numbers, word-safe
-  set -- $(python3 "$(dirname "$0")/../../pr-dash/scripts/pr-scan.py" |
-    jq -r '.prs[] | select(.held > 0) | .number')
+  set -- $(jq -r '.prs[] | select(.held > 0) | .number' "$(pr-dash state-dir)state.json")
   [ $# -gt 0 ] || { echo "pr-explain: no held PR"; exit 0; }
 fi
 

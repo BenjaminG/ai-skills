@@ -46,7 +46,6 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `pr-comment` | Post gate/gate-wf findings as a humanizer-drafted PR review |
 | `fixup` | Fold a fix into the commit that introduced it, force-push |
 | `babysit-prs` | Event-driven watch driving open PRs to merge-ready |
-| `pr-dash` | Live dashboard of the repo's open PRs, kept current by a shared scan service |
 | `pr-shots` | Before/after or feature-state screenshots of a PR in the local app, attached to the PR |
 | `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `qa-plan` | Manual QA plan generation |
