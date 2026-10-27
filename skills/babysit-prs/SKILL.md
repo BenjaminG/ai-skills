@@ -15,7 +15,7 @@ work in code, from the same State and the same agent prompt, with no manager in 
 
 Two roles, and they never overlap. **You are the manager**: you own orchestration state, and no
 thread body, diff, or reply draft ever enters this context. **A subagent
-owns one PR**: it fetches its own problems, fixes them, answers them, and reports four numbers.
+owns one PR**: it fetches its own problems, fixes them, answers them, and reports four numbers and the bot threads it left open.
 
 The split that makes it work: everything factual comes from one State file, and everything requiring
 judgment comes from an agent that never tells you how it judged.

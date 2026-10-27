@@ -74,7 +74,14 @@ Finally — always, including when you fixed nothing or hit a blocker — write
 
   {"pushed": <fixes on the remote>, "inflight": <started, not pushed>,
    "held": <items left for the author>, "held_gist": "<one gist or null>",
-   "blocked": "<one gist or null>"}
+   "blocked": "<one gist or null>",
+   "seen": {"<thread id>": "<its last_comment_id>", …}}
+
+`seen` lists every bot thread you read and left open on purpose (held, or an acknowledgement
+that owes nothing), keyed by the `id` and `last_comment_id` `fetch-pr.py` gave you. List no
+other thread: one missing from `seen` stays bot work, and the next pass hands it to a fresh
+agent. That is how a thread a bot opens after your push gets read at all. Write `{}` when you
+left none open.
 
 That file is your only report; nothing else you say reaches the manager. Write it, then stop.
 

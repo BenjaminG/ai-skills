@@ -73,6 +73,9 @@ def normalise_threads(nodes, pr_author):
         out.append({
             "id": t.get("id"),
             "comment_id": comments[0].get("databaseId"),
+            # Node id of the thread's true last comment (the page above stops at 20): a babysit
+            # report lists it per thread left open, and pr-dash holds only those threads.
+            "last_comment_id": ((t.get("last") or {}).get("nodes") or [{}])[-1].get("id"),
             "path": t.get("path"),
             "line": t.get("line"),
             "awaiting_reviewer": awaiting,
@@ -92,7 +95,8 @@ QUERY = """query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
     reviewThreads(first:100,after:$cursor){ pageInfo{hasNextPage endCursor}
       nodes{ id isResolved isOutdated path line
-        comments(first:20){ nodes{ databaseId author{login __typename} body } } } } } }
+        comments(first:20){ nodes{ databaseId author{login __typename} body } }
+        last: comments(last:1){ nodes{ id } } } } } }
 }"""
 
 
@@ -208,7 +212,8 @@ def self_check():
         {"id": "T2", "isResolved": False, "isOutdated": False, "path": "b.ts", "line": 2,
          "comments": {"nodes": [
              {"databaseId": 2, "author": {"login": "cursor", "__typename": "Bot"}, "body": "y"},
-             {"databaseId": 3, "author": {"login": "me", "__typename": "User"}, "body": "fixed"}]}},
+             {"databaseId": 3, "author": {"login": "me", "__typename": "User"}, "body": "fixed"}]},
+         "last": {"nodes": [{"id": "C3"}]}},
         {"id": "T3", "isResolved": False, "isOutdated": False, "path": "c.ts", "line": 3,
          "comments": {"nodes": [{"databaseId": 4, "author": {"login": "naboo-ai-reviews",
                                                              "__typename": "User"}, "body": "z"}]}},
@@ -229,6 +234,7 @@ def self_check():
     assert out[0]["awaiting_reviewer"] is True                # last comment is the PR author
     assert out[0]["comments"][0]["is_bot"] is True            # __typename Bot
     assert out[0]["comment_id"] == 2                          # first comment's databaseId
+    assert out[0]["last_comment_id"] == "C3"                  # what a babysit report lists as seen
     assert out[0]["held"] is True, "bot thread, our reply last: held for the author, not re-triaged"
     assert out[0]["rounds"] == 1 and out[1]["rounds"] == 0
     assert out[1]["awaiting_reviewer"] is False and out[1]["held"] is False
