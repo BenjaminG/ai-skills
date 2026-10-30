@@ -58,9 +58,9 @@ Spawn both with `Agent` (`subagent_type: "Explore"`) in a single message, each c
 
 Done when every key term of §5 has been searched by at least one agent.
 
-**Bug** (§5 describes an observed symptom): in the same turn as the `Agent` calls, build and publish the explainer draft per [`references/bug-explainer.md`](references/bug-explainer.md), without waiting for either agent.
+**Symptom** (§5 describes something observed on a screen or in the data, whether or not it is a bug yet): in the same turn as the `Agent` calls, build and publish the explainer draft per [`references/symptom-explainer.md`](references/symptom-explainer.md), without waiting for either agent.
 
-**Bug with an error signature**: also query Datadog logs for that signature/tenant when the Datadog MCP is present, so the root cause is checked against production and not code alone.
+**Symptom with an error signature**: also query Datadog logs for that signature/tenant when the Datadog MCP is present, so the root cause is checked against production and not code alone.
 
 ## 7. Synthesize and plan
 
@@ -71,8 +71,22 @@ PDF). Run a read-only check rather than ask whether to run it. A claim no source
 can confirm stays in the report labelled **not reproduced**, never stated as the
 cause.
 
-Then report it in two blocks — plain language first, technical detail second.
 Answer in the user's language.
+
+**Symptom**: republish the explainer with the diagnosis per
+[`references/symptom-explainer.md`](references/symptom-explainer.md). The page
+carries the length — the **avant / après**, the cause, the timeline, the
+technical detail — so the terminal stays short. The report is done when the
+republished link is in the terminal, under exactly these lines:
+
+1. What the user sees, with the real values, then what they would see instead.
+2. The cause in one plain sentence, or **pas encore trouvée**.
+3. The page link.
+4. Each question the source asked, answered in one line.
+5. The decision: the options, your pick, and the words that launch it.
+
+**No symptom** (a question, a feature request): report in two blocks — plain
+language first, technical detail second.
 
 **What is happening** — apply the `explain-plainly` skill to your own conclusion:
 open with the purpose and the user-visible symptom in two sentences with zero
@@ -84,11 +98,6 @@ is left undefined, and old-vs-new fields are flagged as such.
 **Technical detail** — root cause with `file:line`, each claim tagged
 **verified** (the query or `file:line` that proves it) or **not reproduced**, and
 the files, tests and docs to touch.
-
-**Bug**: republish the explainer with the diagnosis per
-[`references/bug-explainer.md`](references/bug-explainer.md). The artifact then
-carries **What is happening**; the terminal keeps the cause in two sentences,
-the artifact link, and **Technical detail**.
 
 If the issue is clear and actionable, switch to plan mode with those code
 changes. Otherwise, name the precise areas to dig next round.
