@@ -61,6 +61,8 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `investigate` | Structured investigation workflow |
 | `orchestrate` | Run a dependency-ordered stack of Linear tickets through Herdr |
 | `retrospective` | Reflect on the work done on the current branch vs main |
+| **Herdr** | |
+| `herdr-mod` | Build a Herdr app mod; `--publish` shares it on herdr.dev/mods |
 | **Specialist agents** | |
 | `backend-developer` | TypeScript backend specialist |
 | `frontend-developer` | React/TypeScript frontend specialist |
