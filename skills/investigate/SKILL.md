@@ -103,3 +103,17 @@ the files, tests and docs to touch.
 
 If the issue is clear and actionable, switch to plan mode with those code
 changes. Otherwise, name the precise areas to dig next round.
+
+## 8. Hand off
+
+The report rarely stays in the terminal. Close with one line offering the
+drafts that apply, and write only the ones the user picks:
+
+- **Source thread** (§2): the reply to post there, answering each question it
+  asked and naming the chosen option.
+- **Tracker issue** (§3): the report as a comment, then the state change it
+  calls for.
+- **People** whose answer or action is needed: one paste-ready message each,
+  with the question or action and what it unblocks.
+
+Draft each through the `humanizer` skill. Post nothing until the user confirms.
