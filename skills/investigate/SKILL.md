@@ -71,7 +71,9 @@ PDF). Run a read-only check rather than ask whether to run it. A claim no source
 can confirm stays in the report labelled **not reproduced**, never stated as the
 cause.
 
-Answer in the user's language.
+Answer in the user's language. Text meant for a ticket, a PR, a channel or
+another person goes in the language that destination already uses; English when
+it is mixed or empty.
 
 **Symptom**: republish the explainer with the diagnosis per
 [`references/symptom-explainer.md`](references/symptom-explainer.md). The page
