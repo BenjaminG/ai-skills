@@ -644,13 +644,15 @@ without `evidence`/`suggested_fix`/`citation`. Read it, then write a summary to
 - Say what a finding *means*, not what tier it has — the table already shows the tier.
 - Where two findings contradict each other, or a finding is a code/spec
   disagreement only the author can settle, say so.
+- End with one line offering `/triage-findings` for every active tier: `all`, a tier
+  (`blockers`, `majors`, `nits`), or ids. Never offer only the nits.
 
 Example, for the run rendered in the sample above:
 
 ```
 B1 — trois `?? 0` interdits par packages/wome-api/CLAUDE.md:38 ; un document sans total devient un total de 0 €. À corriger.
 M1 et M2 sont les deux vrais bugs. M2 est peut-être la spec qui a bougé — à toi de dire lequel est faux.
-Les 9 NIT sont du ménage : /triage-findings nits.
+Les 9 NIT sont du ménage. Tout appliquer : /triage-findings all, ou par id (« B1, M1 »).
 ```
 
 ### 4c. Print it
