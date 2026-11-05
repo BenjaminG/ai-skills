@@ -181,7 +181,9 @@ BASE_SHA=$(git merge-base $BASE HEAD)
 # Disable globbing while iterating file paths — Next.js segments like [locale] are
 # valid filenames but valid glob patterns too, and unquoted expansion would eat them.
 set -f
-mapfile -t CHANGED_FILES_ARR < <(git diff $BASE_SHA...HEAD --name-only)
+# No mapfile: macOS ships bash 3.2, which lacks it.
+CHANGED_FILES_ARR=()
+while IFS= read -r f; do CHANGED_FILES_ARR+=("$f"); done < <(git diff $BASE_SHA...HEAD --name-only)
 CHANGED_FILES=$(printf '%s\n' "${CHANGED_FILES_ARR[@]}")
 WT_HASH=$( {
   git diff HEAD -- "${CHANGED_FILES_ARR[@]}"
@@ -381,7 +383,8 @@ if [ -n "$DELTA_FROM" ]; then
   # Tree diff, not range: /fixup rewrote history but the base is unchanged, so this is
   # exactly what changed since the last round. Restricted to the branch's own files.
   set -f
-  mapfile -t TSX_FILES < <(printf '%s\n' "${CHANGED_FILES_ARR[@]}" | grep -E '\.(tsx|jsx)$')
+  TSX_FILES=()
+  while IFS= read -r f; do TSX_FILES+=("$f"); done < <(printf '%s\n' "${CHANGED_FILES_ARR[@]}" | grep -E '\.(tsx|jsx)$')
   git diff $DELTA_FROM HEAD -- "${CHANGED_FILES_ARR[@]}"                        > "$TMP_DIR/delta-full.txt"
   # CODE_EXCLUDES[0] is the '.' include; the branch's files replace it.
   git diff $DELTA_FROM HEAD -- "${CHANGED_FILES_ARR[@]}" "${CODE_EXCLUDES[@]:1}" > "$TMP_DIR/delta-code.txt"
