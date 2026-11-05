@@ -525,8 +525,10 @@ tier-scaled verify and `(file,line)` dedup as reviewer findings — so they carr
 the citation-backed tier wins: the primary is promoted and the rule finding merges in as
 `also_flagged_by`.
 
-After the run, capture the `runId` from `/workflows` (task panel) into `RUN_ID`, and write
-the returned `findings` array verbatim to `$TMP_DIR/findings.json`. Both feed Step 4a.
+After the run, capture the `runId` from `/workflows` (task panel) into `RUN_ID`, and set
+`WF_OUTPUT` to the task output file the completion notification names
+(`…/tasks/<task-id>.output`). The notification's inline result is truncated on any real
+run: never copy findings out of it. Both feed Step 4a.
 `PR_NUMBER` is the PR number resolved in Step 1d, or empty when the branch has no PR.
 
 To re-run after editing an `agents/*.md`, invoke `Workflow({scriptPath: <WF_SCRIPT>,
@@ -600,12 +602,13 @@ RENDER="$(dirname "$WF_SCRIPT")/render.py"
 
 ### 4a. Ingest the workflow result
 
-Write the workflow's `findings` array to `$TMP_DIR/findings.json` verbatim (no
-edits, no re-ordering), then:
+Pass the task output file as-is. `ingest` unwraps `result.findings` itself and stops
+with a message when the run returned none. Never extract, retype or re-order findings
+by hand:
 
 ```bash
 python3 "$RENDER" ingest \
-  --findings "$TMP_DIR/findings.json" \
+  --findings "$WF_OUTPUT" \
   --run-id "$RUN_ID" --cache-key "$CACHE_KEY" \
   --files "$DIFF_FILES" --add "$DIFF_ADD" --del "$DIFF_DEL" \
   --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --delta-from "$DELTA_FROM" \

@@ -309,7 +309,12 @@ def _repartition(p: F.Paths, state: dict) -> tuple[list, list]:
 
 def cmd_ingest(p: F.Paths, a) -> int:
     raw = json.loads(open(a.findings).read())
-    items = raw.get("findings", raw) if isinstance(raw, dict) else raw
+    # Accepts a bare array, {findings}, or the Workflow task output file ({result: {findings}}).
+    if isinstance(raw, dict):
+        raw = raw.get("result", raw)
+    items = raw.get("findings") if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        sys.exit(f"render: no findings array in {a.findings} (pass the Workflow task output file)")
 
     # PR-thread dismissals the context-checker found this run enter the registry
     # before the partition, so they suppress in the same render.
