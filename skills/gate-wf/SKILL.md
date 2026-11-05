@@ -756,7 +756,7 @@ done
 - **Boy Scout asymmetry**: adjacent legacy code can be flagged (MAJOR/NIT) but never blocks the gate.
 - **Tier semantics**: only BLOCKER affects the verdict. MAJOR and NIT are informational.
 - **Dismissals**: false-positives are suppressed via a per-branch registry kept _outside_ `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
-- **No auto-fix**: this skill is read-only review. Acting on findings is `triage-findings`, which reads the same `$STATE_FILE` through `scripts/findings.py`.
+- **No auto-fix**: this skill is read-only review. Route every reply that asks to apply, fix or commit findings ("applique tout", "fix M1") to `/triage-findings` with the matching filter (`all`, a tier, ids). Never edit the code or call `fixup` yourself. `triage-findings` reads the same `$STATE_FILE` through `scripts/findings.py`.
 - **Rendering is code, not prose**: `scripts/render.py` owns the verdict, the ids, the partition and both outputs. Never recompute or re-list any of it by hand. `scripts/test_render.py` is its self-check (`python3 scripts/test_render.py`); the anchor test pins byte-compatibility with the bash implementation it replaced, so existing dismissal registries keep matching.
 - **Coexists** with the legacy `gate` skill during migration.
 
