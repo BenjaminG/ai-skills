@@ -137,8 +137,17 @@ def test_end_to_end(tmp_state=True):
         run(["git", "add", "-A"])
         run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"])
 
+        script = Path(__file__).with_name("render.py")
+        # No findings array (the Workflow task output when the run died): a message, no traceback.
+        bad = Path(d) / "bad.json"
+        bad.write_text(json.dumps({"summary": "x", "result": None}))
+        err = run([sys.executable, str(script), "ingest", "--findings", str(bad)])
+        assert err.returncode != 0 and "no findings array" in err.stderr, err.stderr
+        assert "Traceback" not in err.stderr
+
+        # The Workflow task output file as-is: findings sit under `result`.
         fjson = Path(d) / "f.json"
-        fjson.write_text(json.dumps([
+        fjson.write_text(json.dumps({"summary": "Quality gate", "logs": [], "result": {"findings": [
             {"tier": "BLOCKER", "file": "a.ts", "line": 1, "rule_id": "claude-md-violation",
              "reviewer": "context-checker", "message": "?? 0 papers over a nullable return",
              "evidence": "value ?? 0", "suggested_fix": "branch on null",
@@ -146,8 +155,7 @@ def test_end_to_end(tmp_state=True):
             {"tier": "NIT", "file": "a.ts", "line": 2, "rule_id": "slop-unused",
              "reviewer": "slop-reviewer", "message": "export with no consumer",
              "verifications": []},
-        ]))
-        script = Path(__file__).with_name("render.py")
+        ]}}))
         out = run([sys.executable, str(script), "ingest", "--findings", str(fjson),
                    "--run-id", "wf_test", "--files", "1", "--add", "2", "--del", "0"])
         assert "FAIL" in out.stdout, out.stderr
