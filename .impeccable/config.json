@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "skills/showcase/assets/stage.html"
+        ],
+        "createdAt": "2026-11-06T16:44:42.354Z",
+        "reason": "Claude: stage.html is a render surface; seek(t) sets the img src for every frame before any screenshot"
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "skills/showcase/assets/stage.html"
+        ],
+        "createdAt": "2026-11-06T16:48:43.482Z",
+        "reason": "Claude: stage.html's :root colors are a fallback copied from the reference video; every run overrides them with the app's theme.css (Naboo tokens, per the user's choice)"
+      }
+    ]
+  }
+}

@@ -47,6 +47,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `fixup` | Fold a fix into the commit that introduced it, force-push |
 | `babysit-prs` | Event-driven watch driving open PRs to merge-ready |
 | `pr-shots` | Before/after or feature-state screenshots of a PR in the local app, attached to the PR |
+| `showcase` | Narrated, branded demo video of a feature, PR or app area for the team (weekly pod update); script approved before filming |
 | `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `skill-dream` | Improve one skill from its past runs: recurring corrections, hand-chained follow-ups and failed commands, as a draft PR |
 | `qa-plan` | Manual QA plan generation |

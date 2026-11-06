@@ -29,6 +29,11 @@ async (page) => {
   const span = (kind) => async (label, fn) => { const start = at(); await fn(); markers.push({ kind, label, start, end: at() }); };
   const cut = span('cut');   // dropped from the video: page loads, off-camera setup
   const wait = span('wait'); // sped up: extraction, polling, server work
+  const chapter = span('chapter'); // showcase: one chapter of the script, by its id
+  const focus = async (label, locator) => { // showcase: zoom on this element from now on (null: zoom out)
+    const box = locator ? await locator.boundingBox() : null;
+    markers.push({ kind: 'focus', label, start: at(), end: at(), box });
+  };
 
   const click = async (locator) => {
     await locator.scrollIntoViewIfNeeded();

@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Showcase stage</title>
+<!-- Driven by scripts/render.js: load(timeline) once, then seek(t) per frame. Every style is a
+     pure function of t, so a frame never depends on the one before it. The theme.css next to the
+     timeline overrides these variables with the app's own tokens. -->
+<style>
+  :root {
+    --bg: #f1eee7; --fg: #1f2a1f; --muted: #6f7468; --accent: #2f5d3a; --accent-soft: #e2e9d8;
+    --surface: #ffffff; --radius: 16px;
+    --font-display: Georgia, "Times New Roman", serif; --font-body: system-ui, sans-serif;
+  }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font-body); }
+  #root { position: absolute; inset: 0; }
+  .layer { position: absolute; inset: 0; display: none; }
+  #card { flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .kicker { font-size: 22px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .title { font-family: var(--font-display); font-size: 104px; line-height: 1.05; margin-top: 18px; max-width: 1500px; }
+  .title .accent { color: var(--accent); }
+  .subtitle { font-family: var(--font-display); font-size: 40px; color: var(--muted); margin-top: 22px; }
+  .badges { display: flex; gap: 16px; margin-top: 40px; }
+  .badge { font-size: 22px; padding: 8px 20px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .rule { width: 80px; height: 2px; background: var(--accent); margin-top: 32px; }
+  header { position: absolute; left: 160px; top: 46px; display: flex; align-items: center; gap: 22px; }
+  .pill { font-size: 22px; font-weight: 600; padding: 6px 16px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .caption { font-family: var(--font-display); font-size: 50px; }
+  #frame { position: absolute; left: 160px; top: 140px; width: 1600px; height: 900px; border-radius: var(--radius); overflow: hidden;
+           background: var(--surface); box-shadow: 0 30px 80px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.08); }
+  #inner { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+  #shot { display: block; width: 1920px; height: 1080px; }
+  #ring { position: absolute; box-sizing: border-box; border: 4px solid var(--accent); border-radius: 12px; }
+</style>
+</head>
+<body>
+<div id="root">
+  <section id="card" class="layer"></section>
+  <section id="chapter" class="layer">
+    <header><span class="pill"></span><span class="caption"></span></header>
+    <div id="frame"><div id="inner"><img id="shot" alt=""><div id="ring"></div></div></div>
+  </section>
+</div>
+<script>
+  const W = 1920, H = 1080, FRAME = 1600 / W;
+  const FADE_IN = 0.35, FADE_OUT = 0.25, ZOOM = 0.8, MAX_ZOOM = 2.2;
+  const $ = (s) => document.querySelector(s);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const ease = (x) => { x = clamp(x, 0, 1); return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
+  const enter = (el, k) => { el.style.opacity = k; el.style.transform = `translateY(${(1 - k) * 14}px)`; };
+  let TL, current = null;
+
+  window.load = (tl) => { TL = tl; };
+
+  function el(tag, cls, text) { const e = document.createElement(tag); e.className = cls; if (text) e.textContent = text; return e; }
+
+  function buildCard(s) {
+    const c = $('#card'); c.replaceChildren();
+    if (s.kicker) c.append(el('div', 'kicker', s.kicker));
+    const t = el('div', 'title', s.title || '');
+    if (s.accent) t.append(' ', el('span', 'accent', s.accent));
+    c.append(t);
+    if (s.subtitle) c.append(el('div', 'subtitle', s.subtitle));
+    if (s.badges?.length) { const b = el('div', 'badges'); s.badges.forEach((x) => b.append(el('span', 'badge', x))); c.append(b); }
+    if (!s.subtitle && !s.badges?.length && !s.accent) c.append(el('div', 'rule'));
+  }
+
+  function animateCard(lt) {
+    // Each line comes in after the one above it; badges one by one, slower.
+    [...$('#card').children].forEach((e, i) => {
+      if (e.classList.contains('badges')) [...e.children].forEach((b, j) => enter(b, ease((lt - 0.9 - j * 0.6) / 0.5)));
+      else enter(e, ease((lt - i * 0.18) / 0.5));
+    });
+  }
+
+  function rawAt(map, lt) {
+    let i = 0;
+    while (i + 1 < map.length && map[i + 1][0] <= lt) i++;   // a cut is two knots at one time: take the later
+    const a = map[i], b = map[i + 1];
+    if (!b || b[0] === a[0]) return a[1];
+    return a[1] + (b[1] - a[1]) * (lt - a[0]) / (b[0] - a[0]);
+  }
+
+  const FULL = { s: 1, x: 0, y: 0 };
+  function viewFor(box) {
+    if (!box) return FULL;
+    const s = clamp(Math.min(0.72 * W / box.width, 0.72 * H / box.height), 1, MAX_ZOOM);
+    const w = W / s, h = H / s;
+    return { s, x: clamp(box.x + box.width / 2 - w / 2, 0, W - w), y: clamp(box.y + box.height / 2 - h / 2, 0, H - h) };
+  }
+  function viewAt(focus, lt) {
+    let from = FULL, to = FULL, at = null, box = null;
+    for (const f of focus) if (f.t <= lt) { from = to; to = viewFor(f.box); at = f.t; box = f.box; }
+    if (at === null) return { v: FULL, box: null, k: 0 };
+    const k = ease((lt - at) / ZOOM);
+    const mix = (p) => from[p] + (to[p] - from[p]) * k;
+    return { v: { s: mix('s'), x: mix('x'), y: mix('y') }, box, k };
+  }
+
+  window.seek = async (t) => {
+    const s = TL.shots.find((x) => t >= x.start && t < x.start + x.dur) || TL.shots[TL.shots.length - 1];
+    const lt = t - s.start;
+    if (current !== s) {
+      current = s;
+      $('#card').style.display = s.kind === 'card' ? 'flex' : 'none';
+      $('#chapter').style.display = s.kind === 'chapter' ? 'block' : 'none';
+      if (s.kind === 'card') buildCard(s);
+      else { $('.pill').textContent = s.label; $('.caption').textContent = s.caption || ''; }
+    }
+    $('#root').style.opacity = clamp(Math.min(lt / FADE_IN, (s.dur - lt) / FADE_OUT), 0, 1);
+    if (s.kind === 'card') return animateCard(lt);
+
+    enter($('header'), ease(lt / 0.5));
+    const rec = TL.recs[s.rec];
+    const n = clamp(Math.floor(rawAt(s.map, lt) * TL.fps) + 1, 1, rec.frames);
+    const src = `${rec.base}${String(n).padStart(5, '0')}.jpg`;
+    const img = $('#shot');
+    if (img.getAttribute('src') !== src) { img.src = src; await img.decode(); }
+
+    const { v, box, k } = viewAt(s.focus || [], lt);
+    const scale = FRAME * v.s;
+    $('#inner').style.transform = `scale(${scale}) translate(${-v.x}px, ${-v.y}px)`;
+    const ring = $('#ring');
+    ring.style.display = box ? 'block' : 'none';
+    if (box) Object.assign(ring.style, {
+      left: `${box.x - 8}px`, top: `${box.y - 8}px`, width: `${box.width + 16}px`, height: `${box.height + 16}px`,
+      borderWidth: `${4 / scale}px`, opacity: k,
+    });
+  };
+</script>
+</body>
+</html>

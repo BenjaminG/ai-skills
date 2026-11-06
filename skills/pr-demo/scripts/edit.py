@@ -44,7 +44,8 @@ def main():
     args = ap.parse_args()
 
     rec = json.load(open(args.markers))
-    spans = segments(rec["markers"], duration(rec["video"]), args.wait_to)
+    edits = [m for m in rec["markers"] if m["kind"] in ("cut", "wait")]  # showcase adds chapter/focus
+    spans = segments(edits, duration(rec["video"]), args.wait_to)
     parts = [f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=(PTS-STARTPTS)/{sp:.3f}[v{i}]"
              for i, (s, e, sp) in enumerate(spans)]
     graph = ";".join(parts) + ";" + "".join(f"[v{i}]" for i in range(len(spans))) \
