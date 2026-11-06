@@ -11,7 +11,7 @@ a sequence of **shots**, one per line of the **script**:
 
 - a **card**: kicker, title, subtitle, badges, or a title with an accent, on the brand background;
 - a **chapter**: a numbered pill (or a label such as `Before`) and a caption above the app, which plays
-  inside a framed window, zooms on the element the voice is about and rings it.
+  inside a framed window, zooms on the element the voice is about and dims the rest.
 
 Each shot lasts as long as its voice line. With `--no-voice`, the time to read it and to play its action.
 
@@ -154,7 +154,7 @@ Leave out `--voice-dir` with `--no-voice`. With pnpm, `NODE_PATH` is
 one second per two seconds of video.
 
 Read `sheet.png`, plus a frame from the middle of each zoom (`ffmpeg -ss <t> -frames:v 1`, times in
-`timeline.json`). No frame shows a login page, a dev overlay, an error toast or a blank window. The ring
+`timeline.json`). No frame shows a login page, a dev overlay, an error toast or a blank window. The lit area
 sits on the element the caption names. A screen that differs from what the source promises is a
 finding: report it as a possible bug before any re-take. Run `DIR/restore`, then `open DIR/showcase.mp4`,
 and report its length, size and whether it has a voice.

@@ -30,7 +30,7 @@
            background: var(--surface); box-shadow: 0 30px 80px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.08); }
   #inner { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
   #shot { display: block; width: 1920px; height: 1080px; }
-  #ring { position: absolute; box-sizing: border-box; border: 4px solid var(--accent); border-radius: 12px; }
+  #ring { position: absolute; box-sizing: border-box; border: 0; border-radius: 14px; box-shadow: 0 0 0 4000px rgba(10, 12, 8, .32); }
 </style>
 </head>
 <body>
@@ -93,8 +93,13 @@
     for (const f of focus) if (f.t <= lt) { from = to; to = viewFor(f.box); at = f.t; box = f.box; }
     if (at === null) return { v: FULL, box: null, k: 0 };
     const k = ease((lt - at) / ZOOM);
-    const mix = (p) => from[p] + (to[p] - from[p]) * k;
-    return { v: { s: mix('s'), x: mix('x'), y: mix('y') }, box, k };
+    const s = Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * k);
+    const pan = (p) => {
+      if (Math.abs(to.s - from.s) < 1e-6) return from[p] + (to[p] - from[p]) * k;
+      const anchor = (to[p] * to.s - from[p] * from.s) / (to.s - from.s);
+      return anchor - (anchor - from[p]) * from.s / s;
+    };
+    return { v: { s, x: pan('x'), y: pan('y') }, box, k };
   }
 
   window.seek = async (t) => {
@@ -124,7 +129,7 @@
     ring.style.display = box ? 'block' : 'none';
     if (box) Object.assign(ring.style, {
       left: `${box.x - 8}px`, top: `${box.y - 8}px`, width: `${box.width + 16}px`, height: `${box.height + 16}px`,
-      borderWidth: `${4 / scale}px`, opacity: k,
+      opacity: k,
     });
   };
 </script>
