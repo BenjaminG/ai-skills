@@ -87,8 +87,8 @@ costs ElevenLabs credits and the recording follows the script.
 ## 4. Environment and data
 
 Film the local app, where the data, the accounts and the feature flags are yours to set; a shared
-environment adds SSO and emailed login codes the recording cannot pass. Read `$DEMO/SKILL.md` and run its sections **Project note**, **Environment**, **Data** and **Dry
-run**, with this skill's `DIR` in place of the demo directory. A source that is not a PR runs from the
+environment adds SSO and emailed login codes the recording cannot pass. Read `$DEMO/SKILL.md` and run its sections **Local-app doc**, **Environment**, **Data** and
+**Dry run**, with this skill's `DIR` in place of the demo directory and `$DEMO` in place of `$SKILL`. A source that is not a PR runs from the
 current worktree.
 
 **Done when** pr-demo's four criteria hold.
