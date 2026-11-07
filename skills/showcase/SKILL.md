@@ -86,7 +86,8 @@ costs ElevenLabs credits and the recording follows the script.
 
 ## 4. Environment and data
 
-Read `$DEMO/SKILL.md` and run its sections **Project note**, **Environment**, **Data** and **Dry
+Film the local app, where the data, the accounts and the feature flags are yours to set; a shared
+environment adds SSO and emailed login codes the recording cannot pass. Read `$DEMO/SKILL.md` and run its sections **Project note**, **Environment**, **Data** and **Dry
 run**, with this skill's `DIR` in place of the demo directory. A source that is not a PR runs from the
 current worktree.
 
@@ -133,7 +134,8 @@ the worktree is back on its branch.
 
 Skip with `--no-voice`. Otherwise, for each shot with a `voice` line, generate `DIR/voice/<id>.mp3` with
 the ElevenLabs MCP's text-to-speech tool (search the tools for `elevenlabs`), moving its output file
-there. Use one voice for the whole video. Pick it once per language with the MCP's voice search, then
+there. Send the lines two at a time: the MCP refuses a larger burst as "busy", and a refused line
+is retried once the others are back. Use one voice for the whole video. Pick it once per language with the MCP's voice search, then
 keep its id in `~/.cache/showcase/voice-<lang>.txt`. When the MCP is missing, generate placeholders
 with `say -o voice/<id>.aiff "<line>"` and convert them with
 `ffmpeg -i voice/<id>.aiff voice/<id>.mp3`, then say the voice is a placeholder.
@@ -145,19 +147,27 @@ with `say -o voice/<id>.aiff "<line>"` and convert them with
 ```bash
 python3 $SKILL/scripts/timeline.py build DIR/script.json --rec main=DIR/main.json [--rec before=DIR/before.json] \
         [--voice-dir DIR/voice] --out DIR/timeline.json
-NODE_PATH=<the app repo's node_modules holding playwright> node $SKILL/scripts/render.js DIR/timeline.json DIR/silent.mp4
-python3 $SKILL/scripts/timeline.py mux DIR/timeline.json DIR/silent.mp4 DIR/showcase.mp4 --sheet DIR/sheet.png
+NODE_PATH=<the app repo's node_modules holding playwright> node $SKILL/scripts/render.js DIR/timeline.json --at <t>,<t>…
 ```
 
 Leave out `--voice-dir` with `--no-voice`. With pnpm, `NODE_PATH` is
-`$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`. The render takes about
-one second per two seconds of video.
+`$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
 
-Read `sheet.png`, plus a frame from the middle of each zoom (`ffmpeg -ss <t> -frames:v 1`, times in
-`timeline.json`). No frame shows a login page, a dev overlay, an error toast or a blank window. The lit area
-sits on the element the caption names. A screen that differs from what the source promises is a
-finding: report it as a possible bug before any re-take. Run `DIR/restore`, then `open DIR/showcase.mp4`,
-and report its length, size and whether it has a voice.
+`--at` writes `DIR/at-<t>.png` in a second or two: pass the middle of each zoom (times in
+`timeline.json`) and read the frames. The lit area sits on the element the caption names. When a box
+misses, fix it in `main.json`, rebuild the timeline and check again with `--at`: no re-take, no full
+render. Then render the video, about one second per two seconds of video:
+
+```bash
+NODE_PATH=… node $SKILL/scripts/render.js DIR/timeline.json DIR/silent.mp4
+python3 $SKILL/scripts/timeline.py mux DIR/timeline.json DIR/silent.mp4 DIR/showcase.mp4 --sheet DIR/sheet.png
+```
+
+Read `sheet.png`. No frame shows a login page, a dev overlay, an error toast or a blank window. A
+screen that differs from what the source promises is a finding: report it as a possible bug before any
+re-take. Run `DIR/restore`. Copy the video to `DIR/showcase-v<N>.mp4`, the next free `N`, and `open`
+that copy: a player that still holds `showcase.mp4` shows the old take. Report its path, length, size
+and whether it has a voice.
 
 **Done when** the checks pass, the data is restored, and the user has said the video is good.
 
@@ -165,6 +175,6 @@ and report its length, size and whether it has a voice.
 
 Draft the Slack message that goes with the video. Write two or three lines in the language of the
 channel: what shipped and why it matters to the team. Pass it through the `humanizer` skill and give
-it with the path of `showcase.mp4`. The user posts both.
+it with the path of the video. The user posts both.
 
 **Done when** the user has the file path and the message.

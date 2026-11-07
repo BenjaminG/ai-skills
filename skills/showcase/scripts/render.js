@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Render a showcase timeline to a silent mp4, one screenshot of assets/stage.html per frame.
 // Usage: NODE_PATH=<dir holding playwright> node render.js <timeline.json> <silent.mp4>
+//        NODE_PATH=… node render.js <timeline.json> --at 10,13.5   (only those frames, as <dir>/at-<t>.png)
 // theme.css next to the timeline, when present, gives the stage the app's brand.
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -9,8 +10,8 @@ const { once } = require('events');
 const { spawn, execFileSync } = require('child_process');
 
 async function main() {
-  const [tlPath, out] = process.argv.slice(2);
-  if (!tlPath || !out) throw new Error('usage: render.js <timeline.json> <silent.mp4>');
+  const [tlPath, out, at] = process.argv.slice(2);
+  if (!tlPath || !out || (out === '--at' && !at)) throw new Error('usage: render.js <timeline.json> <silent.mp4> | --at <t>[,<t>…]');
   const tl = JSON.parse(fs.readFileSync(tlPath, 'utf8'));
   const dir = path.dirname(path.resolve(tlPath));
 
@@ -34,6 +35,17 @@ async function main() {
   if (fs.existsSync(theme)) await page.addStyleTag({ path: theme });
   await page.evaluate((t) => window.load(t), tl);
   await page.evaluate(() => document.fonts.ready);
+
+  if (out === '--at') { // check a few frames in seconds instead of rendering the whole video
+    for (const t of at.split(',').map(Number)) {
+      await page.evaluate((s) => window.seek(s), t);
+      const png = path.join(dir, `at-${t}.png`);
+      await page.screenshot({ path: png });
+      console.log(png);
+    }
+    await browser.close();
+    return;
+  }
 
   const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(tl.fps), '-c:v', 'mjpeg', '-i', '-',
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', out], { stdio: ['pipe', 'inherit', 'inherit'] });
