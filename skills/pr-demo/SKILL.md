@@ -36,26 +36,30 @@ Shell variables do not survive between Bash calls: use the printed path as `$SKI
 **Done when** the PR number, its branch, `DIR` and `$SKILL` are known, and you know whether this is
 a re-take (`DIR/record.js` exists).
 
-## 2. Project note
+## 2. Local-app doc
 
-The project's memory holds a **demo note**: the ports of each local server and their start
-commands, the login URL and test account, the database and its shell, where test fixtures live.
-Find it in the project memory directory (grep `pr-demo`). When there is none, gather those facts
-from the repo (`package.json` scripts, `.env*`, `CLAUDE.md`, older memories) and write the note
-once step 6 has proved them, as a `reference` memory named `pr-demo-local-env`.
+The host repo's `docs/agents/local-app.md` and its scripts say how to prepare, launch, check, sign in
+to and seed the local app. Read it in the PR's worktree. When it is missing, read
+`$SKILL/../setup-ai-skills/SKILL.md`, run it, then come back here.
 
-**Done when** every item of the note has a value, from the note or from the repo.
+A trap the doc does not cover (a missing build step, a bad record, a flag) gets fixed in the doc or
+its script once the fix is proven, in this same run, and named in the final report.
+
+**Done when** the doc is read.
 
 ## 3. Environment
 
 1. **Worktree**: the PR branch's worktree (`git worktree list`). None → `wt switch <branch>`
    (worktrunk skill), then install dependencies.
-2. **Servers**: for each port in the note, `lsof -nP -iTCP:<port> -sTCP:LISTEN -t`, then the
-   process's cwd (`lsof -a -p <pid> -d cwd -Fn`).
-   - Nothing listening → start it in the herdr tab "dev server" (herdr skill), from the worktree.
-   - Listening from another worktree → ask before killing it; the user may be using it.
+2. **Prepare**: `docs/agents/local-app/prepare.sh`.
+3. **Servers**: for each line of `launch.sh --list`, check the port
+   (`lsof -nP -iTCP:<port> -sTCP:LISTEN -t`, then `lsof -a -p <pid> -d cwd -Fn`).
+   - Nothing listening → run `launch.sh <name>` in its own pane of the herdr tab "dev server"
+     (herdr skill), from the worktree, and wait for its ready text with its timeout. A miss means
+     reading the pane, not waiting longer.
+   - Listening from another worktree → ask before stopping it; the user may be using it.
 
-**Done when** every server answers over HTTP and each listening process runs from the PR's worktree.
+**Done when** `doctor.sh` prints no `FAIL` and each server runs from the PR's worktree.
 
 ## 4. Scenario
 
@@ -70,7 +74,8 @@ duration budget.
 ## 5. Data
 
 Write `DIR/reset` (save the touched documents to `DIR/backup/`, then put them in the start state)
-and `DIR/restore` (write `DIR/backup/` back), using the database from the note. A start state the
+and `DIR/restore` (write `DIR/backup/` back), with the doc's **data** section. Force the flags the
+scenario needs as its **flags** section says. A start state the
 UI cannot reach quickly (a past event date, a document already extracted) is set by `reset`, off
 camera. Run `reset`.
 
@@ -78,9 +83,11 @@ camera. Run `reset`.
 
 ## 6. Dry run
 
-In the Playwright MCP browser, sign in with the note's account, then use `browser_snapshot` to find
-locators (roles and names over CSS). Run the scenario once with `browser_run_code_unsafe`, without
-recording, returning what each step saw. Then run `reset` again.
+First `doctor.sh <start URL of each scenario>`: a 404, a 500 or a server error shows here in
+seconds. Then, in the Playwright MCP browser, sign in as the doc's **auth** section says, and use the
+screen map and `browser_snapshot` to find locators (roles and names over CSS). Run the scenario once
+with `browser_run_code_unsafe`, without recording, with `page.setDefaultTimeout(5000)` so a wrong
+locator fails in seconds, returning what each step saw. Then run `reset` again.
 
 **Done when** the dry run passes end to end and the start state is back.
 
@@ -106,8 +113,9 @@ python3 "$SKILL/scripts/edit.py" DIR/markers.json DIR/demo.mp4 --sheet DIR/sheet
 
 Read `sheet.png`. The first frame shows the start state and the last frame the result; no frame is
 blank, shows a login page, a dev overlay or an error toast. A result that differs from what the PR
-promises is a finding: report it as a possible bug before any re-take. Run `DIR/restore`, then
-`open DIR/demo.mp4`, and report its length and size.
+promises is a finding: report it as a possible bug before any re-take. Run `DIR/restore` and
+`cleanup.sh`, then `open DIR/demo.mp4`, and report its length, size and any change made to the
+local-app doc.
 
 **Done when** the sheet passes, the data is restored, and the user has said the video is good.
 

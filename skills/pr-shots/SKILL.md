@@ -38,9 +38,10 @@ Use the printed path as `$DEMO` literally.
 
 ## 2. Environment
 
-Read `$DEMO/SKILL.md` and run its sections **Project note**, **Environment** and **Data**, with this
-skill's `DIR` in place of the demo directory: same `pr-demo-local-env` memory, same running servers
-from the PR's worktree, `DIR/reset` and `DIR/restore` for the start state.
+Read `$DEMO/SKILL.md` and run its sections **Local-app doc**, **Environment** and **Data**, with
+this skill's `DIR` in place of the demo directory: same `docs/agents/local-app.md`, same running
+servers from the PR's worktree, `DIR/reset` and `DIR/restore` for the start state. `$SKILL` in those
+sections is `$DEMO`.
 
 **Done when** pr-demo's three criteria hold.
 
@@ -59,7 +60,7 @@ the new diff. Show the list and wait for the user's go.
 
 ## 4. Capture
 
-In the Playwright MCP browser: `browser_resize` to 1440×900, sign in with the note's account. Before
+In the Playwright MCP browser: `browser_resize` to 1440×900, sign in as the local-app doc's **auth** section says. Before
 each shot, hide the dev overlays with `browser_evaluate`, injecting the `display: none` rule from
 `$DEMO/assets/record.js`. Capture with `browser_take_screenshot` and `filename`, passing `element` and
 `ref` for a component framing:
