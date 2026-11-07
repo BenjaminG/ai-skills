@@ -31,7 +31,9 @@ async (page) => {
   const wait = span('wait'); // sped up: extraction, polling, server work
   const chapter = span('chapter'); // showcase: one chapter of the script, by its id
   const focus = async (label, locator) => { // showcase: zoom on this element from now on (null: zoom out)
-    const box = locator ? await locator.boundingBox() : null;
+    // The box is in viewport coordinates: measure it once the element is in view and the scroll has settled.
+    let box = null;
+    if (locator) { await locator.scrollIntoViewIfNeeded(); await p.waitForTimeout(400); box = await locator.boundingBox(); }
     markers.push({ kind: 'focus', label, start: at(), end: at(), box });
   };
 
