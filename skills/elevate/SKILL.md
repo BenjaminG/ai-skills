@@ -1,136 +1,183 @@
 ---
 name: elevate
-description: This skill should be used when the user wants a ranked list of the highest-leverage technical or architectural improvements to make to their project, presented as a ranking matrix. The technical counterpart to `innovate`. Triggers on requests like "elevate", "biggest tech wins", "best architectural moves", "what should I upgrade", "improvement opportunities", or "tech audit". Accepts an optional focus argument (e.g., "feedback-loop", "dx", "build speed", "testing", "observability") to constrain the search.
-argument-hint: "[focus area]"
+description: This skill should be used when the user wants the highest-leverage technical or architectural changes for their project, ranked from what breaks in production (recurring bugs, incidents, slow paths, frictions reported in Slack, Linear or Datadog) and from the code itself, ending on one recommended change written as a project brief. The technical counterpart to `innovate`. Triggers on "elevate", "biggest tech wins", "what keeps breaking", "tech audit", "improvement opportunities", or "what should we re-architect". Accepts an optional focus (e.g., "feedback-loop", "dx", "build speed", "observability", "invoicing") and a window (`--since 30d`, default 90 days).
+argument-hint: "[focus area] [--since <days>d]"
 ---
 
 # Elevate
 
-Explore the current project deeply, then answer:
+Answer: **which change to this project would remove the most pain, starting from what actually
+hurts?** Pain is read first from production and from the team, then traced into the code. The
+answer is a ranked list of **levers**, one recommended lever, and a project brief for it.
 
-**What are the highest-leverage architectural, framework, tooling, or DX improvements you could make to this project right now?**
+Leading words used throughout:
 
-Produce a **ranked list of 5–10 opportunities** with a scoring matrix. The technical twin of `innovate` (which asks for product moves).
+- **Symptom**: something a user or the team saw go wrong, in their words, with a link.
+- **Ledger**: the table of symptoms gathered from every source.
+- **Cluster**: symptoms that share one cause in the code.
+- **Causal chain**: one sentence, "X runs in Y, so Z", that ties a cluster to the code.
+- **Lever**: what to change to break a causal chain. Moving work elsewhere is one family of levers
+  among five.
 
-## Focus argument
+## 1. Scope
 
-The skill accepts an optional free-form focus string (e.g., `feedback-loop`, `developer experience`, `build speed`, `testing`, `observability`, `CI pipeline`).
+Read CLAUDE.md, README, key config (package.json, tsconfig, build configs, CI workflows). Set the
+focus (none: every dimension) and the window (default 90 days).
 
-- **No focus:** survey all four dimensions (architecture, libraries, tooling, DX/infra).
-- **With focus:** interpret the string, map it to relevant dimensions, and return **only** opportunities that match. Do not include off-focus candidates, even if they look higher-leverage.
+**Done when** the focus, the window and the included dimensions are written at the top of the run.
 
-## Process
+## 2. Build the ledger
 
-1. **Read the project.** CLAUDE.md, README, key config (package.json, tsconfig, build configs, lockfiles, CI workflows).
-2. **Discover ADRs and architectural rules.** Check in order:
-   - `docs/adr/`, `docs/adrs/`, `docs/architecture/decisions/`, `adr/`, `adrs/`
-   - `.claude/rules/` (architectural guidelines stored as rules)
-   - If none found, grep for `ADR-` or `# Architecture Decision` to catch non-standard layouts.
-   Parse each ADR/rule to extract what it prescribes or forbids.
-3. **Skim for friction.** Recent git history, hot-path code, repeated workarounds, slow builds, awkward patterns, stale deps, TODOs.
-4. **Generate candidates** across four dimensions:
-   - **Architecture** — layering, module boundaries, data flow, state shape
-   - **Libraries & frameworks** — outdated/deprecated deps, better alternatives, version bumps
-   - **Build & tooling** — bundler, compiler, package manager, monorepo structure, CI/CD, type system
-   - **DX & infrastructure** — testing strategy, observability, logging, error tracking, feature flags, local dev
-5. **Apply focus filter** if a focus argument was given. Drop non-matching candidates.
-6. **Check each candidate against ADRs/rules.** If a candidate contradicts an ADR, keep it in the matrix but flag it as **ADR-blocked** and de-rank it (it is not actionable without revisiting the ADR first).
-6.5. **Check prior attempts via `devsql`.** For each candidate, search this project's Claude/Codex history and git commits for prior work on the same topic. Derive 2+ keywords from the candidate, scope to the current project (`history.project = '<cwd>'`), and **read the matching prompts/commits before classifying** — a keyword hit is not proof. See the `devsql-querying` skill for table shapes and the standard `datetime(timestamp/1000,'unixepoch')` conversion.
+The host repo's `docs/agents/signals.md` says where symptoms are reported (Datadog services, Slack
+channels by role, Linear teams and labels, PostHog, the git fix convention) and through which tool
+each answered. Read it in the main worktree (`git worktree list | head -1`) when the current one
+lacks it. When it is missing, ask the user: set it up now (read
+`$SKILL/../setup-ai-skills/SKILL.md`, run it for `signals`, then come back here), or run on git
+alone with every other source `unavailable`.
 
-   **Take the date into account.** A candidate that failed 6+ months ago due to missing prerequisites, tool gaps, or excessive effort may be viable today. Do not let a stale failure kill a currently-viable candidate.
+Dispatch one read-only subagent per source the doc marks proven, in parallel. Give each
+[`references/ledger.md`](references/ledger.md), its section of `signals.md`, the window and the
+focus. Each returns ledger rows only; the main context holds the ledger, never the raw messages.
 
-   Classify each candidate's prior-attempt state and tag it:
-   - **`shipped`** — matching commits present and not reverted → **drop the candidate** (already done)
-   - **`reverted-recent`** (<3 months) — Confidence=Low, Notes cite revert SHA + likely reason
-   - **`reverted-stale`** (≥6 months) — Keep original Confidence, Notes call out the prior attempt and ask the user whether the blocker still applies before committing to the score
-   - **`struggled`** — many prompts on the topic with zero commits → Confidence=Low, Notes cite the prompt-day
-   - **`deferred`** — prompts discussing it but no attempt → Notes surface prior rationale, no scoring change
-   - **`none`** — normal scoring
+**Done when** every source is `checked` or `unavailable (<reason>)`, and every row carries a link.
 
-   If `devsql` is unavailable or the project has no history rows, print `Prior-attempt history: unavailable` above the matrix and skip this step.
-7. **Score** each surviving candidate on four axes (see below).
-8. **Surface load-bearing assumptions.** For each candidate, list the 1–3 assumptions the Impact and Effort scores depend on. Classify each:
-   - **`[verified]`** — the assumption is self-evident from code/config already read (cite `file:line` or a specific snippet). Treat as verified.
-   - **`[probe:feasibility]`** — confirms the change is technically viable on **this** codebase (tool parity, plugin compat, known edge cases, semantic gaps between alternatives). Failure of a feasibility probe **kills the candidate**, regardless of impact.
-   - **`[probe:impact]`** — confirms the magnitude of the gain (wallclock, bundle size, error rate, contributor time saved).
-   - **`[unverifiable]`** — needs infra or prod data the skill can't touch (prod error rate, CI minutes). Keep, but mark.
+## 3. Cluster
 
-   For each `[probe:*]`, specify a concrete, cheap command or measurement the user can run in **under ~10 min** to confirm. Examples: minimal repro file compiled with both tools to diff output, `turbo run <task> --dry=json | jq '...'` to tell real work from no-ops, `hyperfine` for wallclock, `du -sh node_modules/.cache` for cache plausibility, `rg -c <pattern>` for call-site counts, reading one file the skill hasn't yet read.
+Group rows by the work behind them, not by message or by channel. A cluster is **recurring** when
+two independent sources report it, or when it shows up three times or more across two weeks or
+more. Rows that fit no cluster go to an **isolated bugs** list, shown at the end and never ranked.
 
-   **Feasibility-first rule:** if a `[probe:feasibility]` exists and runs in <10 min, surface it as the **first probe to run** for that candidate. Its result can kill the candidate before any impact measurement is worth doing.
+**Done when** each cluster has a name, its cost to users in their own words, and its count of rows
+per source.
 
-   **Do not auto-run probes.** The skill suggests; the user decides whether to execute. Any candidate with an unverified `[probe:*]` or `[unverifiable]` assumption driving an L/XL Impact or S Effort score must be scored **Confidence = Low**, regardless of how strong the structural signal looks. Keep it in the matrix; don't cap its Impact — let Confidence do the demotion.
-9. **Rank** by composite ROI signal. Trim to the 5–10 strongest. Fewer is fine for small/pristine codebases; more is fine for messy ones — let signal decide.
-10. **Output** the matrix and per-opportunity details. For the **top 3 candidates**, include a `Cheapest kill-switch` line: the single fastest test that invalidates the candidate if it fails. This is usually the `[probe:feasibility]` already listed, restated as the literal first thing to run.
-11. **Ask** which row(s) the user wants expanded into implementation steps. Do not auto-expand.
+## 4. Trace the causal chain
 
-## Scoring scale
+For each recurring cluster, read the code path behind it and answer:
 
-Use T-shirt sizes — honest about the estimation involved, no false precision.
+1. Which rule is guaranteed nowhere (no type, no constraint, no test)?
+2. Where does this work run, and what does it share there (process, pool, database, queue)?
+3. When does it run: inside the user's request, or after?
+4. What happens when it is retried?
+
+**Done when** each cluster has a `file:line` and a causal chain in one sentence.
+
+## 5. Generate levers
+
+For each cluster, write at least three levers from
+[`references/levers.md`](references/levers.md), from at least two families. One of them is always
+the lightest lever that would stop the cluster from coming back. Each lever names the link of the
+causal chain it breaks.
+
+Then run the **proactive lane**: candidates no symptom asks for, across architecture, libraries,
+build and tooling, DX and infrastructure (stale deps, slow builds, awkward patterns, TODOs, recent
+git friction). A proactive candidate caps at Confidence Med.
+
+With a focus, keep only clusters and candidates that match it, even when an off-focus one looks
+stronger.
+
+**Done when** each recurring cluster has three or more levers across two or more families, each
+tied to its causal chain.
+
+## 6. Check each lever
+
+- **Rules.** Read `docs/agents/domain.md` when it exists for where the ADRs and the glossary live;
+  else check `docs/adr/`, `adr/`, `docs/architecture/decisions/` and `.claude/rules/`. A lever that
+  contradicts an ADR stays in the matrix, flagged **ADR-blocked**, and sinks to the bottom.
+- **Current work.** Search the issue tracker (`docs/agents/issue-tracker.md` says which and how)
+  for active projects and issues on the same cluster. Active work that covers the lever removes it;
+  an uncovered remainder may stay.
+- **Prior attempts.** Search this project's Claude/Codex history with `devsql` (the
+  `devsql-querying` skill has the tables) and git commits, with two keywords or more per lever,
+  scoped to the current project. Read the matching prompts and commits before classifying: a
+  keyword hit is not proof. Tag the lever:
+  - **`shipped`**: matching commits, not reverted. Drop the lever.
+  - **`reverted-recent`** (under 3 months): Confidence Low; Notes cite the revert SHA and its likely
+    reason.
+  - **`reverted-stale`** (6 months or more): keep the Confidence; Notes ask the user whether the
+    blocker still applies. A failure that old may be viable today.
+  - **`struggled`**: many prompts, no commit. Confidence Low; Notes cite the day.
+  - **`deferred`**: discussed, never attempted. Notes give the rationale.
+  - **`none`**: score normally.
+
+  Without `devsql` or history rows, print `Prior-attempt history: unavailable` above the matrix.
+- **Assumptions.** List the 1 to 3 assumptions each lever's Impact and Effort rest on:
+  - `[verified]`: evident from code, config or a ledger row already read; cite it.
+  - `[probe:feasibility]`: whether the lever works on this codebase. Failure kills the lever.
+  - `[probe:impact]`: the size of the gain.
+  - `[unverifiable]`: needs data this run cannot reach.
+
+  Each probe comes with a command or measurement under 10 minutes and the signal that confirms it.
+  A feasibility probe is listed first. The user decides whether to run probes.
+
+**Done when** every surviving lever has a prior-attempt tag, its assumptions classified, and each
+probe its command.
+
+## 7. Score and rank
 
 | Axis | Scale | Meaning |
 |---|---|---|
-| **Impact** | S / M / L / XL | Pain removed or velocity unlocked, measured as **user-observable outcome** (wallclock, error rate, contributor time saved). Structural proxies alone — DAG edges removed, files touched, lines deleted, tasks in a graph — are not Impact; if only a proxy is available, Confidence caps at Low. |
-| **Effort** | S / M / L / XL | Rough engineering cost (hours → weeks). Includes **both implementation AND validation cost**. A 10-line config change that touches a surface of 300+ files (call sites, decorators, schemas) cannot be S — the validation tail dominates. Estimate the real "until I trust it shipped" cost, not just the diff size. |
-| **Risk** | Low / Med / High | Blast radius + reversibility |
-| **Confidence** | Low / Med / High | How sure the skill is about Impact and Effort given codebase signals. Any unverified `[probe:*]` or `[unverifiable]` assumption behind an L/XL Impact or S Effort forces this to Low. |
+| **Impact** | S / M / L / XL | Pain removed, as a user-observable outcome: the cluster's incidents, the cohort it touches, how often it comes back, wallclock or contributor time saved. A structural proxy alone (files touched, lines deleted, graph edges) caps Confidence at Low. |
+| **Effort** | S / M / L / XL | Until the change is trusted in production: implementation, validation, rollout. A small diff over a wide surface is not S. |
+| **Risk** | Low / Med / High | Blast radius and reversibility. |
+| **Confidence** | Low / Med / High | Strength of the evidence behind Impact and Effort. An unverified probe behind an L/XL Impact or an S Effort forces Low. |
 
-Ranking heuristic: favor **high Impact + low Effort + low Risk + high Confidence**. ADR-blocked candidates sink to the bottom. **Candidates with unverified load-bearing assumptions sink via Confidence=Low**, even if their structural signal looks XL — this is intentional, and prevents proxy-driven overestimates from topping the list.
+Favor high Impact, low Effort, low Risk, high Confidence. ADR-blocked levers sink to the bottom.
+Keep the 5 to 10 strongest; fewer when the evidence supports fewer. Pick **one winner** and say in
+2 to 4 sentences why it beats the next two. A recommendation may differ from row 1 only for a
+timing, dependency or validation reason, stated.
 
-## Scope — explicitly refuse to propose
+**Done when** every row points to its cluster or is marked `proactive`, and one winner is named.
 
-- **Pure code cleanup** — dead code, renames, file splits belong to `simplify` / `code-slop`
-- **Single-bug fixes** — if it's scoped to one bug, it isn't an architectural leap
-- **Feature additions** — product capabilities are `innovate`'s turf
-- **Speculative rewrites** — no "rewrite in Rust" or "migrate to microservices" unless the codebase genuinely demands it; bias toward proven, reversible changes
+## 8. Write the brief
 
-## Output shape
+For the winner, write a project brief as [`references/brief.md`](references/brief.md) shapes it.
+
+**Done when** the brief stands alone: a reader who did not see the run understands the pain, the
+change, the rollout, and how to switch it off.
+
+Then ask which the user wants: publish the brief (as `docs/agents/issue-tracker.md` says to create a
+project), expand another row, or run a pending probe. Publish nothing before the answer.
+
+## Out of scope
+
+- **Isolated bugs**: listed, never ranked. A bug family that recurs is a cluster, and in scope.
+- **Code cleanup** (dead code, renames, file splits): `simplify` and `code-slop`.
+- **Product capabilities**: `innovate`.
+- **Rewrites** ("rewrite in Rust", "move to microservices") only when a recurring cluster's causal
+  chain demands it; prefer reversible levers rolled out one slice at a time.
+
+## Output
 
 ```
-# Elevate — <focus area or "full audit">
+# Elevate · <focus or "full audit"> · <window>
 
-ADRs consulted: <list of ADR files / rules found, or "none found">
+Signal coverage: <source> checked (<rows>) · <source> unavailable (<reason>) · …
+ADRs consulted: <files, or "none found">
+
+## Ledger
+| Cluster | Users see | Sources | Rows | Since |
+Isolated bugs: <count>, listed at the end
 
 ## Ranking matrix
+| # | Lever | Family | Cluster | Impact | Effort | Risk | Confidence | Prior | Probes | Notes |
 
-| # | Opportunity | Impact | Effort | Risk | Confidence | Prior | Probes | Notes |
-|---|---|---|---|---|---|---|---|---|
-| 1 | <name> | L | S | Low | High | none | ok | |
-| 2 | <name> | XL | M | Med | Low | reverted-stale | 2 pending (1 feasibility) | prior attempt 2024-08 (sha1234) — check if blocker still applies; unverified `[probe:feasibility]` gates XL |
-| … |
-| N | <name> | M | S | Low | Low | none | ok | ⚠️ ADR-blocked (ADR-0012) |
+## Recommendation
+<the winner, and why it beats #2 and #3>
 
-`Prior` column values: `none / reverted-recent / reverted-stale / struggled / deferred`. `shipped` candidates are dropped, not listed. When the column is omitted entirely, `Prior-attempt history: unavailable` must be printed above the matrix.
+## Levers
+### 1. <lever>
+**Symptoms:** <cluster, rows, links>
+**Causal chain:** <X runs in Y, so Z> (`file:line`)
+**Change:** <what to do>
+**Impact:** <user-observable outcome>
+**Risk:** <what could break; how to switch it off>
+**Assumptions & probes:** <[verified] / [probe:feasibility] / [probe:impact] / [unverifiable]>
+**Cheapest kill-switch:** <the fastest test that invalidates it> (top 3 only)
 
-`Probes` column: `ok` when every load-bearing assumption is `[verified]`; otherwise `<N> pending` where N counts outstanding `[probe:*]` / `[unverifiable]` entries. If any pending probe is `feasibility`, call it out: `<N> pending (<M> feasibility)`.
+## Brief: <winner>
 
-## Opportunities
-
-### 1. <Opportunity name>
-**Problem:** <real friction visible in the code/stack>
-**Change:** <what to do, concretely>
-**Impact:** <what this unlocks, in user-observable terms>
-**Risk:** <what could go wrong; reversibility>
-**Migration path:** <incremental steps, not big-bang>
-**Evidence:** <file paths, git signals, hot-paths that motivated this>
-**Assumptions & probes:**
-- `[verified]` <assumption> — <file:line or reasoning already in context>
-- `[probe:feasibility]` <assumption> — run: `<command>` → expect `<signal>` to confirm; failure kills the candidate
-- `[probe:impact]` <assumption> — run: `<command>` → expect `<signal>` to confirm magnitude
-- `[unverifiable]` <assumption> — <why it can't be checked now>
-**Cheapest kill-switch:** <single command/test, <10 min, that invalidates the candidate if it fails> *(top 3 only)*
-
-### 2. …
-
-### N. <ADR-blocked opportunity>
-**Problem:** <…>
-**Change:** <…>
-**ADR conflict:** Contradicts `<ADR path / title>` which states "<quoted directive>". Not actionable without revisiting that decision.
-**Evidence:** <…>
+## Isolated bugs
 ```
 
-After the matrix and details, ask:
-
-> Which opportunities would you like expanded into implementation steps?
-
-Do not auto-generate implementation steps. Wait for the user to pick.
+`Prior`: `none / reverted-recent / reverted-stale / struggled / deferred`. `Probes`: `ok` when
+every assumption is verified, else `<N> pending (<M> feasibility)`.
