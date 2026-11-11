@@ -1,6 +1,6 @@
 ---
 name: setup-ai-skills
-description: Configures a host repo for the ai-skills that drive its local app (pr-demo, pr-shots, showcase) by writing and proving `docs/agents/local-app.md` and its scripts (prepare, launch, doctor, cleanup, screen map). This skill should be used for /setup-ai-skills, when one of those skills finds no `docs/agents/local-app.md`, or to refresh that doc after the app's setup changed.
+description: Configures a host repo for the ai-skills that drive its local app (pr-demo, pr-shots, pr-try, showcase) by writing and proving `docs/agents/local-app.md` and its scripts (prepare, launch, doctor, cleanup, screen map). This skill should be used for /setup-ai-skills, when one of those skills finds no `docs/agents/local-app.md`, or to refresh that doc after the app's setup changed.
 disable-model-invocation: true
 ---
 

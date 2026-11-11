@@ -1,7 +1,7 @@
 # The local-app doc and its scripts
 
 What `setup-ai-skills` writes in the host repo, and the contract every reader (pr-demo, pr-shots,
-showcase) relies on. Every value comes from the repo or a proven run, never from this template.
+pr-try, showcase) relies on. Every value comes from the repo or a proven run, never from this template.
 
 ```
 docs/agents/local-app.md          facts, traps and the reason behind each
