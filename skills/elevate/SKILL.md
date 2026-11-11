@@ -39,6 +39,10 @@ Dispatch one read-only subagent per source the doc marks proven, in parallel. Gi
 [`references/ledger.md`](references/ledger.md), its section of `signals.md`, the window and the
 focus. Each returns ledger rows only; the main context holds the ledger, never the raw messages.
 
+A source that contradicts `signals.md` (retention shorter than the window, a channel renamed, a
+monitor routed to another channel, an alias to merge) gets fixed in the doc, in the copy read
+above, in this same run, and named in the final report.
+
 **Done when** every source is `checked` or `unavailable (<reason>)`, and every row carries a link.
 
 ## 3. Cluster
@@ -52,18 +56,20 @@ per source.
 
 ## 4. Trace the causal chain
 
-For each recurring cluster, read the code path behind it and answer:
+Trace the five recurring clusters with the most rows, one read-only subagent per cluster, in
+parallel. List the other recurring clusters as `not traced`; they are not ranked. For each traced
+cluster, read the code path behind it and answer:
 
 1. Which rule is guaranteed nowhere (no type, no constraint, no test)?
 2. Where does this work run, and what does it share there (process, pool, database, queue)?
 3. When does it run: inside the user's request, or after?
 4. What happens when it is retried?
 
-**Done when** each cluster has a `file:line` and a causal chain in one sentence.
+**Done when** each traced cluster has a `file:line` and a causal chain in one sentence.
 
 ## 5. Generate levers
 
-For each cluster, write at least three levers from
+For each traced cluster, write at least three levers from
 [`references/levers.md`](references/levers.md), from at least two families. One of them is always
 the lightest lever that would stop the cluster from coming back. Each lever names the link of the
 causal chain it breaks.
@@ -75,7 +81,7 @@ git friction). A proactive candidate caps at Confidence Med.
 With a focus, keep only clusters and candidates that match it, even when an off-focus one looks
 stronger.
 
-**Done when** each recurring cluster has three or more levers across two or more families, each
+**Done when** each traced cluster has three or more levers across two or more families, each
 tied to its causal chain.
 
 ## 6. Check each lever
@@ -176,7 +182,7 @@ Isolated bugs: <count>, listed at the end
 
 ## Brief: <winner>
 
-## Isolated bugs
+## Isolated bugs and untraced clusters
 ```
 
 `Prior`: `none / reverted-recent / reverted-stale / struggled / deferred`. `Probes`: `ok` when
