@@ -77,3 +77,37 @@ doc names the script.
 `Sub-features`, `How to get to it (user POV)`, `Driving it with Playwright MCP` (roles and accessible
 names, not CSS), `Gotchas`. A precondition the seed data lacks goes in `Gotchas`; the recipe is never
 weakened to pass. [`screens-example/`](screens-example/) shows the shape.
+
+The first map starts from the verify skill's feature map when there is one, else from one to three
+screens the user reaches most.
+
+## Explore
+
+- **The repo**: package scripts, `turbo.json` or the build tool's task graph (every code generation
+  task, including those of shared packages), `docker-compose*`, `.env.example` files, README,
+  `CLAUDE.md`/`AGENTS.md`, CI setup steps.
+- **An older verify skill**: `.claude/skills/verify-*/`; its scripts and feature map become the
+  starting point.
+- **What is running**: each port the repo uses, its process and that process's cwd.
+- **Memory words**: `local|env|dev server|login|demo|turbo|flag`.
+
+## Proof
+
+1. `prepare.sh`.
+2. The servers. Nothing listening: run each `launch.sh <name>` in its own herdr pane in a tab named
+   `dev server` (herdr skill), and wait for its ready text. Something listening: ask before stopping
+   it, since it may serve the user's work. When the user keeps it, run the whole proof from the
+   checkout those servers run from, and mark the launch section `unproven` in the doc.
+3. `doctor.sh <start URL of one mapped screen>`: every line `ok`.
+4. In the Playwright MCP browser, sign in as the auth section says and drive that screen's recipe.
+   Data the recipe needs changed is backed up first and put back after.
+5. `cleanup.sh`, then stop the panes this step created.
+
+At a failure, run `cleanup.sh` before starting the step again. A failure caused by the data (a
+record the branch cannot read) is a finding for the doc: `doctor.sh` or the fixture finder learns
+to name it, and the data section says how a `reset` fixes it. Write in the doc which checkout the
+proof ran on.
+
+## Retirable sources
+
+The `verify-*` skill directory the doc replaces.
