@@ -66,13 +66,18 @@ report.
 
 ## 4. Scenario
 
-Read the PR's "How can it be tested?" section, then the diff. Write each scenario as a start state,
-the actions, and the final visible result — the thing the PR changes on screen. Show the plan (one
-line per scenario) only when there are several scenarios or the flow is ambiguous; otherwise go on.
-A re-take starts from `DIR/record.js` and adapts it to the new diff.
+Read the PR's "How can it be tested?" section, the ticket it links and that ticket's mockups (a
+design file, an artifact), then the diff. When nothing on screen moves (a new label, status or
+layout), screenshots tell it better: propose `pr-shots` and stop if the user takes it.
 
-**Done when** each scenario names its start state and its final result, and the total fits the
-duration budget.
+Write one scenario per state the diff renders (each value of a status or kind the screen shows), each
+as a start state, the actions, and the final visible result — the thing the PR changes on screen. A
+screen the change adds that the mockups lack, or shows differently, is a finding for the report.
+Show the plan (one line per scenario) only when there are several scenarios or the flow is
+ambiguous; otherwise go on. A re-take starts from `DIR/record.js` and adapts it to the new diff.
+
+**Done when** every state the diff renders has its scenario, each names its start state and its
+final result, and the total fits the duration budget.
 
 ## 5. Data
 
@@ -90,7 +95,9 @@ First `doctor.sh <start URL of each scenario>`: a 404, a 500 or a server error s
 seconds. Then, in the Playwright MCP browser, sign in as the doc's **auth** section says, and use the
 screen map and `browser_snapshot` to find locators (roles and names over CSS). Run the scenario once
 with `browser_run_code_unsafe`, without recording, with `page.setDefaultTimeout(5000)` so a wrong
-locator fails in seconds, returning what each step saw. Then run `reset` again.
+locator fails in seconds, returning what each step saw. When the diff touches a path another case shares (a single-day fix in a
+picker that also takes ranges), dry-run that case too, unfilmed, and name it in the report. Then run
+`reset` again.
 
 **Done when** the dry run passes end to end and the start state is back.
 

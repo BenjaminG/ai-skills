@@ -47,7 +47,8 @@ sections is `$DEMO`.
 
 ## 3. Shot list
 
-Read the PR's description, then the diff.
+Read the PR's description, the ticket it links and that ticket's mockups (a design file, an
+artifact), then the diff.
 
 - **compare**: one pair per screen the diff visibly changes.
 - **gallery**: one shot per state a reviewer needs to see to judge the feature.
@@ -79,7 +80,8 @@ each shot, hide the dev overlays with `browser_evaluate`, injecting the `display
 
 Read every PNG. No shot shows a login page, a dev overlay, an error toast, or a blank screen; both
 halves of a pair have the same framing. An *after* that differs from what the PR promises is a
-finding: report it as a possible bug before any re-take. Run `DIR/restore`.
+finding: report it as a possible bug before any re-take. So is a screen the mockups lack or show
+differently. Run `DIR/restore`.
 
 **Done when** every shot passes, the data is restored, and the user has said the shots are good.
 
