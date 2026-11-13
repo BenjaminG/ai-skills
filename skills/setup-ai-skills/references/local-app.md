@@ -8,6 +8,7 @@ docs/agents/local-app.md          facts, traps and the reason behind each
 docs/agents/local-app/prepare.sh  make this checkout runnable
 docs/agents/local-app/launch.sh   start one server, in the foreground
 docs/agents/local-app/doctor.sh   is this instance worth driving?
+docs/agents/local-app/signin.sh   sign a persona in, print its cookies
 docs/agents/local-app/cleanup.sh  undo what the flag and data recipes changed
 docs/agents/local-app/screens/    the screen map: README index, one file per screen
 ```
@@ -46,6 +47,11 @@ sourced `common.sh`.
   (Next pages router: `"page":"/404"` in `__NEXT_DATA__`), never the not-found text, which the
   embedded translation bundle contains on every page. Say which screens it cannot judge (behind
   another persona's login).
+- **`signin.sh <persona> [email]`**: logs one persona in through the API, checks that its session
+  query returns that account (a login can set cookies while every page still bounces back to it), and
+  prints its cookies as a Playwright JSON array for `page.context().addCookies()`; else exit 1 with the
+  API's answer. The email defaults to the test account or the fixture finder's pick. Readers sign in
+  with it: a login form breaks on a cold API, a label in another language, or a second factor.
 - **`cleanup.sh`**: idempotent; reverts the files the flag recipes edit and restores data the
   recipes changed. Stops nothing: whoever started a server stops it.
 - **Fixture finders** (optional, e.g. `find-fixture.sh <persona>`): read-only; pick a record from
@@ -60,9 +66,10 @@ doc names the script.
 1. **prepare**: what `prepare.sh` covers and why each step exists (the error each one prevents).
 2. **launch**: the servers, their ports and URLs, the containers they need.
 3. **doctor**: what `doctor.sh` checks; the start URLs worth passing it.
-4. **auth**: login URL per app, the test account (the name of the env var or file holding a secret,
-   never the secret), how to pass a second factor locally (a fixed code under a test env, a mail
-   catcher URL).
+4. **auth**: first, `signin.sh`'s personas and the `browser_run_code_unsafe` line that adds its cookies
+   (after `clearCookies()`). Then, for a demo that films the login itself: login URL per app, the test
+   account (the name of the env var or file holding a secret, never the secret), how to pass a second
+   factor locally (a fixed code under a test env, a mail catcher URL).
 5. **data**: the database shell command, where fixtures live, how to find a record to film, known
    bad records and how to fix them.
 6. **flags**: where a feature flag resolves locally (remote service, defaults file, per-record field)
@@ -99,7 +106,8 @@ screens the user reaches most.
    it, since it may serve the user's work. When the user keeps it, run the whole proof from the
    checkout those servers run from, and mark the launch section `unproven` in the doc.
 3. `doctor.sh <start URL of one mapped screen>`: every line `ok`.
-4. In the Playwright MCP browser, sign in as the auth section says and drive that screen's recipe.
+4. `signin.sh` for each persona the screen map uses: every one prints cookies. In the Playwright MCP
+   browser, add the screen's persona cookies as the auth section says and drive that screen's recipe.
    Data the recipe needs changed is backed up first and put back after.
 5. `cleanup.sh`, then stop the panes this step created.
 

@@ -41,8 +41,8 @@ a re-take (`DIR/record.js` exists).
 The host repo's `docs/agents/local-app.md` and its scripts say how to prepare, launch, check, sign in
 to and seed the local app. Read it in the PR's worktree when it is committed there, else in the main
 worktree (`git worktree list | head -1`), which holds the reference copy; run its scripts from the
-PR's worktree. When it is missing, read `$SKILL/../setup-ai-skills/SKILL.md`, run it, then come back
-here.
+PR's worktree. When it is missing, or has no `signin.sh`, read `$SKILL/../setup-ai-skills/SKILL.md`,
+run it, then come back here.
 
 A trap the doc does not cover (a missing build step, a bad record, a flag) gets fixed in the doc or
 its script, in the copy read above, once the fix is proven, in this same run, and named in the final

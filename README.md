@@ -52,7 +52,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `skill-dream` | Improve one skill from its past runs: recurring corrections, hand-chained follow-ups and failed commands, as a draft PR |
 | `qa-plan` | Manual QA plan generation |
-| `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, screens) that pr-demo, pr-shots, pr-try and showcase run on |
+| `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, signin, screens) that pr-demo, pr-shots, pr-try and showcase run on |
 | **Developer tools** | |
 | `codex-cli` | OpenAI Codex CLI for automated code analysis |
 | `commit` | Stage + commit with auto-generated message |
