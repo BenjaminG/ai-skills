@@ -15,7 +15,8 @@ async (page) => {
       const dot = document.createElement('div');
       dot.style.cssText = 'position:fixed;left:-40px;top:-40px;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(220,38,38,.55);border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.4);z-index:2147483647;pointer-events:none;transition:transform .08s';
       document.body.appendChild(dot);
-      window.addEventListener('mousemove', (e) => { dot.style.left = e.clientX + 'px'; dot.style.top = e.clientY + 'px'; }, true);
+      // A CSS `zoom` on the page scales the dot's own coordinates too: undo it, or the dot lands off the click.
+      window.addEventListener('mousemove', (e) => { const z = dot.currentCSSZoom || 1; dot.style.left = e.clientX / z + 'px'; dot.style.top = e.clientY / z + 'px'; }, true);
       window.addEventListener('mousedown', () => { dot.style.transform = 'scale(.7)'; }, true);
       window.addEventListener('mouseup', () => { dot.style.transform = 'scale(1)'; }, true);
     });
