@@ -29,7 +29,10 @@ it). Names and IDs only, never a token or a secret.
 4. **posthog**: the project, whether error tracking is on.
 5. **git**: how a fix shows in history (commit prefix such as `fix:`, branch prefix such as `fix/`,
    revert commits), so a reader can count fixes per area.
-6. **proof**: the date of the last proof and one line per source: rows found, or `unavailable`.
+6. **priority**: the Slack channels and the Linear teams or projects the user wants searched
+   first, one line each with the reason. `none` is a valid answer. A reader traces the clusters
+   that touch them before the larger ones.
+7. **proof**: the date of the last proof and one line per source: rows found, or `unavailable`.
 
 ## Explore
 
@@ -46,6 +49,8 @@ it). Names and IDs only, never a token or a secret.
 - **PostHog**: the project key in the repo's config, the connector's project list.
 - **git**: `git log --since=90.days --oneline`; read the prefixes the fix commits actually use.
 - **Memory words**: `slack|channel|datadog|monitor|incident|alert|linear|posthog|support`.
+- **Priority** is the user's call, never inferred: ask it, offering as options the channels found
+  above and the active Linear projects of the listed teams.
 
 ## Proof
 

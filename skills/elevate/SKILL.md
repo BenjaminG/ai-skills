@@ -35,9 +35,13 @@ lacks it. When it is missing, ask the user: set it up now (read
 `$SKILL/../setup-ai-skills/SKILL.md`, run it for `signals`, then come back here), or run on git
 alone with every other source `unavailable`.
 
+When the doc has no `priority` section, ask the user once which Slack channels and Linear teams or
+projects to search first (or none), and write the answer in the doc.
+
 Dispatch one read-only subagent per source the doc marks proven, in parallel. Give each
-[`references/ledger.md`](references/ledger.md), its section of `signals.md`, the window and the
-focus. Each returns ledger rows only; the main context holds the ledger, never the raw messages.
+[`references/ledger.md`](references/ledger.md), its section of `signals.md`, the `priority`
+section, the window and the focus. Each returns ledger rows only; the main context holds the
+ledger, never the raw messages.
 
 A source that contradicts `signals.md` (retention shorter than the window, a channel renamed, a
 monitor routed to another channel, an alias to merge) gets fixed in the doc, in the copy read
@@ -56,23 +60,31 @@ per source.
 
 ## 4. Trace the causal chain
 
-Trace the five recurring clusters with the most rows, one read-only subagent per cluster, in
-parallel. List the other recurring clusters as `not traced`; they are not ranked. For each traced
-cluster, read the code path behind it and answer:
+Trace five recurring clusters, one read-only subagent per cluster, in parallel: first the clusters
+holding a `priority` row, then those with the most rows. List the other recurring clusters as
+`not traced`; they are not ranked. For each traced cluster, read the code path behind it and
+answer:
 
 1. Which rule is guaranteed nowhere (no type, no constraint, no test)?
 2. Where does this work run, and what does it share there (process, pool, database, queue)?
 3. When does it run: inside the user's request, or after?
 4. What happens when it is retried?
+5. How often did the failing link fire in production over the window? Count it where it shows: a
+   log line or metric in the source `signals.md` names, rows in the database or a local clone.
 
-**Done when** each traced cluster has a `file:line` and a causal chain in one sentence.
+A chain whose failing link was not counted is `unconfirmed`, and its levers cap at Confidence Low.
+
+**Done when** each traced cluster has a `file:line`, a causal chain in one sentence, and the count
+of its failing link or `unconfirmed`.
 
 ## 5. Generate levers
 
 For each traced cluster, write at least three levers from
 [`references/levers.md`](references/levers.md), from at least two families. One of them is always
 the lightest lever that would stop the cluster from coming back. Each lever names the link of the
-causal chain it breaks.
+causal chain it breaks. Detecting the cluster breaks no link: **Make it observable** is the measure
+in another lever's rollout, and a lever of its own only when the chain is a detection failure
+(alert noise, a failure nobody sees).
 
 Then run the **proactive lane**: candidates no symptom asks for, across architecture, libraries,
 build and tooling, DX and infrastructure (stale deps, slow builds, awkward patterns, TODOs, recent
@@ -113,7 +125,7 @@ tied to its causal chain.
   - `[unverifiable]`: needs data this run cannot reach.
 
   Each probe comes with a command or measurement under 10 minutes and the signal that confirms it.
-  A feasibility probe is listed first. The user decides whether to run probes.
+  A feasibility probe is listed first. Step 7 runs the kill-switches of the top 3.
 
 **Done when** every surviving lever has a prior-attempt tag, its assumptions classified, and each
 probe its command.
@@ -128,11 +140,17 @@ probe its command.
 | **Confidence** | Low / Med / High | Strength of the evidence behind Impact and Effort. An unverified probe behind an L/XL Impact or an S Effort forces Low. |
 
 Favor high Impact, low Effort, low Risk, high Confidence. ADR-blocked levers sink to the bottom.
-Keep the 5 to 10 strongest; fewer when the evidence supports fewer. Pick **one winner** and say in
-2 to 4 sentences why it beats the next two. A recommendation may differ from row 1 only for a
-timing, dependency or validation reason, stated.
+Keep the 5 to 10 strongest; fewer when the evidence supports fewer.
 
-**Done when** every row points to its cluster or is marked `proactive`, and one winner is named.
+Run the cheapest kill-switch of the top 3 yourself, read-only: a log query, the code, a local clone
+of the database. A lever whose kill-switch fires drops out and the next one moves up. Ask the user
+only for a probe that writes, costs money, or needs access this run lacks.
+
+Pick **one winner** and say in 2 to 4 sentences why it beats the next two. A recommendation may
+differ from row 1 only for a timing, dependency or validation reason, stated.
+
+**Done when** every row points to its cluster or is marked `proactive`, the top 3 kill-switches
+have run, and one winner whose kill-switch passed is named.
 
 ## 8. Write the brief
 
@@ -178,7 +196,7 @@ Isolated bugs: <count>, listed at the end
 **Impact:** <user-observable outcome>
 **Risk:** <what could break; how to switch it off>
 **Assumptions & probes:** <[verified] / [probe:feasibility] / [probe:impact] / [unverifiable]>
-**Cheapest kill-switch:** <the fastest test that invalidates it> (top 3 only)
+**Cheapest kill-switch:** <the fastest test that invalidates it, and its result> (top 3 only)
 
 ## Brief: <winner>
 
