@@ -11,3 +11,6 @@ skills/*/.impeccable/
 # eval run outputs
 evals/results/
 __pycache__/
+
+# Playwright MCP output dir (outputDir: ./recordings)
+recordings/

@@ -15,7 +15,7 @@ Everything for one target lives in `DIR=~/.cache/pr-try/<owner>-<repo>/<PR numbe
 
 Take the PR number or branch from `$ARGUMENTS`, else the current branch. With a PR (given, or open
 for the branch): `gh pr view [<n>] --json number,url,headRefName,headRepositoryOwner,body,baseRefName`.
-Without one, the base is the repo's default branch. Create `DIR` and `touch DIR/started`. Locate
+Without one, the base is the repo's default branch. Create `DIR`. Locate
 pr-demo, whose setup this skill shares:
 
 ```bash
@@ -90,8 +90,7 @@ For each scenario, in order:
 ## 6. Close
 
 1. `DIR/restore`, then `cleanup.sh`.
-2. `browser_close`. When the Playwright MCP config records video (`recordVideo` in the file it gets
-   with `--config`), delete the `.webm` files newer than `DIR/started` in its `outputDir`.
+2. `browser_close`.
 3. Stop the server panes this run created (`ctrl+c`, then close them). Leave the worktree and every
    other pane.
 4. Report: the ticked checklist, the commits folded by `fixup`, the fixes still uncommitted in the
