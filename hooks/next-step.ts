@@ -55,17 +55,7 @@ async function nextFor($: Engine, skill: string): Promise<string | null> {
 }
 
 export const register: Register = on => {
-  // Skills are read where the main conversation starts them: the Skill tool (a subagent's
-  // carries its `agentId`) and a typed `/name`. `skill.prompt` carries no loop id, and a
-  // subagent's preloads fire it too.
-  on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
-    if (e.agentId === undefined) {
-      ran(e.skill)
-    }
-
-    return next(e)
-  })
-
+  // Only a typed `/name` counts: a `tool.call` hook would keep Code Mode from starting.
   on('prompt.submit', async ($, e, next) => {
     const typed = /^\/([\w:-]+)/.exec(e.text)?.[1]
 

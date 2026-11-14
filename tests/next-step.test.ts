@@ -25,8 +25,9 @@ function engine(on: On) {
   on('prompt.submit', ($, e) => ({ text: e.text }))
 }
 
-/** The main conversation's model calling the Skill tool. */
-const skill = ($: Engine, name: string) => $.tool.call({ tool: 'Skill', skill: name })
+/** The user typing `/name` in the composer. */
+const skill = ($: Engine, name: string) =>
+  $.prompt.submit({ text: `/${name}`, wait: false, origin: { kind: 'composer' } })
 
 describe('next-step', () => {
   test('a gate-wf turn proposes /triage-findings, a pr-feedback turn /pr-respond', async ($, on) => {
@@ -46,17 +47,7 @@ describe('next-step', () => {
     expect(w.suggested, 'a turn with no chained skill proposes nothing').toHaveLength(2)
   })
 
-  test('a typed /pr-feedback counts like the Skill tool', async ($, on) => {
-    const w = world(on, {})
-    engine(on)
-    await $.session.start(SESSION)
-
-    await $.prompt.submit({ text: '/pr-feedback 42', wait: false, origin: { kind: 'composer' } })
-    await $.turn.complete(TURN)
-    expect(w.suggested).toEqual(['/pr-respond'])
-  })
-
-  test('an interrupted turn proposes nothing; a subagent skill or turn never reaches the main box', async ($, on) => {
+  test('an interrupted turn proposes nothing; a subagent turn never reaches the main box', async ($, on) => {
     const w = world(on, {})
     engine(on)
     await $.session.start(SESSION)
@@ -65,11 +56,11 @@ describe('next-step', () => {
     await $.turn.complete({ ...TURN, isAborted: true, reason: 'aborted' })
     expect(w.suggested).toEqual([])
 
-    // A subagent's call carries its loop's id, which the typed call input leaves out.
-    await $.tool.call({ tool: 'Skill', skill: 'pr-feedback', agentId: 'a1' } as Parameters<Engine['tool']['call']>[0])
+    await skill($, 'pr-feedback')
     await $.turn.complete({ ...TURN, agentId: 'a1' })
+    expect(w.suggested, "a subagent's turn neither proposes nor consumes the chain").toEqual([])
     await $.turn.complete(TURN)
-    expect(w.suggested).toEqual([])
+    expect(w.suggested).toEqual(['/pr-respond'])
   })
 
   test('a skill outside the chain keeps the proposal; the proposed skill itself having run cancels it', async ($, on) => {
