@@ -21,6 +21,9 @@ Merge rows that describe the same symptom in the same place. Return at most 40 r
 frequent and the most recent first, and say how many were left out. Rows from a channel, team or
 project the `priority` section lists are marked `priority` and kept past that cap.
 
+In a replay (`--until`), read nothing dated after the window's end: filter by date in the query,
+else drop the item and count it. Return that count with the rows.
+
 **Done when** the whole window of the source is read and every row has a link.
 
 ## Per source
