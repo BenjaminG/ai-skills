@@ -1,7 +1,7 @@
 ---
 name: elevate
-description: This skill should be used when the user wants the highest-leverage technical or architectural changes for their project, ranked from what breaks in production (recurring bugs, incidents, slow paths, frictions reported in Slack, Linear or Datadog) and from the code itself, ending on two recommended changes, a quick win and a structural bet, each written as a project brief. The technical counterpart to `innovate`. Triggers on "elevate", "biggest tech wins", "what keeps breaking", "tech audit", "improvement opportunities", or "what should we re-architect". Accepts an optional focus (e.g., "feedback-loop", "dx", "build speed", "observability", "invoicing") and a window (`--since 30d`, default 90 days). `--until <date>` replays the run as of a past date, to test whether elevate would have proposed a change the team later made.
-argument-hint: "[focus area] [--since <days>d] [--until <YYYY-MM-DD>]"
+description: This skill should be used when the user wants the highest-leverage technical or architectural changes for their project, ranked from what breaks in production (recurring bugs, incidents, slow paths, frictions reported in Slack, Linear or Datadog) and from the code itself, ending on two recommended changes, a quick win and a structural bet, each written as a project brief. The technical counterpart to `innovate`. Triggers on "elevate", "biggest tech wins", "what keeps breaking", "tech audit", "improvement opportunities", or "what should we re-architect". Accepts an optional focus (e.g., "feedback-loop", "dx", "build speed", "observability", "invoicing") and a window (`--since 30d`, default 90 days). `--until <date>` replays the run as of a past date, to test whether elevate would have proposed a change the team later made. Each run is kept and the next one reuses its ledger, unchanged causal chains and checks; `--fresh` starts from zero.
+argument-hint: "[focus area] [--since <days>d] [--until <YYYY-MM-DD>] [--fresh]"
 ---
 
 # Elevate
@@ -38,8 +38,20 @@ what existed before it.
   the item on reading and count it. Sources whose data from before the date has expired (log
   retention) are `unavailable (retention)`; their metrics and monitor history may still answer.
 
+**Run memory.** Each run lives in `~/.local/state/elevate/<repo>/<end date>-<focus or full>/`,
+where `<repo>` is the base name of the main worktree (`git worktree list | head -1`), so replay
+worktrees share it. Write each step's output there as the step ends, never in the scratchpad:
+`run.md` (focus, window, end date, SHA read, per-source coverage), `ledger/<source>.md`,
+`clusters.md`, `trace-<cluster>.md` (with its probe scripts), `synthesis.md`, `candidates.md`,
+`checks.md`, `report.md`. A run cut short still feeds the next one.
+
+Then pick the **previous run**: the latest folder of this repo whose end date is on or before this
+run's end, and whose focus is this one or `full`. Steps 2, 4, 5 and 7 say what they reuse from it.
+With `--fresh`, or when none qualifies, reuse nothing.
+
 **Done when** the focus, the window and the included dimensions are written at the top of the run,
-and, in a replay, `Replay until <date> at <sha>`.
+the run folder exists, the previous run is named or `none`, and, in a replay,
+`Replay until <date> at <sha>`.
 
 ## 2. Build the ledger
 
@@ -57,6 +69,12 @@ Dispatch one read-only subagent per source the doc marks proven, in parallel. Gi
 [`references/ledger.md`](references/ledger.md), its section of `signals.md`, the `priority`
 section, the window (its end date in a replay) and the focus. Each returns ledger rows only; the main context holds the
 ledger, never the raw messages.
+
+With a previous run that covered a source up to a date inside this window, that source's subagent
+reads only from that date on. Its new rows merge into the previous rows whose `Last seen` falls in
+this window: the same symptom in the same place sums its counts and widens its dates. A carried row
+whose `First seen` precedes this window keeps its count, tagged `carried`; recount it when it
+decides a cluster's recurrence. A source the previous run left `unavailable` is read in full.
 
 A source that contradicts `signals.md` (retention shorter than the window, a channel renamed, a
 monitor routed to another channel, an alias to merge) gets fixed in the doc, in the copy read
@@ -90,6 +108,11 @@ answer:
 
 A chain whose failing link was not counted is `unconfirmed`, and its levers cap at Confidence Low.
 
+A cluster the previous run traced keeps its chain when
+`git diff --quiet <its SHA> <this SHA> -- <files of the chain>` passes: skip questions 1 to 4,
+rerun only the count of question 5 over this window, with the previous probe scripts. Otherwise
+trace it again, handing the subagent the previous chain as a lead to confirm or drop.
+
 **Done when** each traced cluster has a `file:line`, a causal chain in one sentence, and the count
 of its failing link or `unconfirmed`.
 
@@ -115,6 +138,9 @@ changes, each with the probability, estimated, that a typical team would propose
 
 Each lens keeps at least one candidate under 20 %. Then one more subagent, given each candidate's
 one-line change but not its rationale, merges the duplicates.
+
+When the meta-clusters and the three largest traced clusters are those of the previous run, with
+their chains kept, reuse its merged candidates and skip the lenses.
 
 **Done when** each meta-cluster has its count in the code, and every lens returned candidates,
 duplicates merged.
@@ -176,6 +202,10 @@ part of it: that work becomes its first slice, named in Notes. In a replay, acti
   Each probe comes with a command or measurement under 10 minutes and the signal that confirms it.
   A feasibility probe is listed first. Step 8 runs the kill-switches of the top 3.
 
+A lever the previous run checked keeps its checks, read from its `checks.md`, except for what may
+have moved since its end date: the ADRs when `git diff` shows a change under their folders, the
+issue tracker, always, and prior attempts, searched only after that date.
+
 **Done when** every surviving lever has a prior-attempt tag, its assumptions classified, and each
 probe its command.
 
@@ -231,6 +261,7 @@ project), expand another row, or run a pending probe. Publish nothing before the
 # Elevate · <focus or "full audit"> · <window>
 <in a replay: Replay until <date> at <sha> · items after the cutoff dropped: <n per source>>
 
+Run: <run folder> · reused from <previous run, or "none">: <ledger sources, chains, candidates, checks>
 Signal coverage: <source> checked (<rows>) · <source> unavailable (<reason>) · …
 ADRs consulted: <files, or "none found">
 
