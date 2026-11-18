@@ -8,26 +8,29 @@ argument-hint: "[PR]"
 
 A **demo** is a short video of the feature on the local app, from the state before the change to
 its visible result, that a reviewer watches in the PR description. It is **tight**: page loads and
-logins are cut, server waits last about a second, the cursor is a red dot the eye can follow. A
-flow runs about 15 s per scenario, 30 s at most for a single one; past 60 s, propose splitting
-the demo before filming. Title cards (in English, like the PR) go in only when a video chains
-several scenarios.
+logins are cut, server waits last about a second. It is **edited** like a Screen Studio video, by
+the montage engine `showcase` uses too: the app plays in a window on a background, the camera zooms
+on each click and each typing and pans between the ones that follow, and a cursor is drawn on top,
+gliding from one click to the next. A flow runs about 15 s per scenario, 30 s at most for a single
+one; past 60 s, propose splitting the demo before filming. Title cards (in English, like the PR) go
+in only when a video chains several scenarios.
 
 Everything for one PR lives in its **demo directory**, `DIR=~/.cache/pr-demo/<owner>-<repo>/<PR>/`:
-`record.js`, `reset`, `restore`, `backup/`, `markers.json`, `demo.mp4`, `demo.prev.mp4`,
-`sheet.png`. A second run on the same PR is a **re-take**: it reuses what is there.
+`record.js`, `reset`, `restore`, `backup/`, `markers.json`, `theme.css`, `timeline.json`, `frames/`,
+`demo.mp4`, `demo.prev.mp4`, `sheet.png`. A second run on the same PR is a **re-take**: it reuses what
+is there.
 
 ## 1. Resolve
 
 Take the PR from `$ARGUMENTS`, else the current branch's PR:
 `gh pr view [<n>] --json number,url,headRefName,headRepositoryOwner,body,baseRefName`.
-Create `DIR`. Locate the edit script:
+Create `DIR`. Locate the montage engine:
 
 ```bash
 for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/pr-demo}" \
          $(ls -d "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/pr-demo 2>/dev/null | sort -V | tail -1) \
          "$HOME/.claude/skills/pr-demo"; do
-  [ -n "$c" ] && [ -f "$c/scripts/edit.py" ] && echo "$c" && break
+  [ -n "$c" ] && [ -f "$c/scripts/engine.py" ] && echo "$c" && break
 done
 ```
 
@@ -104,25 +107,42 @@ picker that also takes ranges), dry-run that case too, unfilmed, and name it in 
 ## 7. Record
 
 Copy `$SKILL/assets/record.js` to `DIR/record.js` (a re-take edits the existing one), fill `OUT`
-and the scenario with its helpers — `click`, `type`, `title`, `cut(label, fn)` around loads and
-off-camera setup, `wait(label, fn)` around server work — then run it through
-`browser_run_code_unsafe` with `filename: DIR/record.js`. Save the returned JSON as
-`DIR/markers.json`.
+and the scenario with its helpers, then run it through `browser_run_code_unsafe` with
+`filename: DIR/record.js`. Save the returned JSON as `DIR/markers.json`.
+
+- `click(locator)` and `type(locator, text)`: every action on screen goes through them. They move the
+  cursor and tell the camera where to zoom; a `p.click()` or `p.fill()` would happen off camera.
+- `cut(label, fn)` around loads and off-camera setup; `wait(label, fn)` around server work.
+- `scenario(title, fn, subtitle)` around each scenario when there are several: a card names it.
+
+A re-take whose `record.js` still draws a red dot or calls `title` predates the engine: copy the
+template again and move the old scenario block into it, each `title(h, s)` becoming
+`scenario(h, async () => { …the steps up to the next title… }, s)`.
 
 "Browser is already in use" means another session holds the MCP profile: leave it, and run the same
-scenario from a Node script (`chromium.launch` from the repo's `playwright` package, signing in
-first inside a `cut`).
+`record.js` from a Node script, as `$SKILL/tests/e2e.js` does (`chromium.launch` from the repo's
+`playwright` package, signing in first inside a `cut`).
 
 **Done when** `markers.json` names an existing `.webm`.
 
-## 8. Edit and check
+## 8. Render and check
+
+Copy `~/.cache/showcase/<owner>-<repo>/theme.css` into `DIR` when it exists: the window then sits on
+the app's brand. Without it the stage is a neutral dark background; pr-demo never builds a theme.
 
 ```bash
-python3 "$SKILL/scripts/edit.py" DIR/markers.json DIR/demo.mp4 --sheet DIR/sheet.png
+python3 "$SKILL/scripts/engine.py" demo DIR/markers.json --out DIR/timeline.json
+NODE_PATH=<the app repo's node_modules holding playwright> node "$SKILL/scripts/render.js" DIR/timeline.json DIR/demo.mp4
+python3 "$SKILL/scripts/engine.py" sheet DIR/demo.mp4 DIR/sheet.png
 ```
 
+With pnpm, `NODE_PATH` is `$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
+The render takes about one second per two seconds of video.
+
 Read `sheet.png`. The first frame shows the start state and the last frame the result; no frame is
-blank, shows a login page, a dev overlay or an error toast. A result that differs from what the PR
+blank, shows a login page, a dev overlay or an error toast. When a zoom looks off target on the sheet,
+`render.js DIR/timeline.json --at <t>` writes `DIR/at-<t>.png` in seconds (shot starts and zoom
+times are in `timeline.json`). A result that differs from what the PR
 promises is a finding: report it as a possible bug before any re-take. Run `DIR/restore` and
 `cleanup.sh`, then `open DIR/demo.mp4`, and report its length, size and any change made to the
 local-app doc.
