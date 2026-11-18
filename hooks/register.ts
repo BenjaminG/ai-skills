@@ -3,7 +3,6 @@ import type { Register } from 'claude-code'
 import { COMMAND as BABYSIT, register as registerBabysit } from './babysit'
 import { register as registerNextStep } from './next-step'
 import { COMMAND as PRS, register as registerPrs } from './prs'
-import { COMMAND as XRAY, register as registerXray } from './skill-xray'
 import { FOLLOW_COMMAND, UNFOLLOW_COMMAND, register as registerSlackThread } from './slack-thread'
 import { COMMAND as WT, register as registerWt } from './wt'
 
@@ -18,7 +17,6 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register(PRS)
     await $.command.register(WT)
-    await $.command.register(XRAY)
     await $.command.register(BABYSIT)
     await $.command.register(FOLLOW_COMMAND)
     await $.command.register(UNFOLLOW_COMMAND)
@@ -28,7 +26,6 @@ export const register: Register = (on, options) => {
 
   registerPrs(on, options)
   registerWt(on, options)
-  registerXray(on, options)
   registerNextStep(on, options)
   registerBabysit(on, options)
   registerSlackThread(on, options)

@@ -36,7 +36,7 @@ claude --plugin-dir .
 
 ## Mods (function hooks)
 
-`hooks/hooks.json` names one hooks module, `hooks/register.ts`, which registers the mods under `hooks/`: the panes `/prs` (the author's open PRs, read from the standalone `pr-dash`'s `state.json`), `/wt` and `/xray` (skill usage and prompt cost), `next-step.ts` (proposes the chained skill after a turn, Tab to take), `/slack-follow` / `/slack-unfollow` (`slack-thread.ts`: polls a Slack thread through the claude.ai Slack MCP, submits new replies once the session is idle) and `/shepherd` (`babysit.ts`: the babysit-prs manager in code, reading `pr-dash`'s `state.json`, holding `skills/babysit-prs/scripts/watch.sh` around `pr-dash follow`, and spawning unnamed agents with `skills/babysit-prs/references/agent-prompt.md`, the prompt the skill uses too). Early access: the module loads only with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+`hooks/hooks.json` names one hooks module, `hooks/register.ts`, which registers the mods under `hooks/`: the panes `/prs` (the author's open PRs, read from the standalone `pr-dash`'s `state.json`) and `/wt`, `next-step.ts` (proposes the chained skill after a turn, Tab to take), `/slack-follow` / `/slack-unfollow` (`slack-thread.ts`: polls a Slack thread through the claude.ai Slack MCP, submits new replies once the session is idle) and `/shepherd` (`babysit.ts`: the babysit-prs manager in code, reading `pr-dash`'s `state.json`, holding `skills/babysit-prs/scripts/watch.sh` around `pr-dash follow`, and spawning unnamed agents with `skills/babysit-prs/references/agent-prompt.md`, the prompt the skill uses too). Early access: the module loads only with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
 
 ```bash
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .   # run from source
