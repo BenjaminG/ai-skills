@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Render a showcase timeline to a silent mp4, one screenshot of assets/stage.html per frame.
-// Usage: NODE_PATH=<dir holding playwright> node render.js <timeline.json> <silent.mp4>
+// Render a timeline (engine.py's, or showcase's timeline.py) to a silent mp4, one screenshot of
+// assets/stage.html per frame. An existing <out.mp4> is kept as <out>.prev.mp4.
+// Usage: NODE_PATH=<dir holding playwright> node render.js <timeline.json> <out.mp4>
 //        NODE_PATH=… node render.js <timeline.json> --at 10,13.5   (only those frames, as <dir>/at-<t>.png)
 // theme.css next to the timeline, when present, gives the stage the app's brand.
 const { chromium } = require('playwright');
@@ -47,8 +48,10 @@ async function main() {
     return;
   }
 
+  if (fs.existsSync(out)) fs.renameSync(out, out.replace(/(\.\w+)$/, '.prev$1'));
   const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(tl.fps), '-c:v', 'mjpeg', '-i', '-',
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', out], { stdio: ['pipe', 'inherit', 'inherit'] });
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out],
+  { stdio: ['pipe', 'inherit', 'inherit'] });
   const done = once(ff, 'close');
   const n = Math.round(tl.duration * tl.fps);
   const t0 = Date.now();

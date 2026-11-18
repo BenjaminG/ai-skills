@@ -1,6 +1,8 @@
 // Recording template for Playwright MCP `browser_run_code_unsafe`.
 // Copy to <DIR>/record.js, set OUT and the scenario, then run it with `filename`.
 // The new context reuses the MCP page's login (storageState), so the video starts signed in.
+// Nothing is drawn on the page: the markers tell scripts/engine.py where to cut, where the camera
+// zooms and where the cursor goes, and assets/stage.html draws them over the recording.
 async (page) => {
   const OUT = '__DIR__'; // absolute path of the demo directory
   const SIZE = { width: 1920, height: 1080 };
@@ -12,13 +14,6 @@ async (page) => {
       const style = document.createElement('style');
       style.textContent = 'nextjs-portal, .tsqd-open-btn-container, [aria-label="Open React Query Devtools"] { display: none !important }';
       document.head.appendChild(style);
-      const dot = document.createElement('div');
-      dot.style.cssText = 'position:fixed;left:-40px;top:-40px;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(220,38,38,.55);border:2px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.4);z-index:2147483647;pointer-events:none;transition:transform .08s';
-      document.body.appendChild(dot);
-      // A CSS `zoom` on the page scales the dot's own coordinates too: undo it, or the dot lands off the click.
-      window.addEventListener('mousemove', (e) => { const z = dot.currentCSSZoom || 1; dot.style.left = e.clientX / z + 'px'; dot.style.top = e.clientY / z + 'px'; }, true);
-      window.addEventListener('mousedown', () => { dot.style.transform = 'scale(.7)'; }, true);
-      window.addEventListener('mouseup', () => { dot.style.transform = 'scale(1)'; }, true);
     });
   });
 
@@ -31,32 +26,42 @@ async (page) => {
   const cut = span('cut');   // dropped from the video: page loads, off-camera setup
   const wait = span('wait'); // sped up: extraction, polling, server work
   const chapter = span('chapter'); // showcase: one chapter of the script, by its id
-  const focus = async (label, locator) => { // showcase: zoom on this element from now on (null: zoom out)
+  const scenario = async (title, fn, subtitle = '') => { // pr-demo: one scenario; with several, a card names each
+    const start = at(); await fn(); markers.push({ kind: 'chapter', label: title, subtitle, start, end: at() });
+  };
+  const focus = async (label, locator) => { // showcase: zoom on this element and light it from now on (null: zoom out)
     // The box is in viewport coordinates: measure it once the element is in view and the scroll has settled.
     let box = null;
     if (locator) { await locator.scrollIntoViewIfNeeded(); await p.waitForTimeout(400); box = await locator.boundingBox(); }
     markers.push({ kind: 'focus', label, start: at(), end: at(), box });
   };
 
-  const click = async (locator) => {
+  let pos = { x: SIZE.width / 2, y: SIZE.height / 2 };
+  const moveTo = async (x, y) => {
+    const d = Math.hypot(x - pos.x, y - pos.y);
+    if (d < 2) return;
+    const ms = 180 + 16 * Math.sqrt(d); // longer for a longer way, after webreel's cursor-motion.ts (Apache-2.0)
+    const start = at();
+    await p.mouse.move(x, y, { steps: Math.max(1, Math.round(ms / 16)) });
+    const rest = ms - (at() - start) * 1000;
+    if (rest > 0) await p.waitForTimeout(rest);
+    markers.push({ kind: 'move', label: '', start, end: at(), from: pos, to: { x, y } });
+    pos = { x, y };
+  };
+  const act = async (label, locator, fn) => { // the camera zooms on the element while fn runs
+    const start = at();
     await locator.scrollIntoViewIfNeeded();
     const box = await locator.boundingBox();
-    await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 12 });
+    await moveTo(box.x + box.width / 2, box.y + box.height / 2);
     await p.waitForTimeout(150);
-    await locator.click();
+    markers.push({ kind: 'click', label, start: at(), end: at() });
+    await fn();
+    markers.push({ kind: 'act', label, start, end: at(), box });
   };
-  const type = async (locator, text) => { await click(locator); await locator.press('ControlOrMeta+a'); await locator.pressSequentially(text, { delay: 18 }); };
-  const title = async (heading, subtitle = '') => {
-    await p.evaluate(([h, s]) => {
-      const card = document.createElement('div');
-      card.id = '__title';
-      card.style.cssText = 'position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(17,24,39,.9);color:#fff;font-family:system-ui,sans-serif;text-align:center';
-      card.innerHTML = `<div style="font-size:44px;font-weight:700;margin-bottom:12px">${h}</div><div style="font-size:24px;opacity:.85">${s}</div>`;
-      document.body.appendChild(card);
-    }, [heading, subtitle]);
-    await p.waitForTimeout(2500);
-    await p.evaluate(() => document.getElementById('__title')?.remove());
-  };
+  const click = (locator) => act('click', locator, () => locator.click());
+  const type = (locator, text) => act('type', locator, async () => {
+    await locator.click(); await locator.press('ControlOrMeta+a'); await locator.pressSequentially(text, { delay: 18 });
+  });
 
   try {
     // ---- scenario ----

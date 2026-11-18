@@ -14,3 +14,6 @@ __pycache__/
 
 # Playwright MCP output dir (outputDir: ./recordings)
 recordings/
+
+# pr-demo e2e artifacts (skills/pr-demo/tests/e2e.js)
+skills/pr-demo/tests/out/
