@@ -98,18 +98,25 @@
     const w = W / s, h = H / s;
     return { s, x: clamp(box.x + box.width / 2 - w / 2, 0, W - w), y: clamp(box.y + box.height / 2 - h / 2, 0, H - h) };
   }
-  function viewAt(focus, lt) {
-    let from = FULL, to = FULL, at = null, box = null;
-    for (const f of focus) if (f.t <= lt) { from = to; to = viewFor(f.box, f.light); at = f.t; box = f.light ? f.box : null; }
-    if (at === null) return { v: FULL, box: null, k: 0 };
-    const k = ease((lt - at) / ZOOM);
+  function between(from, to, k) {
     const s = Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * k);
     const pan = (p) => {
       if (Math.abs(to.s - from.s) < 1e-6) return from[p] + (to[p] - from[p]) * k;
       const anchor = (to[p] * to.s - from[p] * from.s) / (to.s - from.s);
       return anchor - (anchor - from[p]) * from.s / s;
     };
-    return { v: { s, x: pan('x'), y: pan('y') }, box, k };
+    return { s, x: pan('x'), y: pan('y') };
+  }
+  function viewAt(focus, lt) {
+    let from = FULL, to = FULL, at = null, box = null;
+    for (const f of focus) if (f.t <= lt) {
+      // a target that comes before the last one is reached leaves from where the camera is
+      if (at !== null) from = between(from, to, ease((f.t - at) / ZOOM));
+      to = viewFor(f.box, f.light); at = f.t; box = f.light ? f.box : null;
+    }
+    if (at === null) return { v: FULL, box: null, k: 0 };
+    const k = ease((lt - at) / ZOOM);
+    return { v: between(from, to, k), box, k };
   }
 
   // Cursor moves start fast and settle in gently, on a slight arc (after webreel's cursor-motion.ts, Apache-2.0).

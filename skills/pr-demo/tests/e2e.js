@@ -92,10 +92,11 @@ const SCENARIO = `
 
   // At each click, the drawn cursor tip, mapped back into the recording's pixels, is on the clicked element.
   const fd = path.join(OUT, 'frames', 'main');
+  const recs = { main: { ...tl.recs.main, base: `file://${fd}/`, frames: fs.readdirSync(fd).length } };
   const sb = await chromium.launch();
   const stage = await sb.newPage({ viewport: { width: tl.size[0], height: tl.size[1] } });
   await stage.goto('file://' + path.join(ROOT, 'assets', 'stage.html'));
-  await stage.evaluate((t) => window.load(t), { ...tl, recs: { main: { ...tl.recs.main, base: `file://${fd}/`, frames: fs.readdirSync(fd).length } } });
+  await stage.evaluate((t) => window.load(t), { ...tl, recs });
   for (const [i, c] of add.cursor.clicks.entries()) {
     await stage.evaluate((t) => window.seek(t), add.start + c);
     const tip = await stage.evaluate(() => {
@@ -105,6 +106,19 @@ const SCENARIO = `
     const b = kinds('act')[i].box;
     assert.ok(tip.x >= b.x && tip.x <= b.x + b.width && tip.y >= b.y && tip.y <= b.y + b.height,
       `click ${i}: cursor drawn at ${tip.x.toFixed(0)},${tip.y.toFixed(0)} of the recording, element at ${JSON.stringify(b)}`);
+  }
+  // The camera never jumps. Around a cut the engine can send a zoom-out and the next zoom 1 ms apart
+  // (pod-083's client demo): the next zoom leaves from where the camera is, not from the whole page.
+  const settled = zoomed[1].t + 0.9;
+  const hop = { ...add, start: 0, focus: [...add.focus.filter((f) => f.t < settled),
+    { t: settled, box: null, light: false }, { t: settled + 0.001, box: zoomed[0].box, light: false }] };
+  await stage.evaluate((t) => window.load(t), { ...tl, shots: [hop], recs });
+  let last = null;
+  for (let f = -3; f <= 6; f++) {
+    await stage.evaluate((t) => window.seek(t), settled + f / tl.fps);
+    const scale = await stage.evaluate(() => parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('#inner').style.transform)[1]));
+    if (last) assert.ok(scale / last < 1.15 && last / scale < 1.15, `the camera jumps from ×${last.toFixed(2)} to ×${scale.toFixed(2)} in one frame`);
+    last = scale;
   }
   await sb.close();
 
