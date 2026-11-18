@@ -11,6 +11,7 @@ The model's only writing job is the 5-line summary, handed in via
     render.py plan --base-sha <sha> [--full]   # round number + delta commit, as JSON
     render.py ingest --findings f.json --run-id wf_x --files 12 --add 998 --del 3
     render.py brief                        # compact digest, for writing the summary
+    render.py clones --base-sha <sha> --report jscpd.json   # clone hints for ponytail-reviewer
     render.py show --summary-file s.md     # terminal report + report.md
     render.py dismiss B1,M2 | undismiss D1 | show-dismissed
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -367,6 +369,54 @@ def cmd_plan(p: F.Paths, a) -> int:
     return 0
 
 
+CLONE_MIN_LINES = 10
+CLONE_MIN_CODE = 5  # jscpd's own --min-lines default
+# Not code: imports, `} from '…'` tails, bare name lists between them, comments, blanks.
+_NOT_CODE = re.compile(r"""^\s*(import\b|//|/?\*|#)|\bfrom\s+['"]|^[\w$,{}\s]*$""")
+
+
+def cmd_clones(p: F.Paths, a) -> int:
+    """jscpd scans the whole repo; keep the clones a line this branch adds touches."""
+    try:
+        dups = json.load(open(a.report)).get("duplicates") or []
+    except (OSError, ValueError):
+        return 0  # jscpd failed or was skipped: no hints, the gate goes on
+    changed = set(F._git("diff", "--name-only", a.base_sha, "HEAD", cwd=str(p.root)).split())
+    hunks: dict[str, list | None] = {}
+
+    def touched(side: dict) -> bool:
+        f = side["name"].removeprefix("./")
+        if f not in changed:  # most of a whole-repo report: skip the per-file git call
+            return False
+        if f not in hunks:
+            hunks[f] = F.delta_hunks(p.root, a.base_sha, f)
+        h = hunks[f]
+        return h is None or any(side["start"] <= e and side["end"] >= s for s, e in h)
+
+    def where(side: dict) -> str:
+        return f"{side['name'].removeprefix('./')}:{side['start']}-{side['end']}"
+
+    out = []
+    for c in dups:
+        if c.get("lines", 0) < CLONE_MIN_LINES:
+            continue
+        code = [l for l in (c.get("fragment") or "").splitlines() if not _NOT_CODE.search(l)]
+        if len(code) < CLONE_MIN_CODE:
+            continue  # an identical import block or file header is not a copy-paste worth flagging
+        first, second = c["firstFile"], c["secondFile"]
+        if touched(first):
+            mine, other = first, second
+        elif touched(second):
+            mine, other = second, first
+        else:
+            continue
+        out.append((c["lines"], f"- {where(mine)} ≈ {where(other)} ({c['lines']} lines)"))
+    if out:
+        print("# Clone hints (jscpd)\n")
+        print("\n".join(line for _, line in sorted(out, key=lambda x: -x[0])[:20]))
+    return 0
+
+
 def cmd_brief(p: F.Paths, a) -> int:
     state = F.load_state(p)
     if not state:
@@ -480,6 +530,10 @@ def main(argv=None) -> int:
 
     sub.add_parser("brief")
 
+    cl = sub.add_parser("clones")
+    cl.add_argument("--base-sha", required=True)
+    cl.add_argument("--report", required=True)
+
     sh = sub.add_parser("show")
     sh.add_argument("--summary-file", default="")
 
@@ -496,6 +550,7 @@ def main(argv=None) -> int:
         "plan": cmd_plan,
         "ingest": cmd_ingest,
         "brief": cmd_brief,
+        "clones": cmd_clones,
         "show": cmd_show,
         "dismiss": cmd_dismiss,
         "undismiss": cmd_undismiss,

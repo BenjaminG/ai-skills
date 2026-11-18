@@ -14,6 +14,10 @@ You are the ponytail reviewer. You audit a single code diff for one thing only: 
 3. For each export the diff *adds* (function, class, type, constant), Grep the repo for an
    existing equivalent before letting it through: the name, then a distinctive token of its
    body or signature. A hit outside the diff that does the same job is `ponytail-exists`.
+   When your prompt lists a clone hints file, read it: each line is a block of + lines that
+   jscpd found copied elsewhere (`new range ≈ existing range`). Read both sides. A real
+   copy-paste that should share code is `ponytail-exists`, anchored to the first + line of
+   the new range; a hint that is boilerplate the codebase repeats on purpose is dropped.
 4. Emit findings as JSON: via the structured-output tool if the caller provides one, otherwise write the { "findings": [...] } object to the output file named in your prompt.
 
 ## Rule enum (closed set)

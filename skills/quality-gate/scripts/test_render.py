@@ -259,6 +259,53 @@ def test_rounds_converge():
         assert json.loads(render("plan", "--base-sha", "BASE1", "--full").stdout)["delta_from"] == ""
 
 
+def test_clones_keeps_only_real_copies_the_branch_adds():
+    """jscpd scans the whole repo; only clones a + line touches reach ponytail-reviewer."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        git = lambda *a: subprocess.run(["git", *a], cwd=root, check=True, capture_output=True)
+        git("init", "-q"); git("config", "user.email", "t@t"); git("config", "user.name", "t")
+        body = "".join(f"  const v{i} = compute({i});\n" for i in range(12))
+        (root / "old.ts").write_text("export function legacy() {\n" + body + "}\n")
+        (root / "a.ts").write_text("x\n" * 30)
+        (root / "b.ts").write_text("x\n" * 30)
+        git("add", "."); git("commit", "-qm", "base")
+        base = git("rev-parse", "HEAD").stdout.decode().strip()
+        # The branch adds new.ts, whose lines 3-14 copy old.ts:2-13.
+        (root / "new.ts").write_text("import a from 'a'\n\n" + body + "\n")
+        git("add", "."); git("commit", "-qm", "head")
+
+        def clone(f1, s1, e1, f2, s2, e2, frag=body):
+            return {"lines": e1 - s1 + 1, "fragment": frag,
+                    "firstFile": {"name": f1, "start": s1, "end": e1},
+                    "secondFile": {"name": f2, "start": s2, "end": e2}}
+
+        report = {"duplicates": [
+            clone("./old.ts", 2, 13, "./new.ts", 3, 14),                     # kept
+            clone("old.ts", 2, 7, "new.ts", 3, 8),                           # too short
+            clone("a.ts", 1, 20, "b.ts", 1, 20),                             # untouched by the branch
+            clone("new.ts", 1, 12, "old.ts", 1, 12,                          # imports only
+                  frag="import a from 'a'\nimport { b,\n  c } from 'b'\n"),
+            clone("new.ts", 1, 14, "a.ts", 1, 14,                            # imports + doc + header
+                  frag="import a from 'a'\nimport type { B } from 'b'\n\n/**\n * Copied as is.\n */\n"
+                       "export class Foo extends Base<\n"),
+        ]}
+        rp = root / "jscpd.json"
+        rp.write_text(json.dumps(report))
+        r = subprocess.run([sys.executable, str(Path(__file__).with_name("render.py")),
+                            "clones", "--base-sha", base, "--report", str(rp)],
+                           cwd=root, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        lines = [l for l in r.stdout.splitlines() if l.startswith("- ")]
+        assert lines == ["- new.ts:3-14 ≈ old.ts:2-13 (12 lines)"], r.stdout
+
+        # A missing or broken report (jscpd failed, no network) is no hints, not an error.
+        r = subprocess.run([sys.executable, str(Path(__file__).with_name("render.py")),
+                            "clones", "--base-sha", base, "--report", str(root / "nope.json")],
+                           cwd=root, capture_output=True, text=True)
+        assert r.returncode == 0 and r.stdout == "", (r.returncode, r.stdout, r.stderr)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

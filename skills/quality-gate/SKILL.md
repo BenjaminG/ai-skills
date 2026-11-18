@@ -10,7 +10,7 @@ argument-hint: "[base-branch] [--full] [--no-jev] [--force-fresh] [--ignore-scop
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `12`. v12: renamed from `gate-wf` (state now in `~/.claude/quality-gate-state/`), and the Jev first pass runs by default: `--no-jev` opts out, and a missing key, skill or failed preflight turns it off with one warning line instead of stopping the gate. v11: rounds converge. A branch reviewed several times kept
+**Skill version**: `13`. v13: jscpd clone hints for `ponytail-reviewer` (Step 2a, `render.py clones`). `ponytail-exists` only grepped the names of added exports, so a body pasted under a new name went through; replaying 20 naboo PRs, jscpd found such copies on 11. The whole-repo scan (~6-8s) is filtered to clones of ≥10 lines that a + line touches, imports and file headers dropped; ponytail reads both sides before claiming one. Replaces the drywall plugin, which wraps the same jscpd but scans the whole repo with no diff filter. v12: renamed from `gate-wf` (state now in `~/.claude/quality-gate-state/`), and the Jev first pass runs by default: `--no-jev` opts out, and a missing key, skill or failed preflight turns it off with one warning line instead of stopping the gate. v11: rounds converge. A branch reviewed several times kept
 re-finding things: on 69 naboo runs, 21% of round-2+ findings repeated the last round
 and 42% sat on code the last round already saw. Now `render.py` carries the last
 round's findings forward by content anchor (still there → still open and still
@@ -373,6 +373,18 @@ is and what to diff from:
 
 ```bash
 RENDER="$(dirname "$WF_SCRIPT")/render.py"
+
+# Clone hints for ponytail-reviewer: jscpd scans the whole repo (~8s on 2.7M lines),
+# render.py keeps the clones of ≥10 lines that a + line touches, imports excluded.
+# A failure (no node, no network for npx) leaves clones.md empty; the gate goes on.
+rm -rf "$TMP_DIR/jscpd"
+npx -y jscpd@5.0.12 -r json -o "$TMP_DIR/jscpd" -f typescript,tsx,javascript,jsx,python \
+  -i '**/node_modules/**,**/dist/**,**/build/**,**/*.test.*,**/*.spec.*,**/__generated__/**,**/__fixtures__/**,**/*.config.*,**/codegen.ts' \
+  . >/dev/null 2>&1 || true
+python3 "$RENDER" clones --base-sha "$BASE_SHA" \
+  --report "$TMP_DIR/jscpd/jscpd-report.json" > "$TMP_DIR/clones.md"
+HAS_CLONES=$([ -s "$TMP_DIR/clones.md" ] && echo true || echo false)
+
 PLAN=$(python3 "$RENDER" plan --base-sha "$BASE_SHA" $([ $FULL -eq 1 ] && echo --full))
 DELTA_FROM=$(jq -r .delta_from <<<"$PLAN")
 PLAN_BANNER=$(jq -r .banner <<<"$PLAN")
@@ -506,6 +518,7 @@ Workflow({
     prNumber:  <PR number or null>,
     deltaFrom: <$DELTA_FROM, or omit when empty>,
     openFindings: <$OPEN_JSON>,
+    clones:    <$HAS_CLONES>,
     useJev:    <true when USE_JEV=1 after Step 3e, else omit>,
     jevScript: <$JV from Step 3e when USE_JEV=1, else omit>
   }

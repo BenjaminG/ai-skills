@@ -97,7 +97,7 @@ Artifacts (scoped to your concern — files outside it are intentionally omitted
 - Diff: ${A.tmpDir}/${diffBase(reviewer)}.txt
 - Plus-lines (+ lines per file): ${A.tmpDir}/${diffBase(reviewer)}-plus.txt
 - Context bundle (CLAUDE.md + ADRs + Linear + PR + sessions): ${A.tmpDir}/context-bundle.md
-
+${A.clones && agentOf(reviewer) === 'ai-skills:ponytail-reviewer' ? `- Clone hints (jscpd: blocks this branch adds that copy code elsewhere): ${A.tmpDir}/clones.md\n` : ''}
 Read whatever else you need — full versions of changed files, imported modules, schemas, callers — to reason. The diff scopes WHERE a finding is anchored, NOT what you may read. A defect whose trigger is on a + line but whose evidence lives in a non-diff file IS in scope: anchor it to the diff line, cite the external file in evidence.
 
 Constraints:
