@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fixture app</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif; color: #1f2937; background: #f5f6f8; display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+  nav { background: #111827; color: #cbd5e1; padding: 20px 14px; }
+  nav b { display: block; color: #fff; font-size: 15px; margin-bottom: 18px; }
+  nav a { display: block; padding: 7px 10px; border-radius: 6px; color: inherit; text-decoration: none; }
+  nav a.on { background: #1f2937; color: #fff; }
+  main { padding: 28px 36px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #6b7280; margin-bottom: 22px; }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #f0f1f3; }
+  th { color: #6b7280; font-weight: 500; font-size: 12px; }
+  .tag { font-size: 11px; padding: 2px 7px; border-radius: 99px; background: #eef2ff; color: #4338ca; }
+  label { display: block; color: #4b5563; margin: 12px 0 5px; }
+  input, select { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 7px; font: inherit; }
+  button { margin-top: 16px; width: 100%; padding: 9px; border: 0; border-radius: 7px; background: #4f46e5; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button[disabled] { opacity: .6; }
+  #toast { position: fixed; right: 28px; bottom: 28px; background: #065f46; color: #fff; padding: 10px 16px; border-radius: 8px; display: none; }
+  .filler { margin-top: 24px; }
+  .filler p { color: #6b7280; }
+</style>
+</head>
+<body>
+<nav>
+  <b>Acme Events</b>
+  <a href="#">Dashboard</a><a class="on" href="#">Venues</a><a href="#">Bookings</a><a href="#">Invoices</a><a href="#">Settings</a>
+</nav>
+<main>
+  <h1>Venues</h1>
+  <div class="sub">12 venues · last sync 4 min ago</div>
+  <div class="grid">
+    <div class="card">
+      <table id="venues">
+        <thead><tr><th>Name</th><th>City</th><th>Capacity</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Château de Vaux</td><td>Maincy</td><td>240</td><td><span class="tag">Confirmed</span></td></tr>
+          <tr><td>Les Docks</td><td>Marseille</td><td>120</td><td><span class="tag">Pending</span></td></tr>
+          <tr><td>Hôtel Mercure Lille</td><td>Lille</td><td>80</td><td><span class="tag">Confirmed</span></td></tr>
+          <tr><td>Domaine des Hauts</td><td>Annecy</td><td>60</td><td><span class="tag">Draft</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <form class="card" id="add" onsubmit="return add(event)">
+      <strong>Add a venue</strong>
+      <label for="name">Name</label><input id="name" autocomplete="off">
+      <label for="city">City</label><input id="city" autocomplete="off">
+      <label for="cap">Capacity</label><input id="cap" type="number">
+      <button id="save">Save venue</button>
+    </form>
+  </div>
+  <div class="card filler">
+    <strong>Notes</strong>
+    <p>Venues sync every five minutes from the partner directory. A venue in Draft is hidden from clients until a manager confirms its capacity and its rates for the season.</p>
+    <p style="height:900px">Scroll target below.</p>
+    <p id="bottom">End of notes.</p>
+  </div>
+</main>
+<div id="toast">Venue saved</div>
+<script>
+  // Stands in for server work: the save takes 2.5 s, which a demo's `wait` speeds up.
+  function add(e) {
+    e.preventDefault();
+    const b = document.getElementById('save');
+    b.disabled = true; b.textContent = 'Saving…';
+    setTimeout(() => {
+      const v = (id) => document.getElementById(id).value;
+      document.querySelector('#venues tbody').insertAdjacentHTML('beforeend',
+        `<tr><td>${v('name')}</td><td>${v('city')}</td><td>${v('cap')}</td><td><span class="tag">Draft</span></td></tr>`);
+      b.disabled = false; b.textContent = 'Save venue';
+      const t = document.getElementById('toast'); t.style.display = 'block';
+    }, 2500);
+    return false;
+  }
+</script>
+</body>
+</html>

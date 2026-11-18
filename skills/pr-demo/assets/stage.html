@@ -2,15 +2,15 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Showcase stage</title>
+<title>Demo stage</title>
 <!-- Driven by scripts/render.js: load(timeline) once, then seek(t) per frame. Every style is a
      pure function of t, so a frame never depends on the one before it. The theme.css next to the
-     timeline overrides these variables with the app's own tokens. -->
+     timeline overrides these variables with the app's own tokens; without it, a neutral dark stage. -->
 <style>
   :root {
-    --bg: #f1eee7; --fg: #1f2a1f; --muted: #6f7468; --accent: #2f5d3a; --accent-soft: #e2e9d8;
-    --surface: #ffffff; --radius: 16px;
-    --font-display: Georgia, "Times New Roman", serif; --font-body: system-ui, sans-serif;
+    --bg: linear-gradient(135deg, #2e3340 0%, #171a21 100%); --fg: #f3f4f6; --muted: #9ca3af;
+    --accent: #c7d2fe; --accent-soft: rgba(199, 210, 254, .16); --surface: #ffffff; --radius: 16px;
+    --font-display: system-ui, sans-serif; --font-body: system-ui, sans-serif;
   }
   html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font-body); }
   #root { position: absolute; inset: 0; }
@@ -30,7 +30,10 @@
            background: var(--surface); box-shadow: 0 30px 80px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.08); }
   #inner { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
   #shot { display: block; width: 1920px; height: 1080px; }
+  #frame.bare { top: 90px; }   /* no pill nor caption (pr-demo): the window sits in the middle */
   #ring { position: absolute; box-sizing: border-box; border: 0; border-radius: 14px; box-shadow: 0 0 0 4000px rgba(10, 12, 8, .32); }
+  #cursor { position: absolute; left: 0; top: 0; width: 27px; height: 39px; transform-origin: 0 0; pointer-events: none; }
+  #ripple { position: absolute; border-radius: 50%; border: 3px solid rgba(17, 24, 39, .55); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -38,12 +41,19 @@
   <section id="card" class="layer"></section>
   <section id="chapter" class="layer">
     <header><span class="pill"></span><span class="caption"></span></header>
-    <div id="frame"><div id="inner"><img id="shot" alt=""><div id="ring"></div></div></div>
+    <div id="frame"><div id="inner"><img id="shot" alt=""><div id="ring"></div><div id="ripple"></div>
+      <!-- the macOS arrow, 1.5x; its tip is the hotspot -->
+      <svg id="cursor" viewBox="0 0 18 26"><path d="M1 1 L1 20.5 L5.6 16.2 L8.7 23.6 L11.9 22.2 L8.9 15 L15.2 15 Z"
+        fill="#000" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </div></div>
   </section>
 </div>
 <script>
   const W = 1920, H = 1080, FRAME = 1600 / W;
   const FADE_IN = 0.35, FADE_OUT = 0.25, ZOOM = 0.8, MAX_ZOOM = 2.2;
+  const AUTO_ZOOM = 1.8;          // most a click or a typing zooms; an explicit focus goes to MAX_ZOOM
+  const IDLE = 1.5, HIDE = 0.3;   // the cursor fades out over HIDE once still for IDLE seconds
+  const PRESS = 0.25, RIPPLE = 0.45;
   const $ = (s) => document.querySelector(s);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const ease = (x) => { x = clamp(x, 0, 1); return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
@@ -82,15 +92,15 @@
   }
 
   const FULL = { s: 1, x: 0, y: 0 };
-  function viewFor(box) {
+  function viewFor(box, light) {
     if (!box) return FULL;
-    const s = clamp(Math.min(0.72 * W / box.width, 0.72 * H / box.height), 1, MAX_ZOOM);
+    const s = clamp(Math.min(0.72 * W / box.width, 0.72 * H / box.height), 1, light ? MAX_ZOOM : AUTO_ZOOM);
     const w = W / s, h = H / s;
     return { s, x: clamp(box.x + box.width / 2 - w / 2, 0, W - w), y: clamp(box.y + box.height / 2 - h / 2, 0, H - h) };
   }
   function viewAt(focus, lt) {
     let from = FULL, to = FULL, at = null, box = null;
-    for (const f of focus) if (f.t <= lt) { from = to; to = viewFor(f.box); at = f.t; box = f.box; }
+    for (const f of focus) if (f.t <= lt) { from = to; to = viewFor(f.box, f.light); at = f.t; box = f.light ? f.box : null; }
     if (at === null) return { v: FULL, box: null, k: 0 };
     const k = ease((lt - at) / ZOOM);
     const s = Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * k);
@@ -102,6 +112,43 @@
     return { v: { s, x: pan('x'), y: pan('y') }, box, k };
   }
 
+  // Cursor moves start fast and settle in gently, on a slight arc (after webreel's cursor-motion.ts, Apache-2.0).
+  function settle(t) {
+    t = clamp(t, 0, 1);
+    if (t <= 0.4) return 0.5 * (t / 0.4) ** 2;
+    return 0.5 + 0.5 * (1 - (1 - (t - 0.4) / 0.6) ** 3);
+  }
+  function along(m, k) {
+    const { from: a, to: b } = m, d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const bend = d < 80 ? 0 : d * 0.06;
+    const c = { x: (a.x + b.x) / 2 - (b.y - a.y) / d * bend, y: (a.y + b.y) / 2 + (b.x - a.x) / d * bend };
+    const u = 1 - k;
+    return { x: u * u * a.x + 2 * u * k * c.x + k * k * b.x, y: u * u * a.y + 2 * u * k * c.y + k * k * b.y };
+  }
+  function drawCursor(cur, lt) {   // inside #inner: it zooms with the page
+    const el = $('#cursor'), rip = $('#ripple');
+    const moves = cur?.moves || [], clicks = cur?.clicks || [];
+    const i = moves.findLastIndex((m) => m.t0 <= lt);
+    if (i < 0) { el.style.opacity = 0; rip.style.opacity = 0; return; }
+    const m = moves[i], moving = lt < m.t1;
+    const p = moving ? along(m, settle((lt - m.t0) / (m.t1 - m.t0))) : m.to;
+    const clickBefore = (t) => clicks.filter((c) => c <= t).at(-1) ?? -Infinity;
+    const lastClick = clickBefore(lt);
+    const still = moving ? 0 : lt - Math.max(m.t1, lastClick);
+    // back from hidden: fade in with the move instead of popping up
+    const before = i > 0 ? Math.max(moves[i - 1].t1, clickBefore(m.t0)) : -Infinity;
+    const shown = m.t0 - before > IDLE + HIDE ? clamp((lt - m.t0) / 0.15, 0, 1) : 1;
+    const press = lt - lastClick < PRESS ? 0.82 : 1;
+    el.style.opacity = Math.min(shown, clamp(1 - (still - IDLE) / HIDE, 0, 1));
+    el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${press})`;
+    const r = (lt - lastClick) / RIPPLE;
+    rip.style.opacity = r < 1 ? 0.6 * (1 - r) : 0;
+    if (r < 1) {
+      const size = 10 + 34 * r;
+      Object.assign(rip.style, { left: `${p.x - size / 2}px`, top: `${p.y - size / 2}px`, width: `${size}px`, height: `${size}px` });
+    }
+  }
+
   window.seek = async (t) => {
     const s = TL.shots.find((x) => t >= x.start && t < x.start + x.dur) || TL.shots[TL.shots.length - 1];
     const lt = t - s.start;
@@ -110,7 +157,12 @@
       $('#card').style.display = s.kind === 'card' ? 'flex' : 'none';
       $('#chapter').style.display = s.kind === 'chapter' ? 'block' : 'none';
       if (s.kind === 'card') buildCard(s);
-      else { $('.pill').textContent = s.label; $('.caption').textContent = s.caption || ''; }
+      else {
+        const bare = !s.label && !s.caption;
+        $('header').style.display = bare ? 'none' : 'flex';
+        $('#frame').classList.toggle('bare', bare);
+        $('.pill').textContent = s.label || ''; $('.caption').textContent = s.caption || '';
+      }
     }
     $('#root').style.opacity = clamp(Math.min(lt / FADE_IN, (s.dur - lt) / FADE_OUT), 0, 1);
     if (s.kind === 'card') return animateCard(lt);
@@ -131,6 +183,7 @@
       left: `${box.x - 8}px`, top: `${box.y - 8}px`, width: `${box.width + 16}px`, height: `${box.height + 16}px`,
       opacity: k,
     });
+    drawCursor(s.cursor, lt);
   };
 </script>
 </body>
