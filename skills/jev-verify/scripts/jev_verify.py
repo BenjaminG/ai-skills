@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Replay gate-wf's Verify phase against Jev and report where the two disagree.
+"""Replay quality-gate's Verify phase against Jev and report where the two disagree.
 
-gate-wf spends one sonnet subagent per skeptic vote (3 per BLOCKER, 1 per MAJOR),
+quality-gate spends one sonnet subagent per skeptic vote (3 per BLOCKER, 1 per MAJOR),
 each with a 6-tool-call budget, to turn an already-investigated finding into a
 boolean. Jev answers that shape of question in ~100ms for $0.042/M input tokens.
-This measures whether it answers it *well* — it does not change gate-wf, which is
+This measures whether it answers it *well* — it does not change quality-gate, which is
 neither imported for writing nor modified.
 
     jev_verify.py run [--branch X] [--no-call] [--json]
@@ -12,7 +12,7 @@ neither imported for writing nor modified.
     jev_verify.py calibrate
     jev_verify.py --self-check
 
-Every gate-wf state file on disk carries its skeptic votes in
+Every quality-gate state file on disk carries its skeptic votes in
 `verifications: [{refuted, reason}]`, so `corpus` calibrates against hundreds of
 real sonnet judgments without running the gate once.
 """
@@ -41,7 +41,7 @@ RADIUS = int(os.environ.get("JEV_RADIUS", "40"))  # lines each side of the cited
 MAX_CODE_CHARS = 200 * RADIUS  # Jev caps state + longest question at 32k tokens
 
 # Kill below, keep above, escalate to a real skeptic in between. Calibrated on
-# the Naboo corpus (125 findings, 36 gate-wf runs): at 0.50 the two error curves
+# the Naboo corpus (125 findings, 36 quality-gate runs): at 0.50 the two error curves
 # peak together — 92% of real findings kept, 94% of planted ones killed.
 KILL_BELOW = 0.50
 KEEP_ABOVE = 0.70
@@ -54,26 +54,26 @@ INDEX_TIER = {v: k for k, v in TIER_INDEX.items()}
 
 
 def _load_findings_module():
-    """gate-wf owns findings.py; there must be exactly one implementation of the
+    """quality-gate owns findings.py; there must be exactly one implementation of the
     content anchor and the state-path derivation, so import it rather than
     copying it."""
     cands = []
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if root:
-        cands.append(os.path.join(root, "skills/gate-wf/scripts"))
-    cands.append(os.path.join(_HERE, "../../gate-wf/scripts"))
+        cands.append(os.path.join(root, "skills/quality-gate/scripts"))
+    cands.append(os.path.join(_HERE, "../../quality-gate/scripts"))
     cands += sorted(
         glob.glob(os.path.expanduser(
-            "~/.claude/plugins/cache/*/ai-skills/*/skills/gate-wf/scripts")),
+            "~/.claude/plugins/cache/*/ai-skills/*/skills/quality-gate/scripts")),
         reverse=True,
     )
-    cands.append(os.path.expanduser("~/.claude/skills/gate-wf/scripts"))
+    cands.append(os.path.expanduser("~/.claude/skills/quality-gate/scripts"))
     for c in cands:
         if os.path.isfile(os.path.join(c, "findings.py")):
             sys.path.insert(0, os.path.realpath(c))
             import findings  # noqa: F401
             return findings
-    print("jev-verify: gate-wf's scripts/findings.py not found — "
+    print("jev-verify: quality-gate's scripts/findings.py not found — "
           "reinstall the plugin", file=sys.stderr)
     raise SystemExit(2)
 
@@ -84,7 +84,7 @@ F = _load_findings_module()
 # --- pure helpers (all covered by test_jev_verify.py) ------------------------
 
 def squeeze(s):
-    """Same normalization gate-wf's content anchor uses (findings.py:106-130)."""
+    """Same normalization quality-gate's content anchor uses (findings.py:106-130)."""
     return " ".join((s or "").split())
 
 
@@ -175,7 +175,7 @@ def build_state(f, code):
 
 
 def jev_decision(p, cited):
-    """Map a defect_real probability onto what gate-wf's verify phase would do."""
+    """Map a defect_real probability onto what quality-gate's verify phase would do."""
     floor = KILL_BELOW_CITED if cited else KILL_BELOW
     if p is None:
         return "error"
@@ -187,7 +187,7 @@ def jev_decision(p, cited):
 
 
 def sonnet_verdict(f):
-    """What gate-wf's skeptics concluded. Everything on disk survived, so this is
+    """What quality-gate's skeptics concluded. Everything on disk survived, so this is
     always 'keep' — the votes tell us how close it came."""
     ref, tot = F.refute_votes(f)
     return {"kept": True, "refuted": ref, "total": tot}
@@ -243,7 +243,7 @@ def _git(root, *args):
 
 
 def read_lines(root, path, sha, cur_head, cache):
-    """Worktree when the state was written at the commit we are on (gate-wf's own
+    """Worktree when the state was written at the commit we are on (quality-gate's own
     anchor reads from disk); the recorded blob otherwise."""
     key = (path, sha if sha != cur_head else None)
     if key in cache:
@@ -271,7 +271,7 @@ def out_paths(root, branch):
     return os.path.join(d, "%s.json" % branch.replace("/", "_"))
 
 
-# --- preflight (gate-wf --jev fail-fast) --------------------------------------
+# --- preflight (quality-gate Jev pass, fail-fast) --------------------------------------
 
 PROBE_QUESTION = {
     "type": "noul",
@@ -284,7 +284,7 @@ PROBE_TOKENS = 300  # measured: a one-char state + one noul question ~= 287
 def preflight(api_key, budget=PROBE_TOKENS):
     """The API exposes no balance or quota endpoint (only /v1/systemone), so
     'is there credit' can only be established by spending some: one minimal
-    call, ~300 tokens, ~0.001 cents. That is the point — gate-wf --jev checks
+    call, ~300 tokens, ~0.001 cents. That is the point — quality-gate's Jev pass checks
     this BEFORE its reviewers spend anything, not after.
 
     Returns (ok, message). ok=False carries the exact reason to fail fast on;
@@ -368,14 +368,14 @@ def verify_one(f, root, sha, cur_head, questions, api_key, cache, no_call):
     return row
 
 
-# --- batch mode (gate-wf --jev) ----------------------------------------------
+# --- batch mode (quality-gate Jev pass) ----------------------------------------------
 
 BATCH_SCHEMA_KEYS = ("file", "line", "rule_id", "tier", "message", "evidence",
                      "suggested_fix", "citation", "source")
 
 
 def batch_one(f, root, questions, api_key, cache, cur_head):
-    """Judge one finding handed over by gate-wf's workflow. Same pipeline as
+    """Judge one finding handed over by quality-gate's workflow. Same pipeline as
     `run`/`corpus` but no state discovery: the caller owns the finding set."""
     lines = read_lines(root, f.get("file") or "", None, cur_head, cache)
     row = {
@@ -411,7 +411,7 @@ def batch_one(f, root, questions, api_key, cache, cur_head):
 
 
 def cmd_batch(a):
-    """gate-wf's --jev path. stdin: findings array (only BATCH_SCHEMA_KEYS are
+    """quality-gate's Jev path. stdin: findings array (only BATCH_SCHEMA_KEYS are
     read, so the workflow can pass its full finding objects). stdout: one JSON
     object {rows: [...]} — printed verbatim by the jev-runner agent and
     integrity-checked by the workflow before use."""
@@ -449,7 +449,7 @@ def cmd_batch(a):
 # --- state loading ----------------------------------------------------------
 
 def collect(state, synthetic=False):
-    """Returns (judgeable, dropped). Findings written by gate-wf before v5 carry
+    """Returns (judgeable, dropped). Findings written by quality-gate before v5 carry
     only rule_id and tier — no message, no evidence, nothing for Jev to weigh.
     Sending them costs tokens and dilutes the agreement rate with rows that had
     no question in them."""
@@ -578,14 +578,14 @@ def cmd_run(a):
     p = F.Paths()
     st = load_one(str(p.state))
     if not st:
-        print("no prior gate-wf run on this branch — run the gate first",
+        print("no prior quality-gate run on this branch — run the gate first",
               file=sys.stderr)
         return 1
     fs, dropped = collect(st, a.synthetic)
     if dropped:
-        print("skipping %d finding(s) with no message (pre-v5 gate-wf state)" % dropped)
+        print("skipping %d finding(s) with no message (pre-v5 quality-gate state)" % dropped)
     if not fs:
-        print("gate-wf state has no judgeable findings on this branch")
+        print("quality-gate state has no judgeable findings on this branch")
         return 0
     key = api_key_or_die(a.no_call)
     t0 = time.time()
@@ -602,7 +602,7 @@ def cmd_run(a):
     if a.json:
         print(json.dumps(rows, indent=2, ensure_ascii=False))
     else:
-        report(rows, time.time() - t0, "%s (gate-wf: %s)"
+        report(rows, time.time() - t0, "%s (quality-gate: %s)"
                % (p.branch, st.get("verdict")))
         print("→ %s" % out)
     return 0
@@ -754,16 +754,16 @@ def main(argv=None):
     ap.add_argument("--self-check", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
 
-    b = sub.add_parser("batch", help="judge findings from stdin (gate-wf --jev)")
+    b = sub.add_parser("batch", help="judge findings from stdin (quality-gate Jev pass)")
     b.add_argument("--repo", default="", help="repo root (default: cwd)")
 
-    r = sub.add_parser("run", help="replay this branch's last gate-wf run")
+    r = sub.add_parser("run", help="replay this branch's last quality-gate run")
     r.add_argument("--no-call", action="store_true",
                    help="print the Jev payloads, hit no network")
     r.add_argument("--json", action="store_true")
     r.add_argument("--synthetic", action="store_true")
 
-    c = sub.add_parser("corpus", help="replay every gate-wf run for this repo")
+    c = sub.add_parser("corpus", help="replay every quality-gate run for this repo")
     c.add_argument("--limit", type=int, default=0)
     c.add_argument("--synthetic", action="store_true")
 

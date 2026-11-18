@@ -1,6 +1,6 @@
 ---
 name: simplify-reviewer
-description: Reviews a code diff for over-engineering, dead code, and simplification opportunities. Invoked by the gate / gate-wf review skills.
+description: Reviews a code diff for over-engineering, dead code, and simplification opportunities. Invoked by the quality-gate review skill.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---

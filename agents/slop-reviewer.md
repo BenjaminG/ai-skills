@@ -1,6 +1,6 @@
 ---
 name: slop-reviewer
-description: Reviews a code diff for AI-slop patterns — defensive checks for impossible states, comment noise, `any` casts, style drift. Invoked by the gate / gate-wf review skills.
+description: Reviews a code diff for AI-slop patterns — defensive checks for impossible states, comment noise, `any` casts, style drift. Invoked by the quality-gate review skill.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---

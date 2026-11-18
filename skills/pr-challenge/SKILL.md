@@ -8,7 +8,7 @@ argument-hint: "[pr-number-or-url] [--max N] [--label] [--lang fr|en]"
 
 Review someone else's PR the way a colleague who works in this repo reviews it: a few questions with stakes, each one answerable only by the author. Read-only: this skill drafts, `pr-comment` posts. It never edits code, approves, or requests changes.
 
-This is the half of a review a findings table cannot produce: *why does this exist, why not reuse what we have, why not the simpler shape, what is this for*. Defects belong to `gate-wf`; one that turns up here leaves through **the other door** (§7), never as a question.
+This is the half of a review a findings table cannot produce: *why does this exist, why not reuse what we have, why not the simpler shape, what is this for*. Defects belong to `quality-gate`; one that turns up here leaves through **the other door** (§7), never as a question.
 
 ## Arguments
 
@@ -32,7 +32,7 @@ python3 "$FETCH" [pr-number-or-url]
 
 Read the diff from `diff_path`. `threads` includes settled ones.
 
-**`is_own_pr: true` → stop** and offer `gate-wf`: challenging your own code produces questions you already know the answer to.
+**`is_own_pr: true` → stop** and offer `quality-gate`: challenging your own code produces questions you already know the answer to.
 
 Write down **the stated goal** in one sentence, from the title, the body, and any `issue_refs` worth reading (`gh issue view <n>`, or `acli jira workitem view <key>` for a Jira key). Every question is measured against it. An empty body has no stated goal, and that is the first comment of the review.
 
@@ -42,17 +42,17 @@ Write down **the stated goal** in one sentence, from the title, the body, and an
 
 A colleague's review differs from a bot's by knowing what the repo already has. Every question in §4 is drafted from what this step finds.
 
-Dispatch the `ai-skills:ponytail-reviewer` subagent first, so it works while you read. Give it `diff_path`, `new_declarations`, and the output file `~/.claude/pr-challenge-state/<owner>_<repo>/<n>.ponytail.json`. It runs `/ponytail-review` on the diff and greps the repo for an existing equivalent of every added symbol. When `gate-wf` state for this branch already holds `ponytail-*` findings, use those instead of dispatching.
+Dispatch the `ai-skills:ponytail-reviewer` subagent first, so it works while you read. Give it `diff_path`, `new_declarations`, and the output file `~/.claude/pr-challenge-state/<owner>_<repo>/<n>.ponytail.json`. It runs `/ponytail-review` on the diff and greps the repo for an existing equivalent of every added symbol. When `quality-gate` state for this branch already holds `ponytail-*` findings, use those instead of dispatching.
 
 Meanwhile, for the files the diff touches:
 
 - **Siblings.** Read one or two existing files next to each changed one. A pattern followed twice elsewhere and broken here is a convention question.
 - **Call sites.** For a changed signature, type, or component, read who calls it.
-- **The repo's own rules.** `CLAUDE.md`, `AGENTS.md`, `.cursor/*.md`, `BUGBOT.md`, `docs/adr/`. `gate-wf`'s `context-checker` already reports broken rules; raise one here only when the author made a *choice* against a documented preference.
+- **The repo's own rules.** `CLAUDE.md`, `AGENTS.md`, `.cursor/*.md`, `BUGBOT.md`, `docs/adr/`. `quality-gate`'s `context-checker` already reports broken rules; raise one here only when the author made a *choice* against a documented preference.
 
-`gate-wf` state for this branch, if any, also feeds §4 with its `simplify-*` and `slop-*` findings. Its `bug-*` and `sec-*` findings are defects and stay behind the other door.
+`quality-gate` state for this branch, if any, also feeds §4 with its `simplify-*` and `slop-*` findings. Its `bug-*` and `sec-*` findings are defects and stay behind the other door.
 
-**Done when**: the ponytail subagent is dispatched (or `gate-wf`'s `ponytail-*` findings are in hand), and at least one sibling file per changed area has been read.
+**Done when**: the ponytail subagent is dispatched (or `quality-gate`'s `ponytail-*` findings are in hand), and at least one sibling file per changed area has been read.
 
 ## 3. Step back: the approach pass
 
@@ -137,7 +137,7 @@ With `--label`, prefix `question: ` for `intent` and `scope`, `suggestion: ` for
 
 **LGTM → no handoff.** Report the stated goal, what §2 read (symbols searched, siblings opened, call sites checked), and one line saying nothing here needs asking. An LGTM that names nothing it read is a shrug.
 
-Otherwise report in three or four lines: the stated goal, one line per comment (`kind · file:line · the question`), drop counts by cause, and any **defect** §2 turned up, in one sentence pointing at the other door: `gate-wf` on the branch, then `pr-comment` for the findings. A null deref phrased as "is this always defined?" is a bug report the author closes with "yes".
+Otherwise report in three or four lines: the stated goal, one line per comment (`kind · file:line · the question`), drop counts by cause, and any **defect** §2 turned up, in one sentence pointing at the other door: `quality-gate` on the branch, then `pr-comment` for the findings. A null deref phrased as "is this always defined?" is a bug report the author closes with "yes".
 
 Then invoke `pr-comment` in **challenge mode** with, per comment: `kind`, `file`, `line`, `location` (`diff-line` on the diff, `adjacent` otherwise), the body, and the PR's `owner` / `repo` / number / `head_sha`. `pr-comment` owns the preview, the confirmation, the posting and the stale-line skip; this skill never runs `gh api …/comments`, `gh pr review` or `gh pr comment`.
 

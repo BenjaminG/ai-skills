@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Reviews a code diff for security vulnerabilities and emits structured findings. Invoked by the gate / gate-wf review skills.
+description: Reviews a code diff for security vulnerabilities and emits structured findings. Invoked by the quality-gate review skill.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---

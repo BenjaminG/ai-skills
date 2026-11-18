@@ -81,7 +81,7 @@ A manual `--dismiss` takes effect **instantly even on a cache hit**, because the
 
 ## Manual flags (no gate run)
 
-All three skip the workflow entirely and require a prior run on the branch (`render.py` exits non-zero with `no prior gate-wf run on this branch` otherwise):
+All three skip the workflow entirely and require a prior run on the branch (`render.py` exits non-zero with `no prior quality-gate run on this branch` otherwise):
 
 ```bash
 python3 "$RENDER" dismiss B1,M2     # look up by rendered id, anchor, upsert as manual, re-render

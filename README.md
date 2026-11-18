@@ -11,7 +11,7 @@ Benjamin's collection of skills for Claude Code, Codex, and other AI agents — 
 /plugin install ai-skills@bgelis-ai-skills
 ```
 
-Skills are namespaced after install: `/ai-skills:gate`, `/ai-skills:interview`, etc.
+Skills are namespaced after install: `/ai-skills:quality-gate`, `/ai-skills:interview`, etc.
 
 ### Codex
 
@@ -38,12 +38,12 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `daily-update` | Draft a daily Slack update from Linear |
 | **Code quality** | |
 | `code-slop` | Detect and fix slop patterns |
-| `gate` | Harness-portable branch quality gate (Claude Code + Codex) with parallel reviewer subagents |
+| `quality-gate` | Branch quality gate: parallel reviewers, Jev + skeptic verify, PASS / FAIL verdict |
 | **Review & PR** | |
 | `pr-create` | Publish a PR with type detection + Linear/Jira linking |
 | `pr-feedback` | Triage and classify PR review comments + CI |
 | `pr-respond` | Apply picked PR feedback + post replies/reactions/resolve |
-| `pr-comment` | Post gate/gate-wf findings as a humanizer-drafted PR review |
+| `pr-comment` | Post quality-gate findings as a humanizer-drafted PR review |
 | `fixup` | Fold a fix into the commit that introduced it, force-push |
 | `babysit-prs` | Event-driven watch driving open PRs to merge-ready |
 | `pr-shots` | Before/after or feature-state screenshots of a PR in the local app, attached to the PR |
@@ -54,7 +54,6 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `qa-plan` | Manual QA plan generation |
 | `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, signin, screens) that pr-demo, pr-shots, pr-try and showcase run on |
 | **Developer tools** | |
-| `codex-cli` | OpenAI Codex CLI for automated code analysis |
 | `commit` | Stage + commit with auto-generated message |
 | **Investigation & planning** | |
 | `elevate` | Elevate a draft idea into a sharp proposal |
@@ -65,9 +64,6 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `retrospective` | Reflect on the work done on the current branch vs main |
 | **Herdr** | |
 | `herdr-mod` | Build a Herdr app mod; `--publish` shares it on herdr.dev/mods |
-| **Specialist agents** | |
-| `backend-developer` | TypeScript backend specialist |
-| `frontend-developer` | React/TypeScript frontend specialist |
 
 ## Repo layout
 

@@ -7,7 +7,7 @@ import { SESSION, command, pane, textOf, world } from './fixtures'
 function engine(on: On) {
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('fs.list', () => ({
-    value: ['gate-wf', 'commit', 'pr-demo'].map(name => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
+    value: ['quality-gate', 'commit', 'pr-demo'].map(name => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
   }))
 }
 
@@ -18,8 +18,8 @@ describe('skill-xray', () => {
     engine(on)
     await $.session.start(SESSION)
 
-    expect(await $.skill.prompt({ skill: 'ai-skills:gate-wf', text: 'x'.repeat(4000) })).toEqual({ text: 'x'.repeat(4000) })
-    await $.skill.prompt({ skill: 'ai-skills:gate-wf', text: 'x'.repeat(8000) })
+    expect(await $.skill.prompt({ skill: 'ai-skills:quality-gate', text: 'x'.repeat(4000) })).toEqual({ text: 'x'.repeat(4000) })
+    await $.skill.prompt({ skill: 'ai-skills:quality-gate', text: 'x'.repeat(8000) })
     await $.skill.prompt({ skill: 'commit', text: 'x'.repeat(400) })
 
     expect(await $.command.run(command('xray'))).toEqual({ text: 'Skill X-ray panel shown' })
@@ -29,9 +29,9 @@ describe('skill-xray', () => {
     const drawn = textOf(await $.ui.render(pane('xray')))
 
     expect(drawn).toContain('Skills · 2 used since 1970-01-01')
-    expect(drawn).toMatch(/ai-skills:gate-wf\s+×2\s+~1500 tok\/run\s+~3000 total\s+1970-01-01/)
+    expect(drawn).toMatch(/ai-skills:quality-gate\s+×2\s+~1500 tok\/run\s+~3000 total\s+1970-01-01/)
     expect(drawn).toMatch(/commit\s+×1\s+~100 tok\/run\s+~100 total/)
-    expect(drawn.indexOf('gate-wf'), 'the most used first').toBeLessThan(drawn.indexOf('commit'))
+    expect(drawn.indexOf('quality-gate'), 'the most used first').toBeLessThan(drawn.indexOf('commit'))
     expect(drawn).toContain('Never used: pr-demo')
 
     expect(await $.command.run(command('xray'))).toEqual({ text: 'Skill X-ray panel hidden' })
@@ -53,7 +53,7 @@ describe('skill-xray', () => {
 
     expect(drawn).toContain('used since 2026-09-01')
     expect(drawn).toMatch(/pr-demo\s+×5\s+~500 tok\/run\s+~2500 total\s+1970-01-01/)
-    expect(drawn).toContain('Never used: gate-wf, commit')
+    expect(drawn).toContain('Never used: quality-gate, commit')
   })
 
   test("the open pane follows each run; another plugin's skill of a shipped name is not that skill", async ($, on) => {
@@ -65,10 +65,10 @@ describe('skill-xray', () => {
     await $.skill.prompt({ skill: 'other:commit', text: 'x' })
     await $.command.run(command('xray'))
     await w.clock.settle()
-    expect(textOf(await $.ui.render(pane('xray')))).toContain('Never used: gate-wf, commit, pr-demo')
+    expect(textOf(await $.ui.render(pane('xray')))).toContain('Never used: quality-gate, commit, pr-demo')
 
     await $.skill.prompt({ skill: 'ai-skills:pr-demo', text: 'x' })
     await w.clock.settle()
-    expect(textOf(await $.ui.render(pane('xray')))).toContain('Never used: gate-wf, commit/xray to close')
+    expect(textOf(await $.ui.render(pane('xray')))).toContain('Never used: quality-gate, commit/xray to close')
   })
 })

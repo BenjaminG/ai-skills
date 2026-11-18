@@ -1,16 +1,16 @@
 ---
 name: triage-findings
-description: This skill should be used to act on the findings of a previous gate-wf run — select a subset by tier, by rule family, by id, by file, or by a free-text intent ("only the ones that shrink the code"), then fix them after one confirmation. Triggers on "/triage-findings", "fix the blockers", "clean up the nits", "apply the gate findings", "take the findings that simplify the code". Requires a prior gate-wf run on the branch; it never launches one.
+description: This skill should be used to act on the findings of a previous quality-gate run — select a subset by tier, by rule family, by id, by file, or by a free-text intent ("only the ones that shrink the code"), then fix them after one confirmation. Triggers on "/triage-findings", "fix the blockers", "clean up the nits", "apply the gate findings", "take the findings that simplify the code". Requires a prior quality-gate run on the branch; it never launches one.
 argument-hint: "[blockers | majors | nits | cleanup | bugs | all | <ids> | <file> | free text]"
 ---
 
 # Triage findings
 
-Act on what `gate-wf` found. The gate produces a verdict and does not touch code;
+Act on what `quality-gate` found. The gate produces a verdict and does not touch code;
 this skill picks a subset of its findings, proposes a plan, and — once confirmed —
 applies and verifies it.
 
-It **never runs `gate-wf`**. A gate run is dozens of agents; launching one from a
+It **never runs `quality-gate`**. A gate run is dozens of agents; launching one from a
 command the user expects to be cheap is never right. No state on the branch → say
 so and stop.
 
@@ -34,7 +34,7 @@ and you pick from it by meaning — `"prioritize findings that reduce code size"
 
 ## Step 1: Get the plan
 
-Resolve the script (same order as gate-wf resolves `workflow.js`), then run it:
+Resolve the script (same order as quality-gate resolves `workflow.js`), then run it:
 
 ```bash
 TRIAGE=""
@@ -48,14 +48,14 @@ done
 python3 "$TRIAGE" plan <selector...>
 ```
 
-It reads gate-wf's `$STATE_FILE`, **drops findings the code has outrun** (each
+It reads quality-gate's `$STATE_FILE`, **drops findings the code has outrun** (each
 finding carries the content anchor stamped when the gate ran; if the flagged line
 reads differently at HEAD, the finding is obsolete and is not proposed), applies
 the selector, and prints the survivors **grouped by file** with `what` / `evidence`
 / `lead` / `rule` per finding.
 
 If it reports outdated findings, say how many in your plan — that number is the
-signal that `gate-wf` is due for a re-run, and it is the user's call, not yours.
+signal that `quality-gate` is due for a re-run, and it is the user's call, not yours.
 
 ## Step 2: Turn it into a plan the user can judge
 
@@ -118,7 +118,7 @@ batch: that throws away eight correct fixes for a ninth bad one.
 python3 "$TRIAGE" mark-fixed B1,N2,N4
 ```
 
-Marks those findings `fixed` in gate-wf's state — they stay on the record but stop
+Marks those findings `fixed` in quality-gate's state — they stay on the record but stop
 counting toward the verdict, which is recomputed. Nothing is committed: the commit
 is the user's, and nine cleanup fixes under a message they did not write is a
 favour nobody wants.
@@ -130,17 +130,17 @@ Then report, briefly:
 - what is left — decision-required items, outdated findings, anything the user cut
   in Step 3, and any verification that failed.
 
-Do not re-print the gate report. `gate-wf` re-renders on demand, and the state is
+Do not re-print the gate report. `quality-gate` re-renders on demand, and the state is
 already up to date.
 
 ## Notes
 
-- **Reads, never writes, gate-wf's schema**: `scripts/triage.py` imports
-  `skills/gate-wf/scripts/findings.py` rather than copying it. The content anchor
+- **Reads, never writes, quality-gate's schema**: `scripts/triage.py` imports
+  `skills/quality-gate/scripts/findings.py` rather than copying it. The content anchor
   in particular must have exactly one implementation — a second copy that drifts
   would make freshness and dismissals disagree about the same line.
 - **Fixed vs dismissed**: `fixed` means the code changed; dismissed means the
-  finding was wrong. Use `gate-wf --dismiss <ids>` for the second — a dismissal is
+  finding was wrong. Use `quality-gate --dismiss <ids>` for the second — a dismissal is
   durable and lifts by itself if the code is later edited.
 - **A fix that silently failed reopens by itself**: the next gate run re-flags it,
   because the code did not change the way the fix claimed.

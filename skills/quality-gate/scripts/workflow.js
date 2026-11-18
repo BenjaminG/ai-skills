@@ -1,9 +1,9 @@
 export const meta = {
-  name: 'gate-wf',
+  name: 'quality-gate',
   description: 'Quality gate: parallel reviewers, tier-scaled adversarial verify, context annotation',
   phases: [
     { title: 'Review', detail: 'reviewers in parallel + CLAUDE.md/ADR synthesis' },
-    { title: 'Verify', detail: 'skeptics per finding, scaled by tier (jev first pass with --jev)' },
+    { title: 'Verify', detail: 'skeptics per finding, scaled by tier (jev first pass unless --no-jev)' },
     { title: 'Context', detail: 'annotate survivors against project context' },
   ],
 }
@@ -15,16 +15,16 @@ export const meta = {
 // openFindings: last round's still-open findings — render.py carries them forward, so a
 // re-report on the same line is dropped here instead of paying for its skeptics again.
 // A reviewer suffixed `@inward` (security only, round 1) runs again from the entry points.
-// useJev (the skill's --jev flag): Jev first-passes every finding through
+// useJev (on unless the skill's --no-jev flag): Jev first-passes every finding through
 // jev-verify's batch mode; only the escalate band (and any runner failure)
 // falls back to tier-scaled sonnet skeptics. Off by default — the gate's shape
 // is unchanged without it.
 // args may arrive as an object or a JSON string depending on harness path; normalize.
 const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
 if (!Array.isArray(A.reviewers) || !A.reviewers.length) {
-  throw new Error('gate-wf: expected args {tmpDir, reviewers:[...], prNumber} — got ' + JSON.stringify(args).slice(0, 200))
+  throw new Error('quality-gate: expected args {tmpDir, reviewers:[...], prNumber} — got ' + JSON.stringify(args).slice(0, 200))
 }
-if (A.useJev && !A.jevScript) throw new Error('gate-wf: useJev needs args.jevScript (the JV path from Step 3e)')
+if (A.useJev && !A.jevScript) throw new Error('quality-gate: useJev needs args.jevScript (the JV path from Step 3e)')
 
 const FINDING_PROPS = {
   rule_id: { type: 'string' },
@@ -151,7 +151,7 @@ const synthP = agent(synthesizePrompt(), {
 const claimed = new Map()
 const openKeys = new Set((A.openFindings || []).map((f) => `${f.file}:${f.line}:${f.rule_id}`))
 
-// --- --jev: Jev first pass over the findings ---------------------------------
+// --- Jev first pass over the findings ---------------------------------
 //
 // The workflow sandbox has no network, so python does the HTTP and a haiku
 // runner agent just relays its stdout — the agent's only job is to run

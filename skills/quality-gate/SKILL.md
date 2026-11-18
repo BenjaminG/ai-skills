@@ -1,16 +1,16 @@
 ---
-name: gate-wf
+name: quality-gate
 description: Workflow-native quality gate for branch changes — parallel reviewers (Bug, SOLID, Security, Simplify+Slop, optionally React/a11y/i18n/migration) with tier-scaled adversarial verify, CLAUDE.md/ADR enforcement, and a stable PASS / PASS WITH NOTES / FAIL verdict. Read-only. Runs from a static shipped workflow script.
-argument-hint: "[base-branch] [--full] [--jev] [--force-fresh] [--ignore-scope-gate] [--resume <runId>]"
+argument-hint: "[base-branch] [--full] [--no-jev] [--force-fresh] [--ignore-scope-gate] [--resume <runId>]"
 ---
 
-# Gate-WF — Workflow-native quality gate
+# Quality Gate — Workflow-native quality gate
 
 !IMPORTANT: Follow this process exactly. Do not skip steps.
 
 This skill is a **gate**, not a fixer. It returns a verdict; it does not modify code.
 
-**Skill version**: `11`. v11: rounds converge. A branch reviewed several times kept
+**Skill version**: `12`. v12: renamed from `gate-wf` (state now in `~/.claude/quality-gate-state/`), and the Jev first pass runs by default: `--no-jev` opts out, and a missing key, skill or failed preflight turns it off with one warning line instead of stopping the gate. v11: rounds converge. A branch reviewed several times kept
 re-finding things: on 69 naboo runs, 21% of round-2+ findings repeated the last round
 and 42% sat on code the last round already saw. Now `render.py` carries the last
 round's findings forward by content anchor (still there → still open and still
@@ -32,7 +32,7 @@ as before. A cited rule finding keeps its own resistance floor (kill < 0.10).
 Every failure mode — API down, runner relay cut (per-row `msg_len` integrity
 check, the v9 lesson applied to the relay), unreadable file, missing row —
 routes to a sonnet skeptic: the jev path can only add skeptics, never silently
-lose a finding. Without the flag the gate's shape is byte-for-byte unchanged.
+lose a finding. With Jev off the gate's shape is byte-for-byte unchanged.
 Thresholds come from a 125-finding calibration corpus; retune them in
 `skills/jev-verify/scripts/jev_verify.py` (KILL_BELOW / KEEP_ABOVE /
 KILL_BELOW_CITED), not here. v9: Cache entries are keyed on this — bumping invalidates all caches at once. v9: the report is rendered by `scripts/render.py`, not transcribed by the model. Verdict math, ID assignment, the dismissal partition, refute-vote counts and the `--dismiss`/`--undismiss`/`--show-dismissed` flags all moved out of prose-and-`jq` into Python (`scripts/findings.py`, shared with `triage-findings`) — a model retyping 18 findings by hand was cutting identifiers mid-word (`…INITIATED_POundefined`), mangling badges (`[uns` for `[unverified]`) and truncating the closing tips, and no amount of format spec fixes a transcription problem. The report is now two levels: one scannable line per finding in the terminal, full detail in `$STATE_DIR/<branch>.report.md`. The model's only writing job is a 5-line French summary handed in via `--summary-file`, so it lands above the table instead of below it. v8: `context-checker` infers a rule's normative force from its phrasing instead of keying off MUST/SHOULD — a repo whose rule files are bare imperatives ("Never call `findById` for a document already available in the request pipeline") had its entire rule set produce nothing, and only 5 of 48 files in the case that motivated this mention `MUST` at all. It runs on `opus` with a ≤25-call budget in `MODE: synthesize` (documented-rule enforcement was the cheapest agent in the pipeline while being the most-reported class of review comment) and stays on sonnet for `MODE: annotate`. Discovery reaches `AGENTS.md`, `.claude/CLAUDE.md`, per-directory `AGENTS.md`, and one level of `@`-imports — a repo whose `AGENTS.md` is a one-line pointer had no root `CLAUDE.md` and so no rules at all. An unscoped rule file (no `paths:`) is now applicable to every diff instead of falling through all three strategies. The `## ADR` bundle section names which changed files each rule `binds:`, and a companion ADR contributes its own condensed body rather than inlining the multi-thousand-word record it points at. Synthesized findings go through the same dedup + adversarial verify as reviewer findings — a cited-rule BLOCKER was the only unrefutable finding in the gate and double-counted any line a reviewer already owned — with `agents/skeptic.md` told that a citation-backed finding is refutable only three ways. The ADR freshness fold hashes file contents instead of `git log`: a git-ignored rules dir (`.claude/rules/local/`) never invalidated the cache. v7: `CLAUDE.local.md` at the repo root joins the context bundle alongside `CLAUDE.md`, so a personal, git-ignored rule file reaches `context-checker` and its `MUST`/`SHOULD` clauses synthesize findings. The CLAUDE.md freshness fold now hashes file contents instead of `git log` — a git-ignored rule file has no commit, so the old fold silently no-opped and a rule edit served a stale cached verdict. Also: `adr/` joins `ADR_ROOT_CANDIDATES` and every ADR root is now walked recursively — a repo keeping its ADRs at `adr/`, or its rules in `.claude/rules/<domain>/`, had them read by nothing. Companions that `@`-reference another candidate are deduped. v6: `ponytail-reviewer` greps the repo for an existing equivalent of every export the diff adds (`ponytail-exists`) — duplication of code the repo already has was in no reviewer's scope. v5: `simplify-reviewer` and slop are un-merged into two reviewers (one rule set each), plus a new `ponytail-reviewer` on the over-engineering axis (`/ponytail-review`) — 6 base reviewers instead of 4. Rule ids are unchanged, so existing dismissals survive. v4: each reviewer reads a diff scoped to its concern (code reviewers get docs/snapshots/lockfiles stripped; React/a11y/i18n get a `.tsx/.jsx`-only diff) instead of the full diff — less context noise per agent. v3: the workflow runs from a static shipped script (`scripts/workflow.js`) instead of a model-generated one — deterministic shape, tier-scaled verify, working `--resume`.
@@ -40,15 +40,15 @@ KILL_BELOW_CITED), not here. v9: Cache entries are keyed on this — bumping inv
 ## Prerequisites
 
 - Workflows feature enabled: `CLAUDE_CODE_WORKFLOWS=1` in `settings.json` env.
-- Plugin installed (this skill ships the reviewer/skeptic/context-checker `agents/*.md` at the plugin root and the orchestration script at `skills/gate-wf/scripts/workflow.js` — see Step 3).
+- Plugin installed (this skill ships the reviewer/skeptic/context-checker `agents/*.md` at the plugin root and the orchestration script at `skills/quality-gate/scripts/workflow.js` — see Step 3).
 
 ## Arguments
 
 - `$0` (optional): base branch to diff against. If omitted, auto-detect (`main` → `master` → `develop`).
-- `--jev` (flag): Jev first pass on the Verify phase (see Step 3e). Requires
-  `TYPESAFE_API_KEY` in the env and the `jev-verify` skill reachable; missing
-  either fails fast before any reviewer spawns, with the plain skeptic path as
-  the documented fallback.
+- `--no-jev` (flag): skip the Jev first pass on the Verify phase (on by default, see
+  Step 3e) and send every BLOCKER/MAJOR to the plain skeptics. Without
+  `TYPESAFE_API_KEY`, the `jev-verify` skill or a passing preflight, the gate turns
+  Jev off itself and prints one warning line.
 - `--full` (flag): review the whole branch this round, even from round 2 on (before merging, or when the delta looks wrong).
 - `--force-fresh` (flag): bypass cache and re-fetch context bundle.
 - `--ignore-scope-gate` (flag): downgrade Step 2 hard-stops (file-count, suspicious-files) to top-of-report banners. Soft-warn (1–3 SUSPICIOUS) is unaffected.
@@ -105,7 +105,7 @@ BASE_ARG=""
 FORCE_FRESH=0
 FULL=0
 IGNORE_SCOPE_GATE=0
-USE_JEV=0
+USE_JEV=1
 RESUME_ID=""
 DISMISS_IDS=""
 UNDISMISS_IDS=""
@@ -119,7 +119,7 @@ for i in "${!TOKENS[@]}"; do
   if [ "$SKIP_NEXT" -eq 1 ]; then SKIP_NEXT=0; continue; fi
   tok="${TOKENS[$i]}"
   case "$tok" in
-    --jev)               USE_JEV=1 ;;
+    --no-jev)            USE_JEV=0 ;;
     --force-fresh)       FORCE_FRESH=1 ;;
     --full)              FULL=1 ;;
     --ignore-scope-gate) IGNORE_SCOPE_GATE=1 ;;
@@ -163,7 +163,7 @@ REPO_SLUG=$(echo -n "$REPO_ROOT" | shasum | cut -c1-12)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 BRANCH_SAFE=$(echo "$BRANCH" | tr '/' '_')
 SESSION_ID=$(echo -n "${REPO_ROOT}::${BRANCH}" | shasum | cut -c1-12)
-TMP_DIR="/tmp/gate-wf-${SESSION_ID}"
+TMP_DIR="/tmp/quality-gate-${SESSION_ID}"
 mkdir -p "$TMP_DIR"
 
 BASE=${BASE_ARG:-$(git rev-parse --verify main >/dev/null 2>&1 && echo main || (git rev-parse --verify master >/dev/null 2>&1 && echo master || echo develop))}
@@ -258,7 +258,7 @@ if [ ${#ADR_ROOTS[@]} -gt 0 ]; then
 fi
 
 CACHE_KEY="${HEAD_SHA}_${BASE_SHA}_${WT_HASH}_v5"
-STATE_DIR="$HOME/.claude/gate-wf-state/$REPO_SLUG"
+STATE_DIR="$HOME/.claude/quality-gate-state/$REPO_SLUG"
 STATE_FILE="$STATE_DIR/${BRANCH_SAFE}.json"
 CONTEXT_CACHE_FILE="$STATE_DIR/${BRANCH_SAFE}.context.json"
 # Dismissal registry — false-positive suppression, kept OUTSIDE CACHE_KEY so a
@@ -446,7 +446,7 @@ Full spec: `references/scope-gate.md`. Hard-stops here `exit 0` directly — the
 ## Step 3: Run the gate workflow
 
 The orchestration lives in a static script shipped with the plugin
-(`skills/gate-wf/scripts/workflow.js`). The skill resolves its path, invokes it via the
+(`skills/quality-gate/scripts/workflow.js`). The skill resolves its path, invokes it via the
 `Workflow` tool, and gets back `{ findings: [...] }`. The shape is fixed in code —
 parallel reviewers → tier-scaled adversarial verify (BLOCKER→3 skeptics, MAJOR→1, NIT→0)
 with per-`(file,line)` dedup → single context annotation, with CLAUDE.md/ADR synthesis
@@ -485,12 +485,12 @@ cache → global-skills fallback):
 
 ```bash
 WF_SCRIPT=""
-for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/gate-wf/scripts/workflow.js}" \
-         $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/gate-wf/scripts/workflow.js 2>/dev/null | sort -V | tail -1) \
-         "$HOME/.claude/skills/gate-wf/scripts/workflow.js"; do
+for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/quality-gate/scripts/workflow.js}" \
+         $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/quality-gate/scripts/workflow.js 2>/dev/null | sort -V | tail -1) \
+         "$HOME/.claude/skills/quality-gate/scripts/workflow.js"; do
   [ -n "$c" ] && [ -f "$c" ] && WF_SCRIPT="$c" && break
 done
-[ -z "$WF_SCRIPT" ] && { echo "gate-wf: workflow.js not found — reinstall the plugin" >&2; exit 2; }
+[ -z "$WF_SCRIPT" ] && { echo "quality-gate: workflow.js not found — reinstall the plugin" >&2; exit 2; }
 ```
 
 ### 3c. Invoke and capture result
@@ -506,8 +506,8 @@ Workflow({
     prNumber:  <PR number or null>,
     deltaFrom: <$DELTA_FROM, or omit when empty>,
     openFindings: <$OPEN_JSON>,
-    useJev:    <true when --jev, else omit>,
-    jevScript: <$JV from Step 3e when --jev, else omit>
+    useJev:    <true when USE_JEV=1 after Step 3e, else omit>,
+    jevScript: <$JV from Step 3e when USE_JEV=1, else omit>
   }
 })
 ```
@@ -545,24 +545,26 @@ only the edited agent's calls re-run.
 - **Reviewer agent type not found**: the workflow surfaces a per-agent error. Verify
   Step 0 dependencies passed and the plugin is loaded.
 
-### 3e. `--jev` — Jev first pass on Verify (Step 3c runs with `useJev: true`)
+### 3e. Jev first pass on Verify (default; Step 3c runs with `useJev: true`)
 
-Prerequisites, checked **before** the Workflow invocation (fail fast, before any
-reviewer spends tokens):
+Prerequisites, checked **before** the Workflow invocation, before any reviewer spends
+tokens. A missing one turns Jev off for this run (`USE_JEV=0`) with a warning; it
+never stops the gate:
 
 ```bash
 if [ $USE_JEV -eq 1 ]; then
-  [ -n "$TYPESAFE_API_KEY" ] || { echo "gate-wf: --jev needs TYPESAFE_API_KEY (console.typesafe.ai) — unset it or drop --jev" >&2; exit 2; }
+  jev_off() { echo "quality-gate: Jev off for this run — $1; plain skeptics verify (--no-jev silences this)" >&2; USE_JEV=0; }
   JV=""
   for c in "${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/skills/jev-verify/scripts/jev_verify.py}"            $(ls -1 "$HOME"/.claude/plugins/cache/*/ai-skills/*/skills/jev-verify/scripts/jev_verify.py 2>/dev/null | sort -V | tail -1)            "$HOME/.claude/skills/jev-verify/scripts/jev_verify.py"; do
     [ -n "$c" ] && [ -f "$c" ] && JV="$c" && break
   done
-  [ -z "$JV" ] && { echo "gate-wf: --jev needs the jev-verify skill — /plugin reinstall bgelis-ai-skills, or drop --jev" >&2; exit 2; }
   # Credit check. The API exposes no balance endpoint, so the only proof of
   # credit is a served call: one ~300-token probe (~$0.00001). Doing this here
-  # is the point — fail before the reviewers spend anything, not mid-Verify.
-  python3 "$JV" preflight || \
-    { echo "gate-wf: --jev preflight failed — fix the key/credit, or drop --jev for plain skeptics" >&2; exit 2; }
+  # is the point — learn it before the reviewers spend anything, not mid-Verify.
+  if [ -z "$TYPESAFE_API_KEY" ]; then jev_off "TYPESAFE_API_KEY unset (console.typesafe.ai)"
+  elif [ -z "$JV" ]; then jev_off "jev-verify skill not found (/plugin reinstall bgelis-ai-skills)"
+  elif ! python3 "$JV" preflight; then jev_off "preflight failed (key or credit)"
+  fi
 fi
 ```
 
@@ -582,9 +584,9 @@ the model to operate):
 4. NIT findings are unaffected (they were never verified). Cited
    `claude-md-violation`/`adr-violation` findings keep their resistance floor.
 
-Skeptics a `--jev` run spawns ≈ findings in the escalate band, vs all BLOCKER×3 +
+Skeptics a Jev run spawns ≈ findings in the escalate band, vs all BLOCKER×3 +
 MAJOR×1 without it. On the calibration corpus that was ~35% of findings reaching a
-skeptic. The verdict math, dedup, and rendering are untouched — a `--jev` run
+skeptic. The verdict math, dedup, and rendering are untouched — a Jev run
 produces the same report shape with fewer skeptic agents behind it.
 - **`workflow.js` not found**: Step 3b exits — reinstall the plugin.
 
@@ -725,7 +727,7 @@ Reused-from-cache portions stay as-is.
 ```bash
 rm -rf "$TMP_DIR"
 # GC orphan dirs older than 24h
-find /tmp -maxdepth 1 -type d -name 'gate-wf-*' -mmin +1440 -print 2>/dev/null \
+find /tmp -maxdepth 1 -type d -name 'quality-gate-*' -mmin +1440 -print 2>/dev/null \
   | while read -r d; do
       [ "$d" != "$TMP_DIR" ] && rm -rf "$d"
     done
@@ -758,7 +760,6 @@ done
 - **Dismissals**: false-positives are suppressed via a per-branch registry kept _outside_ `CACHE_KEY` (`references/dismissals.md`). Suppression is keyed on the offending code's text (a content-anchor), so it survives diff churn but lifts the moment the code is edited. Two populators: PR review threads the author resolved (auto, via the context-checker) and `--dismiss <ids>` (manual). Dismissed findings are excluded from `findings[]` — so `pr-comment` never re-posts them — and from the verdict, but always shown in a `Dismissed (N)` section. This is what stops a blocker the author marked false-positive from being re-posted indefinitely.
 - **No auto-fix**: this skill is read-only review. Route every reply that asks to apply, fix or commit findings ("applique tout", "fix M1") to `/triage-findings` with the matching filter (`all`, a tier, ids). Never edit the code or call `fixup` yourself. `triage-findings` reads the same `$STATE_FILE` through `scripts/findings.py`.
 - **Rendering is code, not prose**: `scripts/render.py` owns the verdict, the ids, the partition and both outputs. Never recompute or re-list any of it by hand. `scripts/test_render.py` is its self-check (`python3 scripts/test_render.py`); the anchor test pins byte-compatibility with the bash implementation it replaced, so existing dismissal registries keep matching.
-- **Coexists** with the legacy `gate` skill during migration.
 
 ## References
 

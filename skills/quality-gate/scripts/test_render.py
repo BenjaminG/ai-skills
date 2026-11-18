@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-check for the gate-wf renderer. Run: python3 scripts/test_render.py
+"""Self-check for the quality-gate renderer. Run: python3 scripts/test_render.py
 
 The anchor test is the one that matters: it re-implements the bash
 `gatewf_anchor` this replaces and compares, because a drift there silently
@@ -170,7 +170,7 @@ def test_end_to_end(tmp_state=True):
         assert "En clair" in shown and "Un seul truc bloque" in shown
         assert shown.index("En clair") < shown.index("B1 ")  # summary above the table
         assert "? unverified" in shown  # N1 carries the marker and its legend
-        report = Path(d) / ".claude/gate-wf-state"
+        report = Path(d) / ".claude/quality-gate-state"
         md = next(report.rglob("*.report.md")).read_text()
         assert "refute votes: 0/3" in md and "fix: branch on null" in md
 
@@ -232,7 +232,7 @@ def test_rounds_converge():
         out = ingest([mk("NIT", 5, "simplify-redundant", "simplify-reviewer", "v5 redundant"),
                       mk("MAJOR", 6, "bug-null-undefined", "bug-reviewer", "v6 can be null")])
         assert "FAIL" in out.stdout, out.stderr  # the unfixed BLOCKER is carried forward
-        state = json.loads(next((Path(d) / ".claude/gate-wf-state").rglob("main.json")).read_text())
+        state = json.loads(next((Path(d) / ".claude/quality-gate-state").rglob("main.json")).read_text())
         by_rule = {f["rule_id"]: f for f in state["findings"]}
         assert by_rule["bug-boundary"].get("still_open") is True
         assert by_rule["simplify-redundant"].get("pre_existing") is True  # style, unchanged line
@@ -243,7 +243,7 @@ def test_rounds_converge():
         shown = render("show").stdout
         assert "round 2" in shown and "1 fixed since last round" in shown
         assert "1 pre-existing" in shown
-        md = next((Path(d) / ".claude/gate-wf-state").rglob("*.report.md")).read_text()
+        md = next((Path(d) / ".claude/quality-gate-state").rglob("*.report.md")).read_text()
         assert "## Pre-existing" in md and "## Fixed since last round" in md
 
         # Round 3, BLOCKER still there → step back.

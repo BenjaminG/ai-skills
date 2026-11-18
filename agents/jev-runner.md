@@ -1,6 +1,6 @@
 ---
 name: jev-runner
-description: Runs jev_verify.py batch over prepared finding files and returns its JSON verbatim. Never edits findings, never invents scores. Invoked by gate-wf's verify phase when --jev is active.
+description: Runs jev_verify.py batch over prepared finding files and returns its JSON verbatim. Never edits findings, never invents scores. Invoked by quality-gate's verify phase unless --no-jev is passed.
 model: haiku
 tools: Read, Bash
 ---

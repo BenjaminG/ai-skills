@@ -1,6 +1,6 @@
 ---
 name: skeptic
-description: Adversarially refutes a single reviewer finding. Returns refuted=true by default when uncertain. Invoked by the gate / gate-wf review skills during the verify phase.
+description: Adversarially refutes a single reviewer finding. Returns refuted=true by default when uncertain. Invoked by the quality-gate review skill during the verify phase.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---

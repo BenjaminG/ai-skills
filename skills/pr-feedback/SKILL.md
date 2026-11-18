@@ -27,7 +27,7 @@ Two limits hold under every `--auto` policy, because the caller is unattended:
 
 ## 1. Fetch
 
-The script ships with the plugin; resolve its path the same way `gate-wf` resolves its own
+The script ships with the plugin; resolve its path the same way `quality-gate` resolves its own
 (plugin-root env → newest plugin cache → global-skills fallback), then run it:
 
 ```bash
@@ -173,7 +173,7 @@ call, so the disposition becomes `reply` instead.
 
 ### Registry of past refutations
 
-A bot re-raises what another bot already lost. `gate-wf` keeps the store for this — see its
+A bot re-raises what another bot already lost. `quality-gate` keeps the store for this — see its
 `references/dismissals.md` for the file path and the content-anchor helper; the same registry is
 shared, so a claim refuted here stops being re-flagged there.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gate-wf report renderer + dismissal registry CLI.
+"""quality-gate report renderer + dismissal registry CLI.
 
 Everything deterministic about the report lives here: verdict math, ID
 assignment, the active/dismissed partition, refute-vote counts, and the two
@@ -135,7 +135,7 @@ def terminal_report(p: F.Paths, state: dict, active, dismissed, summary: str) ->
     c = F.counts(active)
     v = state.get("verdict", "PASS")
     diff = state.get("diff") or {}
-    head = f"Gate-WF Verdict: {v}"
+    head = f"Quality Gate Verdict: {v}"
     bits = [head]
     if diff:
         bits.append(f"{diff.get('files', 0)} files, +{diff.get('add', 0)}/-{diff.get('del', 0)}")
@@ -234,7 +234,7 @@ def _md_finding(f: dict) -> list[str]:
 def markdown_report(state: dict, active, dismissed) -> str:
     c = F.counts(active)
     diff = state.get("diff") or {}
-    out = [f"# Gate-WF Verdict: {state.get('verdict', 'PASS')}", ""]
+    out = [f"# Quality Gate Verdict: {state.get('verdict', 'PASS')}", ""]
     if state.get("base_banner"):
         out += [state["base_banner"], ""]
     step_back = _step_back(state, c)
@@ -370,7 +370,7 @@ def cmd_plan(p: F.Paths, a) -> int:
 def cmd_brief(p: F.Paths, a) -> int:
     state = F.load_state(p)
     if not state:
-        print("no prior gate-wf run on this branch — run the gate first", file=sys.stderr)
+        print("no prior quality-gate run on this branch — run the gate first", file=sys.stderr)
         return 1
     active, dismissed = _repartition(p, state)
     c = F.counts(active)
@@ -389,7 +389,7 @@ def cmd_brief(p: F.Paths, a) -> int:
 def cmd_show(p: F.Paths, a) -> int:
     state = F.load_state(p)
     if not state:
-        print("no prior gate-wf run on this branch — run the gate first", file=sys.stderr)
+        print("no prior quality-gate run on this branch — run the gate first", file=sys.stderr)
         return 1
     active, dismissed = _repartition(p, state)
     summary = ""
@@ -404,7 +404,7 @@ def cmd_show(p: F.Paths, a) -> int:
 def cmd_dismiss(p: F.Paths, a) -> int:
     state = F.load_state(p)
     if not state:
-        print("no prior gate-wf run on this branch — run the gate first", file=sys.stderr)
+        print("no prior quality-gate run on this branch — run the gate first", file=sys.stderr)
         return 1
     reg = F.load_registry(p)
     ids = [i for i in a.ids.replace(",", " ").split() if i]
@@ -434,7 +434,7 @@ def cmd_dismiss(p: F.Paths, a) -> int:
 def cmd_undismiss(p: F.Paths, a) -> int:
     state = F.load_state(p)
     if not state:
-        print("no prior gate-wf run on this branch — run the gate first", file=sys.stderr)
+        print("no prior quality-gate run on this branch — run the gate first", file=sys.stderr)
         return 1
     reg = F.load_registry(p)
     for f in F.resolve(state, [i for i in a.ids.replace(",", " ").split() if i]):

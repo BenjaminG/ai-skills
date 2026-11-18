@@ -30,12 +30,12 @@ const skill = ($: Engine, name: string) =>
   $.prompt.submit({ text: `/${name}`, wait: false, origin: { kind: 'composer' } })
 
 describe('next-step', () => {
-  test('a gate-wf turn proposes /triage-findings, a pr-feedback turn /pr-respond', async ($, on) => {
+  test('a quality-gate turn proposes /triage-findings, a pr-feedback turn /pr-respond', async ($, on) => {
     const w = world(on, {})
     engine(on)
     await $.session.start(SESSION)
 
-    await skill($, 'ai-skills:gate-wf')
+    await skill($, 'ai-skills:quality-gate')
     await $.turn.complete(TURN)
     expect(w.suggested).toEqual(['/triage-findings blockers'])
 
@@ -52,7 +52,7 @@ describe('next-step', () => {
     engine(on)
     await $.session.start(SESSION)
 
-    await skill($, 'gate-wf')
+    await skill($, 'quality-gate')
     await $.turn.complete({ ...TURN, isAborted: true, reason: 'aborted' })
     expect(w.suggested).toEqual([])
 
@@ -84,7 +84,7 @@ describe('next-step', () => {
     engine(on)
     await $.session.start(SESSION)
 
-    await skill($, 'other:gate-wf')
+    await skill($, 'other:quality-gate')
     await $.turn.complete(TURN)
     expect(w.suggested).toEqual([])
   })
@@ -114,7 +114,7 @@ describe('next-step', () => {
     engine(on)
     await $.session.start(SESSION)
 
-    await skill($, 'gate-wf')
+    await skill($, 'quality-gate')
     await $.turn.complete(TURN)
     await $.prompt.suggest({ text: 'thanks!', origin: { kind: 'suggestion' } })
     expect(w.suggested).toEqual(['/triage-findings blockers', '/triage-findings blockers'])

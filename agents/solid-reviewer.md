@@ -1,6 +1,6 @@
 ---
 name: solid-reviewer
-description: Reviews a code diff for SOLID violations and emits structured findings. Invoked by the gate / gate-wf review skills.
+description: Reviews a code diff for SOLID violations and emits structured findings. Invoked by the quality-gate review skill.
 model: opus
 tools: Read, Grep, Glob, Bash
 ---

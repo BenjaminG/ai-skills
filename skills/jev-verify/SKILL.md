@@ -1,17 +1,17 @@
 ---
 name: jev-verify
-description: This skill should be used to measure whether TypeSafe's Jev model can replace gate-wf's sonnet skeptics in the Verify phase. Replays findings from gate-wf state files against Jev — one request per finding, four typed questions — and reports where the two disagree, plus cost and latency for both paths. Read-only; never modifies gate-wf or its state. Triggers on "/jev-verify", "compare jev against the gate", "can jev replace the skeptics", "calibrate jev thresholds".
+description: This skill should be used to measure whether TypeSafe's Jev model can replace quality-gate's sonnet skeptics in the Verify phase. Replays findings from quality-gate state files against Jev — one request per finding, four typed questions — and reports where the two disagree, plus cost and latency for both paths. Read-only; never modifies quality-gate or its state. Triggers on "/jev-verify", "compare jev against the gate", "can jev replace the skeptics", "calibrate jev thresholds".
 argument-hint: "[run|corpus|calibrate] [--no-call] [--synthetic] [--limit N]"
 ---
 
-# jev-verify — Jev against gate-wf's skeptics
+# jev-verify — Jev against quality-gate's skeptics
 
-This skill **measures**; it does not replace anything. It runs beside `gate-wf`, reads its state
-files, and writes only under `~/.claude/jev-verify/`. No file under `skills/gate-wf/` is touched.
+This skill **measures**; it does not replace anything. It runs beside `quality-gate`, reads its state
+files, and writes only under `~/.claude/jev-verify/`. No file under `skills/quality-gate/` is touched.
 
 ## Why
 
-`gate-wf` spends one sonnet subagent per skeptic vote — 3 per BLOCKER, 1 per MAJOR, ≤6 tool calls
+`quality-gate` spends one sonnet subagent per skeptic vote — 3 per BLOCKER, 1 per MAJOR, ≤6 tool calls
 each — to turn an already-investigated finding into a boolean. Jev answers that shape of question
 in ~100 ms for **$0.042 per million input tokens** (output free), and returns a calibrated
 probability instead of a 3-vote quorum that exists only to smooth one agent's noise.
@@ -22,7 +22,7 @@ Whether it answers it *well* is an open question. This skill produces the number
 
 - **`TYPESAFE_API_KEY`** in the environment. Get one at <https://console.typesafe.ai/>, then
   `export TYPESAFE_API_KEY=...`. Not needed for `--no-call`.
-- **A prior `gate-wf` run.** `run` reads this branch's state file; `corpus` reads every state file
+- **A prior `quality-gate` run.** `run` reads this branch's state file; `corpus` reads every state file
   for the current repo. The skill never launches the gate.
 - Python 3, stdlib only. No SDK, no pip install.
 
@@ -44,19 +44,19 @@ done
 python3 "$JV" run [--no-call] [--json] [--synthetic]
 python3 "$JV" corpus [--limit N] [--synthetic]
 python3 "$JV" calibrate
-jev_verify.py batch [--repo <root>]   # gate-wf --jev: findings on stdin
+jev_verify.py batch [--repo <root>]   # quality-gate Jev pass: findings on stdin
 python3 "$JV" --self-check
 ```
 
 | Command | What it does |
 | --- | --- |
-| `run` | This branch's last gate-wf findings. The everyday mode. Exits 1 with gate-wf's own message when there is no prior run. |
+| `run` | This branch's last quality-gate findings. The everyday mode. Exits 1 with quality-gate's own message when there is no prior run. |
 | `run --no-call` | Prints the exact Jev payloads and hits no network. Use it first — it is how you check the code slice actually contains the cited line before spending anything. |
-| `corpus` | Every gate-wf state file for the current repo. This is the calibration mode. Branches whose recorded commit is gone from the repo are skipped and counted. |
-| `preflight` | One ~300-token call (~$0.00001). The API exposes no balance or quota endpoint — only `/v1/systemone` — so a served call is the only proof of credit. Exit 1 with the exact reason (401 / 429 / network) on failure. gate-wf's `--jev` runs this before its reviewers spawn. |
+| `corpus` | Every quality-gate state file for the current repo. This is the calibration mode. Branches whose recorded commit is gone from the repo are skipped and counted. |
+| `preflight` | One ~300-token call (~$0.00001). The API exposes no balance or quota endpoint — only `/v1/systemone` — so a served call is the only proof of credit. Exit 1 with the exact reason (401 / 429 / network) on failure. quality-gate runs this before its reviewers spawn. |
 | `calibrate` | Threshold sweep over everything accumulated under `~/.claude/jev-verify/<repo-slug>/`. |
 | `--synthetic` | Also scores deliberately-broken copies of each finding (re-anchored past the window). Sensitivity floor — see **The bias** below. |
-| `batch` | The gate-wf `--jev` contract: findings array on stdin, one JSON object `{rows, usage}` on stdout. Each row carries `decision` (`keep`/`kill`/`escalate`), `defect_real`, `needs_wider_context` and a `msg_len` the caller checks against its own finding. **Every failure — API down, unreadable file, no message — routes to `escalate`**, so the caller's fallback is a sonnet skeptic and no finding is ever lost. |
+| `batch` | The quality-gate Jev-pass contract: findings array on stdin, one JSON object `{rows, usage}` on stdout. Each row carries `decision` (`keep`/`kill`/`escalate`), `defect_real`, `needs_wider_context` and a `msg_len` the caller checks against its own finding. **Every failure — API down, unreadable file, no message — routes to `escalate`**, so the caller's fallback is a sonnet skeptic and no finding is ever lost. |
 
 Run from inside the repo. The state directory is keyed on a one-way hash of the repo root, so
 `corpus` can only see the repo you are standing in.
@@ -98,7 +98,7 @@ and names where the worst of the two peaks.
 
 ## First results
 
-One run over 125 judgeable findings from 36 gate-wf state files on a real repo, with the planted
+One run over 125 judgeable findings from 36 quality-gate state files on a real repo, with the planted
 control:
 
 ```
@@ -130,7 +130,7 @@ if the corpus grows 10×.
 
 ## The bias you must not forget
 
-**gate-wf discards refuted findings**, so every finding on disk is one the skeptics *kept*. The
+**quality-gate discards refuted findings**, so every finding on disk is one the skeptics *kept*. The
 corpus therefore measures one direction: *does Jev keep what sonnet kept?* — the false-negative
 risk. It cannot measure whether Jev kills what sonnet killed.
 

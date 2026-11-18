@@ -2,7 +2,7 @@ import type { EngineInterface as Engine, Register } from 'claude-code'
 
 /** A skill of this plugin a turn ran → the prompt that usually follows it, proposed dim in the empty box. */
 const NEXT: Record<string, string> = {
-  'gate-wf': '/triage-findings blockers',
+  'quality-gate': '/triage-findings blockers',
   'pr-feedback': '/pr-respond',
   commit: '/pr-create',
 }
@@ -11,7 +11,7 @@ const NEXT: Record<string, string> = {
 let chained: string | null = null
 let proposal: string | null = null
 
-/** The main conversation ran `skill` (`gate-wf`, `ai-skills:gate-wf`); another plugin's is not ours. */
+/** The main conversation ran `skill` (`quality-gate`, `ai-skills:quality-gate`); another plugin's is not ours. */
 function ran(skill: string) {
   const [plugin, name] = skill.includes(':') ? skill.split(':') : ['ai-skills', skill]
 

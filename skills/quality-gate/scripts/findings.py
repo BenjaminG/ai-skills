@@ -1,10 +1,10 @@
-"""Shared state access for gate-wf and triage-findings.
+"""Shared state access for quality-gate and triage-findings.
 
 Owns everything deterministic about a finding set: where the state lives, the
 content-anchor identity used by the dismissal registry, the active/dismissed
 partition, verdict math, and stable ID assignment.
 
-`render.py` (gate-wf) and the triage-findings skill both import this — the
+`render.py` (quality-gate) and the triage-findings skill both import this — the
 anchor computation in particular must have exactly one implementation, since a
 drift between them would silently resurrect dismissed findings.
 """
@@ -43,7 +43,7 @@ def branch(root: Path) -> str:
 def state_dir(root: Path) -> Path:
     # Mirrors SKILL.md Step 1b: shasum of the repo root, first 12 chars.
     slug = hashlib.sha1(str(root).encode()).hexdigest()[:12]
-    return Path.home() / ".claude" / "gate-wf-state" / slug
+    return Path.home() / ".claude" / "quality-gate-state" / slug
 
 
 class Paths:

@@ -110,7 +110,7 @@ def test_no_call_end_to_end():
         out = sh(sys.executable, "-c",
                  "import sys;sys.path.insert(0,%r);import findings as F;"
                  "print(F.Paths().state)"
-                 % os.path.join(_HERE, "../../gate-wf/scripts"),
+                 % os.path.join(_HERE, "../../quality-gate/scripts"),
                  cwd=repo, env=env)
         sfile = out.stdout.strip()
         assert sfile, out.stderr
@@ -148,7 +148,7 @@ def test_no_call_end_to_end():
                "run", cwd=repo, env=env)
         assert r.returncode == 2 and "TYPESAFE_API_KEY" in r.stderr, r.stderr
 
-        # no state file at all -> gate-wf's own message, exit 1
+        # no state file at all -> quality-gate's own message, exit 1
         empty = os.path.join(d, "empty")
         os.makedirs(empty)
         make_repo(empty)
@@ -159,7 +159,7 @@ def test_no_call_end_to_end():
 
 
 def test_batch_mode():
-    """The gate-wf --jev contract: findings on stdin, one JSON object on stdout,
+    """The quality-gate Jev-pass contract: findings on stdin, one JSON object on stdout,
     every failure routing to escalate so no finding is ever lost."""
     with tempfile.TemporaryDirectory() as d:
         repo = os.path.join(d, "repo")

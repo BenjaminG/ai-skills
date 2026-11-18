@@ -85,7 +85,7 @@ fi
     • git rebase --abort                  # if mid-rebase
 
   If this is intentional (mass codemod, generated code), bypass with:
-    /gate <BASE> --ignore-scope-gate
+    /quality-gate <BASE> --ignore-scope-gate
 ```
 
 **Action**: skill exits cleanly with no verdict written. **Cycle counter is preserved** (Step 10a writes `cycle: state.cycle` unchanged, not `state.cycle + 1`).

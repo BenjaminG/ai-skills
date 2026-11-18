@@ -1,6 +1,6 @@
 ---
 name: react-reviewer
-description: Reviews a code diff for React/Next.js best-practice violations and component-composition smells. Invoked by the gate / gate-wf review skills.
+description: Reviews a code diff for React/Next.js best-practice violations and component-composition smells. Invoked by the quality-gate review skill.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---

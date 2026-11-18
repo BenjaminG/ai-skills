@@ -15,7 +15,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 TRIAGE = HERE / "triage.py"
-RENDER = HERE.parent.parent / "gate-wf" / "scripts" / "render.py"
+RENDER = HERE.parent.parent / "quality-gate" / "scripts" / "render.py"
 
 FINDINGS = [
     {"tier": "BLOCKER", "file": "a.ts", "line": 1, "rule_id": "claude-md-violation",
@@ -94,7 +94,7 @@ def test_mark_fixed_moves_the_verdict():
         assert "B1 " not in shown.split("Fixed by triage")[0].split("BLOCKER 0")[1]
         # A fixed finding no longer offered as work.
         assert "B1" not in run([sys.executable, str(TRIAGE), "plan", "all"]).stdout
-        md = next((Path(d) / ".claude/gate-wf-state").rglob("*.report.md")).read_text()
+        md = next((Path(d) / ".claude/quality-gate-state").rglob("*.report.md")).read_text()
         assert "## Fixed by triage" in md
 
 

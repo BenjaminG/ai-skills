@@ -27,7 +27,7 @@ BOT_LOGINS = {"naboo-ai-reviews", "cursor", "coderabbitai", "sonarcloud"}
 # would feed the loop its own output. Flagged, not dropped: the tells are probabilistic,
 # and Step 2 of the skill does the judging.
 AGENT_TELLS = [re.compile(p, re.M | re.I) for p in (
-    r"\*\*Confidence:?\*\*", r"\*\*Confiance\s*:?\*\*",     # gate / gate-wf finding header
+    r"\*\*Confidence:?\*\*", r"\*\*Confiance\s*:?\*\*",     # quality-gate finding header
     r"^#{2,3}\s*[🔴🟡🔵🟢]", r"\[[A-Z]{3,5}-[0-9A-Z]{1,3}\]",   # severity headers, cluster ids
     r"\*\*(?:Blocker|Bloquant|Major|Minor|Mineur)\s*[—–-]",
     r"Two-axis review", r"Revue multi-agents", r"adversari",

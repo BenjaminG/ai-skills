@@ -1,6 +1,6 @@
 ---
 name: pr-comment
-description: This skill should be used when reviewing someone else's pull request and you want drafted review comments posted to GitHub — either gate / gate-wf findings (tier-marked) or pr-challenge's reviewer questions (unmarked) — each drafted through humanizer and posted as a standalone inline comment at its file:line, after one confirmation. Triggers on "post these as review comments", "comment the gate findings on the PR", "draft and post my review", "leave review comments", after a gate / gate-wf run or a pr-challenge pass on a PR you're reviewing.
+description: This skill should be used when reviewing someone else's pull request and you want drafted review comments posted to GitHub — either quality-gate findings (tier-marked) or pr-challenge's reviewer questions (unmarked) — each drafted through humanizer and posted as a standalone inline comment at its file:line, after one confirmation. Triggers on "post these as review comments", "comment the gate findings on the PR", "draft and post my review", "leave review comments", after a quality-gate run or a pr-challenge pass on a PR you're reviewing.
 argument-hint: "[pr-number-or-url] [tiers — e.g. 'all' | 'B,M' | specific IDs]"
 ---
 
@@ -14,17 +14,17 @@ The mechanics below — placement, batch preview, single confirmation, `gh api` 
 
 | Mode | Input | Marker |
 |---|---|---|
-| **findings** (default) | `gate` / `gate-wf` findings — defect claims with a tier | mandatory (`**blocker:** ` / `**major:** ` / `nit: `) |
+| **findings** (default) | `quality-gate` findings — defect claims with a tier | mandatory (`**blocker:** ` / `**major:** ` / `nit: `) |
 | **challenge** | `pr-challenge` comments — reviewer questions with a `kind` | none, or a conventional-comment label the caller already applied |
 
 Pick by what's in hand: a `pr-challenge` set in the conversation → challenge mode. Otherwise findings mode. Never mix the two in one batch — a question sitting among tier-marked defects reads as a defect nobody scored.
 
 ## Prerequisites — findings mode
 
-Findings come from a prior `gate` / `gate-wf` run, in priority order:
+Findings come from a prior `quality-gate` run, in priority order:
 
 1. The findings already in this conversation (the gate verdict you just saw), or
-2. The state file for the current branch — whichever skill ran: `~/.claude/gate-state/<repo-slug>/<branch>.json` (`gate`) or `~/.claude/gate-wf-state/<repo-slug>/<branch>.json` (`gate-wf`) → `.findings[]`.
+2. The state file for the current branch — `~/.claude/quality-gate-state/<repo-slug>/<branch>.json` → `.findings[]`.
 
 Both produce the same shape: `id` (B1/M1/N1), `tier` (BLOCKER/MAJOR/NIT), `file`, `line`, `location` (`diff-line` | `adjacent`), `message`, `suggested_fix`.
 

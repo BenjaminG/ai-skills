@@ -1,6 +1,6 @@
 ---
 name: context-checker
-description: Checks reviewer findings against project context (CLAUDE.md, ADRs, Linear, PR comments, past sessions) and synthesizes findings for documented-rule violations. Invoked by the gate / gate-wf review skills.
+description: Checks reviewer findings against project context (CLAUDE.md, ADRs, Linear, PR comments, past sessions) and synthesizes findings for documented-rule violations. Invoked by the quality-gate review skill.
 model: opus
 tools: Read, Grep, Glob
 ---

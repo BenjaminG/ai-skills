@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selection side of triage-findings: read gate-wf's state, drop what the code
+"""Selection side of triage-findings: read quality-gate's state, drop what the code
 has outrun, resolve the selector, print a plan grouped by file.
 
 Grouped by file because that is the unit of work: five findings in one mapper is
@@ -22,25 +22,25 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def _load_findings_module():
-    """gate-wf owns findings.py; there must be exactly one implementation of the
+    """quality-gate owns findings.py; there must be exactly one implementation of the
     content anchor, so import it rather than copying it."""
     cands = []
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if root:
-        cands.append(os.path.join(root, "skills/gate-wf/scripts"))
-    cands.append(os.path.join(_HERE, "../../gate-wf/scripts"))
+        cands.append(os.path.join(root, "skills/quality-gate/scripts"))
+    cands.append(os.path.join(_HERE, "../../quality-gate/scripts"))
     cands += sorted(
         glob.glob(os.path.expanduser(
-            "~/.claude/plugins/cache/*/ai-skills/*/skills/gate-wf/scripts")),
+            "~/.claude/plugins/cache/*/ai-skills/*/skills/quality-gate/scripts")),
         reverse=True,
     )
-    cands.append(os.path.expanduser("~/.claude/skills/gate-wf/scripts"))
+    cands.append(os.path.expanduser("~/.claude/skills/quality-gate/scripts"))
     for c in cands:
         if os.path.isfile(os.path.join(c, "findings.py")):
             sys.path.insert(0, os.path.abspath(c))
             import findings  # noqa: F401
             return findings
-    print("triage-findings: gate-wf's scripts/findings.py not found — "
+    print("triage-findings: quality-gate's scripts/findings.py not found — "
           "reinstall the plugin", file=sys.stderr)
     raise SystemExit(2)
 
@@ -59,7 +59,7 @@ def _one(s) -> str:
 def cmd_plan(p, a) -> int:
     state = F.load_state(p)
     if not state:
-        print("no gate-wf findings for this branch — run `gate-wf` first "
+        print("no quality-gate findings for this branch — run `quality-gate` first "
               "(triage never launches it for you: that is dozens of agents)",
               file=sys.stderr)
         return 1
@@ -79,7 +79,7 @@ def cmd_plan(p, a) -> int:
     print(f"{len(live)} findings on record · {len(fresh)} still match the code"
           + (f" · {n_stale} outdated, dropped" if n_stale else ""))
     if n_stale and not fresh:
-        print("every finding is outdated — re-run `gate-wf` before triaging.")
+        print("every finding is outdated — re-run `quality-gate` before triaging.")
         return 1
     if free_text:
         print(f'selector "{selector}" is not a literal one — the full fresh set '
@@ -122,7 +122,7 @@ def cmd_plan(p, a) -> int:
 def cmd_mark_fixed(p, a) -> int:
     state = F.load_state(p)
     if not state:
-        print("no gate-wf findings for this branch", file=sys.stderr)
+        print("no quality-gate findings for this branch", file=sys.stderr)
         return 1
     ids = [i for i in a.ids.replace(",", " ").split() if i]
     hit = F.mark_fixed(state, ids)
