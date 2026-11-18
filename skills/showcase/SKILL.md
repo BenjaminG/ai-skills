@@ -11,7 +11,11 @@ a sequence of **shots**, one per line of the **script**:
 
 - a **card**: kicker, title, subtitle, badges, or a title with an accent, on the brand background;
 - a **chapter**: a numbered pill (or a label such as `Before`) and a caption above the app, which plays
-  inside a framed window, zooms on the element the voice is about and dims the rest.
+  inside a framed window: the camera zooms on each click and typing, and on the element the voice is
+  about, dimming the rest; a drawn cursor glides between the clicks.
+
+The montage is pr-demo's engine (`$DEMO/scripts/engine.py`, `assets/stage.html`, `scripts/render.js`);
+this skill adds the script, the cards' brand and the voice.
 
 Each shot lasts as long as its voice line. With `--no-voice`, the time to read it and to play its action.
 
@@ -25,7 +29,7 @@ same slug is a **re-take**: it reuses what is there.
 From `$ARGUMENTS`: the source (a PR number or URL, a branch, or free text naming a feature or an app
 area; none → the current branch's PR), `--no-voice`, `--lang fr` (default `en`). For a PR:
 `gh pr view [<n>] --json number,url,title,headRefName,baseRefName,headRepositoryOwner,body`.
-Create `DIR`. Locate this skill and pr-demo, whose setup it shares:
+Create `DIR`. Locate this skill and pr-demo, whose setup and montage engine it shares:
 
 ```bash
 for n in showcase pr-demo; do
@@ -99,7 +103,7 @@ Reuse `~/.cache/showcase/<owner>-<repo>/theme.css` when it exists: copy it into 
 from the app's own design system. In the Playwright MCP browser on the app, read with `browser_evaluate`
 the computed background and text colors of the page, the primary button's color, a muted text color,
 and the font families of a heading and of the body. For Naboo, they come from `@repo/tailwind-config`
-and the `data-ds-theme` theme. Write them as these variables, which `assets/stage.html` reads:
+and the `data-ds-theme` theme. Write them as these variables, which `$DEMO/assets/stage.html` reads:
 
 ```css
 :root { --bg: …; --fg: …; --muted: …; --accent: …; --accent-soft: …; --surface: …; --radius: …;
@@ -118,8 +122,10 @@ scenario with pr-demo's helpers. Then:
 
 - wrap each chapter in `await chapter('<shot id>', async () => { … })`, in script order, from the
   chapter's start screen to its hold on the result;
-- call `await focus('<label>', locator)` when the voice turns to an element, and
-  `await focus('<label>', null)` to zoom out;
+- act through `click` and `type`: the camera zooms on each of them on its own, and the cursor follows;
+- call `await focus('<label>', locator)` when the voice turns to an element no click names (a card, a
+  result), and `await focus('<label>', null)` to zoom out: a focus lights its element and holds the
+  camera there, over the clicks, until the next `focus`;
 - keep the 1920×1080 size: the stage frames the recording at that size.
 
 Run it as pr-demo's **Record** section does and save the returned JSON as `DIR/main.json`. For a
@@ -147,19 +153,19 @@ with `say -o voice/<id>.aiff "<line>"` and convert them with
 ```bash
 python3 $SKILL/scripts/timeline.py build DIR/script.json --rec main=DIR/main.json [--rec before=DIR/before.json] \
         [--voice-dir DIR/voice] --out DIR/timeline.json
-NODE_PATH=<the app repo's node_modules holding playwright> node $SKILL/scripts/render.js DIR/timeline.json --at <t>,<t>…
+NODE_PATH=<the app repo's node_modules holding playwright> node $DEMO/scripts/render.js DIR/timeline.json --at <t>,<t>…
 ```
 
 Leave out `--voice-dir` with `--no-voice`. With pnpm, `NODE_PATH` is
 `$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
 
-`--at` writes `DIR/at-<t>.png` in a second or two: pass the middle of each zoom (times in
-`timeline.json`) and read the frames. The lit area sits on the element the caption names. When a box
+`--at` writes `DIR/at-<t>.png` in a second or two: pass the middle of each lit zoom (the `focus`
+entries with `"light": true` in `timeline.json`) and read the frames. The lit area sits on the element the caption names. When a box
 misses, fix it in `main.json`, rebuild the timeline and check again with `--at`: no re-take, no full
 render. Then render the video, about one second per two seconds of video:
 
 ```bash
-NODE_PATH=… node $SKILL/scripts/render.js DIR/timeline.json DIR/silent.mp4
+NODE_PATH=… node $DEMO/scripts/render.js DIR/timeline.json DIR/silent.mp4
 python3 $SKILL/scripts/timeline.py mux DIR/timeline.json DIR/silent.mp4 DIR/showcase.mp4 --sheet DIR/sheet.png
 ```
 
