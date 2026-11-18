@@ -28,8 +28,8 @@
   .caption { font-family: var(--font-display); font-size: 50px; }
   #frame { position: absolute; left: 160px; top: 140px; width: 1600px; height: 900px; border-radius: var(--radius); overflow: hidden;
            background: var(--surface); box-shadow: 0 30px 80px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.08); }
-  #inner { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
-  #shot { display: block; width: 1920px; height: 1080px; }
+  #inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #shot { display: block; }   /* natural size: the recording's viewport, in the markers' coordinates */
   #frame.bare { top: 90px; }   /* no pill nor caption (pr-demo): the window sits in the middle */
   #ring { position: absolute; box-sizing: border-box; border: 0; border-radius: 14px; box-shadow: 0 0 0 4000px rgba(10, 12, 8, .32); }
   #cursor { position: absolute; left: 0; top: 0; width: 27px; height: 39px; transform-origin: 0 0; pointer-events: none; }
@@ -49,7 +49,7 @@
   </section>
 </div>
 <script>
-  const W = 1920, H = 1080, FRAME = 1600 / W;
+  let W = 1920, H = 1080, FRAME = 1600 / W;   // the recording's viewport, read from its frames in seek
   const FADE_IN = 0.35, FADE_OUT = 0.25, ZOOM = 0.8, MAX_ZOOM = 2.2;
   const AUTO_ZOOM = 1.8;          // most a click or a typing zooms; an explicit focus goes to MAX_ZOOM
   const IDLE = 1.5, HIDE = 0.3;   // the cursor fades out over HIDE once still for IDLE seconds
@@ -172,7 +172,7 @@
     const n = clamp(Math.floor(rawAt(s.map, lt) * TL.fps) + 1, 1, rec.frames);
     const src = `${rec.base}${String(n).padStart(5, '0')}.jpg`;
     const img = $('#shot');
-    if (img.getAttribute('src') !== src) { img.src = src; await img.decode(); }
+    if (img.getAttribute('src') !== src) { img.src = src; await img.decode(); W = img.naturalWidth; H = img.naturalHeight; FRAME = 1600 / W; }
 
     const { v, box, k } = viewAt(s.focus || [], lt);
     const scale = FRAME * v.s;

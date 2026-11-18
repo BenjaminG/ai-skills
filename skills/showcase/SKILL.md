@@ -126,7 +126,8 @@ scenario with pr-demo's helpers. Then:
 - call `await focus('<label>', locator)` when the voice turns to an element no click names (a card, a
   result), and `await focus('<label>', null)` to zoom out: a focus lights its element and holds the
   camera there, over the clicks, until the next `focus`;
-- keep the 1920×1080 size: the stage frames the recording at that size.
+- keep a 16:9 size (1920×1080, or 1600×900 when the app's layout needs it): the stage frames the
+  recording in a 16:9 window.
 
 Run it as pr-demo's **Record** section does and save the returned JSON as `DIR/main.json`. For a
 `Before` chapter, run pr-shots' compare switch (`git switch --detach` on the merge-base, reinstall when
