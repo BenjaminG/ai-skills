@@ -61,8 +61,8 @@ report.
 3. **Servers**: for each line of `launch.sh --list`, check the port
    (`lsof -nP -iTCP:<port> -sTCP:LISTEN -t`, then `lsof -a -p <pid> -d cwd -Fn`).
    - Nothing listening → run `launch.sh <name>` in its own pane of the herdr tab "dev server"
-     (herdr skill), from the worktree, and wait for its ready text with its timeout. A miss means
-     reading the pane, not waiting longer.
+     (herdr skill), from the worktree, then `launch.sh --wait <name>`. A non-zero exit means
+     reading the server's log, not waiting longer.
    - Listening from another worktree → ask before stopping it; the user may be using it.
 
 **Done when** `doctor.sh` prints no `FAIL` and each server runs from the PR's worktree.

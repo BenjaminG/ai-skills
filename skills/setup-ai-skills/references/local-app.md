@@ -33,8 +33,10 @@ sourced `common.sh`.
   it). Cheap when nothing changed: stamp what each step last saw (the lockfile, the commit) and skip
   when it matches. Codegen that reads a schema the API writes at boot runs again after the API is up.
   Prints one line per step.
-- **`launch.sh --list`** prints one line per server: `<name> <port> <timeout-s> <ready text>`.
-  **`launch.sh <name>`** runs that server in the foreground and tees its output to
+- **`launch.sh --list`** prints one line per server: `<name> <port> <timeout-s>`, the timeout set
+  from the boot time measured in the proof. **`launch.sh --wait <name>`** blocks until the port
+  listens, exit 1 after the timeout; it polls the port because a ready line printed before the wait
+  began is never seen. **`launch.sh <name>`** runs that server in the foreground and tees its output to
   `${TMPDIR:-/tmp}/local-app-<repo>/<name>.log`, truncated at start. Containers the servers need
   (database, cache) are checked first, with the command to start them when they are down.
 - **`doctor.sh [url…]`**: read-only. One line per check, `ok` / `warn` / `FAIL`, exit 1 on any
@@ -102,7 +104,8 @@ screens the user reaches most.
 
 1. `prepare.sh`.
 2. The servers. Nothing listening: run each `launch.sh <name>` in its own herdr pane in a tab named
-   `dev server` (herdr skill), and wait for its ready text. Something listening: ask before stopping
+   `dev server` (herdr skill), then `launch.sh --wait <name>`; write each measured boot time in the
+   doc. Something listening: ask before stopping
    it, since it may serve the user's work. When the user keeps it, run the whole proof from the
    checkout those servers run from, and mark the launch section `unproven` in the doc.
 3. `doctor.sh <start URL of one mapped screen>`: every line `ok`.
