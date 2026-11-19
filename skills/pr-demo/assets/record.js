@@ -22,7 +22,11 @@ async (page) => {
   const t0 = Date.now();
   const at = () => (Date.now() - t0) / 1000;
   const markers = [];
-  const span = (kind) => async (label, fn) => { const start = at(); await fn(); markers.push({ kind, label, start, end: at() }); };
+  // A lit focus holds a box measured once: drop it before anything moves the page under it
+  // (a cut, a wait, a click, a scroll, a key that closes a dialog), or the mask lights the wrong spot.
+  let lit = null; // { locator, box } of the lit element
+  const unlight = (start = at()) => { if (lit) { markers.push({ kind: 'focus', label: 'out', start, end: start, box: null }); lit = null; } };
+  const span = (kind) => async (label, fn) => { if (kind !== 'chapter') unlight(); const start = at(); await fn(); markers.push({ kind, label, start, end: at() }); };
   const cut = span('cut');   // dropped from the video: page loads, off-camera setup
   const wait = span('wait'); // sped up: extraction, polling, server work
   const chapter = span('chapter'); // showcase: one chapter of the script, by its id
@@ -32,9 +36,20 @@ async (page) => {
   const focus = async (label, locator) => { // showcase: zoom on this element and light it from now on (null: zoom out)
     // The box is in viewport coordinates: measure it once the element is in view and the scroll has settled.
     let box = null;
-    if (locator) { await locator.scrollIntoViewIfNeeded(); await p.waitForTimeout(400); box = await locator.boundingBox(); }
+    if (locator) {
+      const scrolledAt = at();
+      await locator.scrollIntoViewIfNeeded();
+      if (lit) { // off from the moment the scroll moved the lit element
+        const now = await lit.locator.boundingBox().catch(() => null);
+        if (!now || Math.abs(now.x - lit.box.x) > 2 || Math.abs(now.y - lit.box.y) > 2) unlight(scrolledAt);
+      }
+      await p.waitForTimeout(400); box = await locator.boundingBox();
+    }
     markers.push({ kind: 'focus', label, start: at(), end: at(), box });
+    lit = box ? { locator, box } : null;
   };
+  const scroll = async (locator) => { unlight(); await locator.scrollIntoViewIfNeeded(); await p.waitForTimeout(400); };
+  const press = async (key) => { unlight(); await p.keyboard.press(key); }; // Escape closes a lit dialog
 
   let pos = { x: SIZE.width / 2, y: SIZE.height / 2 };
   const moveTo = async (x, y) => {
@@ -49,6 +64,7 @@ async (page) => {
     pos = { x, y };
   };
   const act = async (label, locator, fn) => { // the camera zooms on the element while fn runs
+    unlight();
     const start = at();
     await locator.scrollIntoViewIfNeeded();
     const box = await locator.boundingBox();

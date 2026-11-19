@@ -113,6 +113,8 @@ and the scenario with its helpers, then run it through `browser_run_code_unsafe`
 - `click(locator)` and `type(locator, text)`: every action on screen goes through them. They move the
   cursor and tell the camera where to zoom; a `p.click()` or `p.fill()` would happen off camera.
 - `cut(label, fn)` around loads and off-camera setup; `wait(label, fn)` around server work.
+- `scroll(locator)` and `press(key)` to scroll or close a dialog, so a lit `focus` turns off before
+  the page moves under it.
 - `scenario(title, fn, subtitle)` around each scenario when there are several: a card names it.
 
 A re-take whose `record.js` still draws a red dot or calls `title` predates the engine: copy the
