@@ -14,6 +14,14 @@ This file is your personal customization layer for the `humanizer` skill. Rules 
 
 ---
 
+## Length
+
+<!-- How long a message runs, by situation. The Cut step uses it as a ceiling. Example: "thread reply: 1 to 3 lines". -->
+
+- _(empty)_
+
+---
+
 ## Audience
 
 <!-- Who you usually write for. Affects vocabulary and assumed shared context. -->

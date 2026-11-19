@@ -73,10 +73,11 @@ When given text to humanize:
 
 1. **Load STYLE.md** (if present) and apply its overrides to the rule set below.
 2. **(Optional) Voice Calibration** — if the user supplied a writing sample, analyze it first (see *Voice Calibration*). A persistent STYLE.md still wins over a one-off sample.
-3. **Identify AI patterns** — scan for the patterns in the catalog below, minus anything STYLE.md disables.
-4. **Write a draft rewrite.** Rewrite, don't delete: replace AI-isms with natural alternatives and cover everything the original covers (five paragraphs in → five paragraphs out). Preserve the core meaning. Match the intended tone (formal, casual, technical) and use the user's vocabulary, rhythm, and tone if STYLE.md provides them. Add personality only when the content and voice call for it (see *Personality and Soul*). Check that the draft reads naturally aloud, varies sentence length, and prefers specific details and simple constructions (is/are/has).
-5. **Audit.** Ask: **"What makes the below so obviously AI generated?"** Answer briefly with any remaining tells.
-6. **Final rewrite.** Revise to address those tells. The final rewrite must contain no em or en dashes (see §14) — scan for `—` and `–` before returning; any hit means it isn't done.
+3. **Cut** — for a message to someone (Slack, DM, thread reply, review or ticket comment). Keep what answers the message it replies to, or the one thing the reader must act on. Delete each sentence the reader already knows (their own PR, the ticket they opened, what they just wrote) and each sentence nobody asked for. Then read the last line: an offer, a ping request or an aside that only informs goes, and the new last line gets the same test. STYLE.md's `## Length` budget, when present, is the ceiling. **Done when** every remaining sentence answers the reader and the last line is the answer or the question. Long-form text (docs, articles, PR or ticket descriptions) skips this step.
+4. **Identify AI patterns** — scan what Cut kept for the patterns in the catalog below, minus anything STYLE.md disables.
+5. **Write a draft rewrite.** Rewrite each AI-ism with a natural alternative rather than dropping its sentence, and cover everything Cut kept (long-form: five paragraphs in → five paragraphs out). Preserve the core meaning. Match the intended tone (formal, casual, technical) and use the user's vocabulary, rhythm, and tone if STYLE.md provides them. Add personality only when the content and voice call for it (see *Personality and Soul*). Check that the draft reads naturally aloud, varies sentence length, and prefers specific details and simple constructions (is/are/has).
+6. **Audit.** Ask: **"What makes the below so obviously AI generated?"** Answer briefly with any remaining tells.
+7. **Final rewrite.** Revise to address those tells. The final rewrite must contain no em or en dashes (see §14) — scan for `—` and `–` before returning; any hit means it isn't done.
 
 ### Output format
 
@@ -153,6 +154,7 @@ Triggered by "humanizer update: <instruction>", "teach humanizer that ...", "rem
 1. Resolve and read `STYLE.md` using the priority order in **Personal Style — STYLE.md** above. If none exists, run Init Mode instead (after confirming with the user). All writes go to the same path that was resolved for reading — never split read and write across paths.
 2. Classify the instruction into one of the STYLE.md sections:
    - **Tone** — anything about overall voice/register.
+   - **Length** — how long a message runs, by situation.
    - **Audience** — who they're writing for.
    - **Banned vocabulary** — words/phrases to avoid.
    - **Preferred vocabulary** — words/phrases/punctuation to keep.
