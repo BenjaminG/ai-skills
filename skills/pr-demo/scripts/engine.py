@@ -83,22 +83,23 @@ def kept(rec, start, end, total):
     return out
 
 
-def knots(spans, dur):
+def knots(spans, dur, max_rate=MAX_RATE, tail=0.0):
     """Output-time -> recording-time knots for a chapter of `dur` seconds, and its rate.
 
     A jump between two knots at the same output time is a cut. The last knot holds the final
-    frame when the action ends before `dur`.
+    frame when the action ends before `dur`, and `tail` seconds more after it.
     """
     natural = sum((e - s) / sp for s, e, sp in spans)
-    rate = min(MAX_RATE, max(1.0, natural / dur)) if dur > 0 else 1.0
+    rate = min(max_rate, max(1.0, natural / dur)) if dur > 0 else 1.0
     out, o = [], 0.0
     for s, e, sp in spans:
         out.append([round(o, 3), s])
         o += (e - s) / (sp * rate)
         out.append([round(o, 3), e])
-    if o < dur:
-        out.append([round(dur, 3), spans[-1][1]])
-    return out, rate, max(dur, o)
+    end = max(dur, o) + tail
+    if o < end:
+        out.append([round(end, 3), spans[-1][1]])
+    return out, rate, end
 
 
 def to_out(spans, rate, raw):
@@ -171,8 +172,9 @@ def cursor(markers, cs, ce, spans, rate):
     return {"moves": moves, "clicks": sorted(o(m["start"]) for m in inside if m["kind"] == "click")}
 
 
-def build(shots, recs, want=None):
-    """The timeline stage.html plays. `want` gives a shot the length it should last (a voice line)."""
+def build(shots, recs, want=None, max_rate=MAX_RATE, tail=0.0):
+    """The timeline stage.html plays. `want` gives a shot the length it should last (a voice line);
+    `max_rate` and `tail` go to knots()."""
     want = want or {}
     # "total" stands in for the video length in the self-tests, where no video exists
     totals = {n: duration(r["video"]) if os.path.exists(r["video"]) else r.get("total", 0)
@@ -190,7 +192,7 @@ def build(shots, recs, want=None):
             spans = kept(rec, cs, ce, totals[name])
             natural = sum((e - b) / sp for b, e, sp in spans)
             dur = max(w or natural, read_time([s.get("caption")]))
-            shot["map"], rate, dur = knots(spans, dur)
+            shot["map"], rate, dur = knots(spans, dur, max_rate, tail)
             shot["focus"] = out_times(spans, rate, zooms(rec["markers"], cs, ce))
             shot["cursor"] = cursor(rec["markers"], cs, ce, spans, rate)
             shot["rec"] = name
@@ -250,6 +252,9 @@ def self_test():
     # A 2 s voice line would need 4.5x: capped, so the chapter outlasts the voice.
     k, rate, dur = knots(spans, 2.0)
     assert rate == MAX_RATE and dur == 9 / MAX_RATE, (rate, dur)
+    # At max_rate 1 the same chapter plays its 9 s at 1x, past the voice, then holds a 1.5 s tail.
+    k, rate, dur = knots(spans, 2.0, max_rate=1.0, tail=1.5)
+    assert rate == 1.0 and dur == 10.5 and k[-2] == [9.0, 30] and k[-1] == [10.5, 30], (k, rate, dur)
     # A time 2 s into the kept action; a time inside a cut snaps to the next span.
     assert to_out(spans, 1.0, 16) == 2.0 and to_out(spans, 1.0, 12) == 0.0
     assert to_out(spans, 1.0, 27) == 6.0

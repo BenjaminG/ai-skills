@@ -6,8 +6,9 @@ argument-hint: "[PR | branch | \"feature\"] [--no-voice] [--lang fr]"
 
 # Showcase
 
-A **showcase** is a 45–75 s video that tells the team what a feature does for its users. It runs as
-a sequence of **shots**, one per line of the **script**:
+A **showcase** is a video that tells the team what a feature does for its users: about a minute for
+one feature, longer for an exhaustive tour. It runs as a sequence of **shots**, one per line of the
+**script**:
 
 - a **card**: kicker, title, subtitle, badges, or a title with an accent, on the brand background;
 - a **chapter**: a numbered pill (or a label such as `Before`) and a caption above the app, which plays
@@ -17,7 +18,9 @@ a sequence of **shots**, one per line of the **script**:
 The montage is pr-demo's engine (`$DEMO/scripts/engine.py`, `assets/stage.html`, `scripts/render.js`);
 this skill adds the script, the cards' brand and the voice.
 
-Each shot lasts as long as its voice line. With `--no-voice`, the time to read it and to play its action.
+A card lasts as long as its voice line. A chapter plays its action at real speed, lasts as long as the
+action or its voice line, whichever is longer, then holds its last frame 1.5 s. With `--no-voice`, a
+shot also lasts the time to read it.
 
 Everything for one showcase lives in `DIR=~/.cache/showcase/<owner>-<repo>/<slug>/`, the slug being the
 PR number or the feature in kebab case: `script.json`, `record.js`, `main.json`, `before.json`,
@@ -124,8 +127,17 @@ scenario with pr-demo's helpers. Then:
   chapter's start screen to its hold on the result;
 - act through `click` and `type`: the camera zooms on each of them on its own, and the cursor follows;
 - call `await focus('<label>', locator)` when the voice turns to an element no click names (a card, a
-  result), and `await focus('<label>', null)` to zoom out: a focus lights its element and holds the
-  camera there, over the clicks, until the next `focus`;
+  result), and `await focus('<label>', null)` to zoom out: a focus lights its element until the next
+  `focus`, or until the page moves under it. A click, a `cut`, a `wait`, `scroll(locator)` and
+  `press(key)` turn the light off; scroll and close dialogs through them, never `p.mouse.wheel` or
+  `p.keyboard`;
+- give each chapter its reading time: hold on the result (`p.waitForTimeout`) as long as the viewer
+  needs to read it. The montage plays the recording at 1x, never faster, and the voice may end before
+  the action does;
+- show a PDF as an image: headless Chromium has no PDF viewer, so an `<embed>` or `<iframe>` of a PDF
+  stays blank or downloads the file. Render page 1 (`pdftoppm -r 110 -f 1 -l 1 -png -singlefile`),
+  serve the PNG with `ctx.route(url, (r) => r.fulfill({ path }))`, and paint it with `addStyleTag`:
+  hide the `embed` and set the PNG as its container's background;
 - keep a 16:9 size (1920×1080, or 1600×900 when the app's layout needs it): the stage frames the
   recording in a 16:9 window.
 

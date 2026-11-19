@@ -11,9 +11,10 @@ Usage:
       Lay the voice files on the rendered video (or copy it when there is no voice).
   timeline.py --self-test
 
-A chapter lasts as long as its voice line (plus GAP). Without voice it lasts long enough to read
-its caption and to play its action. Its recording is played at the speed that fits, between 1x
-and the engine's MAX_RATE, and holds its last frame when the action is shorter than the voice.
+A chapter plays its recording at 1x: it lasts as long as its action or its voice line (plus GAP),
+whichever is longer, then holds its last frame TAIL seconds so the viewer reads the result. The
+voice stops when its line ends: silence while the action finishes is natural. Without voice the
+chapter also lasts long enough to read its caption.
 """
 import argparse
 import json
@@ -26,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "pr-demo" / "script
 import engine  # noqa: E402  pr-demo's montage engine, shared on purpose
 
 GAP = 0.35          # silence after each voice line
+TAIL = 1.5          # a chapter holds its last frame this long before the next shot
 VOICE_WPS = 2.6     # words per second of a voice line, for the estimate
 
 
@@ -79,7 +81,7 @@ def build(script, recs, voice_dir):
                 raise SystemExit(f"missing voice file {f}")
             files[s["id"]], want[s["id"]] = f, engine.duration(f) + GAP
     shots = [{**s, "label": lab[s["id"]]} if s["kind"] == "chapter" else s for s in script["shots"]]
-    tl = engine.build(shots, recs, want)
+    tl = engine.build(shots, recs, want, max_rate=1.0, tail=TAIL)
     starts = {s["id"]: s["start"] for s in tl["shots"]}
     tl["audio"] = [{"file": os.path.abspath(f), "start": starts[i]} for i, f in files.items()]
     return tl
@@ -126,10 +128,10 @@ def self_test():
     tl = build(script, {"main": rec}, None)
     intro, before, c1 = tl["shots"]
     assert intro["start"] == 0 and intro["dur"] == 4.3, intro             # 10 words read at 3/s + 1
-    assert before["start"] == 4.3 and before["dur"] == 10.0, before        # action outlasts caption
-    assert c1["dur"] == 9.0 and c1["label"] == "01" and len(c1["focus"]) == 2, c1
+    assert before["start"] == 4.3 and before["dur"] == 11.5, before        # action outlasts caption, + TAIL
+    assert c1["dur"] == 10.5 and c1["label"] == "01" and len(c1["focus"]) == 2, c1
     assert c1["focus"][0]["light"] and c1["caption"] == "What your twin needs from you"
-    assert tl["audio"] == [] and tl["duration"] == 23.3
+    assert tl["audio"] == [] and tl["duration"] == 26.3
 
     t = table({"voice": True, "shots": [{"id": "c1", "kind": "chapter", "caption": "The brief",
                                          "show": "brief card", "voice": "one two three four five six seven eight nine ten eleven twelve thirteen"}]})
