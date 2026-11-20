@@ -1,14 +1,15 @@
 ---
 name: orchestrate
-description: Run a dependency-ordered list of Linear tickets through Herdr (herdr-app with hc, or the older herdr multiplexer). One tab, one worktree, one agent per layer, committed and checked before the next layer starts, PRs opened at the end. Use when asked to orchestrate, run, or dérouler a stack of tickets, or given a parent ticket whose sub-issues carry a build order.
+description: Run Linear tickets through Herdr (herdr-app with hc, or the older herdr multiplexer), one tab, one worktree and one `/implement` agent per ticket. Takes a list of unrelated tickets (all start at once, each opens its PR when done) or a stack whose blocks relations set a build order. Use when asked to orchestrate, run, or dérouler tickets, or given a parent ticket whose sub-issues carry a build order.
 argument-hint: "<parent-ticket | TICKET…>"
 disable-model-invocation: true
 ---
 
 # Orchestrate
 
-Run one layer, then the next, until no layer is left. A layer is one Linear ticket, one branch,
-one agent. You hold the graph and the Linear board. Each agent gets one ticket.
+Run every ready layer until no layer is left. A layer is one Linear ticket, one branch, one
+agent. You hold the graph. Each agent gets one ticket. A list of unrelated tickets is a graph with
+no edges: every layer is ready at once.
 
 This needs Herdr. Before anything else, pick the backend:
 
@@ -35,18 +36,19 @@ linear issue relation list <TICKET>     # blocks / blocked by, per node
 
 Each node becomes a layer with four values. Its ticket id, a short label, a branch name
 (`feat/<TICKET>-<kebab-slug>`), and its base. The base is the branch of the layer that blocks it,
-or `dev` for a node nothing blocks.
+or `dev` for a node nothing blocks. A layer with no relation in either direction is **standalone**.
 
 Print the resolved graph with the order, each branch and each base. Wait for the user's go. After
 that one confirmation, run to the end without asking again.
 
-## Step 2. Run the ready layers, two at a time
+## Step 2. Run every ready layer
 
-A layer is ready when every layer that blocks it is Done. Start ready layers until two are live,
-and start another each time one of them finishes.
+A layer is ready when every layer that blocks it has passed step 3. Start all ready layers at
+once, and start the next ones as their blockers pass.
 
 For each layer, the board first, on both backends. An unassigned Todo ticket with an agent
-working on it looks exactly like an untouched one.
+working on it looks exactly like an untouched one. In Progress is the only state you set: from
+there, Linear's GitHub integration moves the ticket as its PR opens and merges.
 
 ```bash
 linear issue update <TICKET> --state "In Progress" --assignee self
@@ -108,7 +110,7 @@ this run.
 Then give the agent its work. The prompt stays short, because the agent reads its own ticket:
 
 ```
-Tu es la couche <n>/<N> d'une stack. Branche `<branch>`, basée sur `<base>`.
+Tu es la couche <n>/<N> d'un lot de tickets. Branche `<branch>`, basée sur `<base>`.
 Lis le ticket : linear issue view <TICKET>
 
 /implement <TICKET>
@@ -132,16 +134,16 @@ git -C <worktree> log --oneline <base>..HEAD     # must list at least one commit
 git -C <worktree> status --porcelain             # must print nothing
 ```
 
-When both commands pass, mark the ticket Done and close the layer's tab. Keep the worktree: a
-later layer may need to go back.
+When both commands pass, the layer has passed: close its tab, and open its PR now if it is
+standalone (step 5's commands). Keep the worktree: a later layer may need to go back. The ticket
+stays In Progress.
 
 ```bash
-linear issue update <TICKET> --state "Done"
 hc kill <ticket-slug>; hc rm <ticket-slug>     # hc: the tab closes with its terminal
 herdr tab close <tab>                          # herdr
 ```
 
-When either fails, leave the ticket In Progress, leave the tab and the agent running so the user
+When either fails, leave the ticket as it is, leave the tab and the agent running so the user
 can read them, tell the user which layer stopped and what the two commands printed, and carry on
 with the layers this one does not block. Layers above it stay unstarted.
 
@@ -160,10 +162,10 @@ forward that answer.
 `--force` is for relaying the user's answer to a question only. Never use it to get past a
 permission prompt.
 
-## Step 5. Open the stack
+## Step 5. Open the PRs
 
-Once no layer is left, or whenever the user asks for it earlier, go through the layers from the
-bottom up:
+Standalone layers already have their PR from step 3. Once no layer is left, or whenever the
+user asks for it earlier, open the stacked layers from the bottom up:
 
 ```bash
 gh pr create --base <base-branch> --head <branch> --title "…" --body "…"
@@ -176,11 +178,11 @@ stages 33 symlinked entries.
 
 ## Resuming
 
-There is no state file. Linear and the branches are the state. Running the skill again on the
-same parent resolves the graph again, reads each ticket's state, and restarts at the first ready
-layer.
+There is no state file. The branches and their PRs are the state. Running the skill again on
+the same tickets resolves the graph again and treats a layer as passed when its branch has a PR,
+or when step 3's two commands pass on its worktree. It restarts at the ready layers.
 
-A ticket In Progress with no live agent is an orphan from a dead run. Compare the board against
+A ticket In Progress whose layer has not passed and has no live agent is an orphan from a dead run. Compare the board against
 `hc ls` (hc) or `herdr agent list` (herdr) in step 1 and name the orphans before asking for the
 go. On hc, a stopped layer's agent survives a dead orchestrator (`--outlive-parent`): reuse its
 name rather than starting a second one.

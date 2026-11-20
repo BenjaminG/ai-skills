@@ -60,7 +60,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `innovate` | Generate divergent solutions for a problem |
 | `interview` | One-question-at-a-time clarification loop |
 | `investigate` | Structured investigation workflow |
-| `orchestrate` | Run a dependency-ordered stack of Linear tickets through Herdr |
+| `orchestrate` | Run Linear tickets through Herdr, one `/implement` tab each: unrelated tickets in parallel, or a dependency-ordered stack |
 | `retrospective` | Reflect on the work done on the current branch vs main |
 | **Herdr** | |
 | `herdr-mod` | Build a Herdr app mod; `--publish` shares it on herdr.dev/mods |
