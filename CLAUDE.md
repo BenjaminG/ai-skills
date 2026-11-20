@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-A personal collection of skills, distributed as a Claude Code plugin and a Codex plugin. Skills live under `skills/<name>/`; plugin manifests live under `.claude-plugin/` and `.codex-plugin/`.
+A personal collection of skills, distributed as a Claude Code plugin, a Codex plugin, and an Antigravity plugin. Skills live under `skills/<name>/`; plugin manifests live under `.claude-plugin/`, `.codex-plugin/`, and `.antigravity-plugin/`.
 
 ## Skill Structure
 
@@ -22,16 +22,20 @@ skills/<name>/
 
 ## Deprecated skills
 
-`deprecated/<name>/` holds retired skills. None of the installers look there: the Claude plugin loads `skills/`, the Codex manifest points `skills` at `./skills/`, and `npx skills` searches `skills/` first and only falls back to a recursive search when that finds nothing. Do not reference a deprecated skill from a shipped one.
+`deprecated/<name>/` holds retired skills. None of the installers look there: the Claude and Antigravity plugins load `skills/`, the Codex manifest points `skills` at `./skills/`, and `npx skills` searches `skills/` first and only falls back to a recursive search when that finds nothing. Do not reference a deprecated skill from a shipped one.
 
 ## Local plugin testing
 
 ```bash
-# Load this repo as a plugin without installing
+# Load this repo as a Claude Code plugin without installing
 claude --plugin-dir .
 
 # Reload after edits
 /reload-plugins
+
+# Validate / install locally for Antigravity
+agy plugin validate .
+agy plugin install .
 ```
 
 ## Mods (function hooks)

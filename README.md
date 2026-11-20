@@ -1,6 +1,6 @@
 # ai-skills
 
-Benjamin's collection of skills for Claude Code, Codex, and other AI agents — packaged as a plugin and as a `skills`-installable bundle.
+Benjamin's collection of skills for Claude Code, Codex, Antigravity, and other AI agents — packaged as a plugin and as a `skills`-installable bundle.
 
 ## Install
 
@@ -21,6 +21,12 @@ codex plugin add ai-skills@bgelis-ai-skills
 ```
 
 You can also install it from `codex` → `/plugins` → `bgelis-ai-skills`.
+
+### Antigravity
+
+```sh
+agy plugin install https://github.com/BenjaminG/ai-skills
+```
 
 ### npx skills (any agent)
 
@@ -72,15 +78,17 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 ├── .agents/
 │   └── plugins/
 │       └── marketplace.json # Codex marketplace catalog
+├── .antigravity-plugin/
+│   └── plugin.json         # Antigravity plugin manifest
 ├── .claude-plugin/
 │   ├── plugin.json         # Claude Code plugin manifest
 │   └── marketplace.json    # one-plugin marketplace catalog
 ├── .codex-plugin/
 │   └── plugin.json         # Codex plugin manifest
 ├── plugins/
-│   └── ai-skills -> ..     # Codex marketplace path to root plugin
+│   └── ai-skills/          # Codex marketplace path (symlinks to .codex-plugin & skills)
 ├── scripts/
-│   └── bump-version.sh     # bump version in both manifests + tag a release
+│   └── bump-version.sh     # bump version across all manifests + tag a release
 ├── skills/                 # all shipped skills live here as <name>/SKILL.md
 ├── deprecated/             # retired skills, kept for reference, never installed
 └── ...
@@ -94,17 +102,21 @@ claude --plugin-dir .
 
 # Reload after edits
 /reload-plugins
+
+# Validate / install the Antigravity plugin locally
+agy plugin validate .
+agy plugin install .
 ```
 
 To retire a skill, move `skills/<name>/` to `deprecated/<name>/`. No installer looks there.
 
 ## Release
 
-Both plugin manifests carry a `version` field (semver). Claude Code's `/plugin update`
+All plugin manifests carry a `version` field (semver). Claude Code's `/plugin update`
 compares it: users only receive an update once the number changes — pushing commits
-without a bump ships nothing. Codex compares it the same way.
+without a bump ships nothing. Codex and Antigravity compare it the same way.
 
-Bump both manifests in lockstep and tag the release with the helper:
+Bump all manifests in lockstep and tag the release with the helper:
 
 ```sh
 scripts/bump-version.sh patch        # 1.0.0 -> 1.0.1
@@ -114,8 +126,9 @@ scripts/bump-version.sh 1.4.0        # explicit
 scripts/bump-version.sh patch -n     # rewrite manifests only, no commit/tag
 ```
 
-It updates `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`, commits as
-`chore(release): vX.Y.Z`, and creates an annotated tag — but does **not** push. Ship it:
+It updates `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and
+`.antigravity-plugin/plugin.json`, commits as `chore(release): vX.Y.Z`, and creates an
+annotated tag — but does **not** push. Ship it:
 
 ```sh
 git push && git push origin vX.Y.Z

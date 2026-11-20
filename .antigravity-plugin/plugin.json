@@ -1,0 +1,10 @@
+{
+  "name": "ai-skills",
+  "version": "1.105.0",
+  "description": "Benjamin's collection of skills — daily workflow, code quality, dev tools, and specialist agents.",
+  "author": {
+    "name": "Benjamin Gelis"
+  },
+  "homepage": "https://github.com/BenjaminG/ai-skills",
+  "repository": "https://github.com/BenjaminG/ai-skills"
+}

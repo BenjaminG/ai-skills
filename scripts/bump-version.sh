@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# bump-version.sh — bump the plugin version across both manifests and tag a release.
+# bump-version.sh — bump the plugin version across all manifests and tag a release.
 #
-# Keeps .claude-plugin/plugin.json and .codex-plugin/plugin.json in lockstep, then
+# Keeps .claude-plugin/plugin.json, .codex-plugin/plugin.json, and
+# .antigravity-plugin/plugin.json in lockstep, then
 # (unless -n) commits the change and creates an annotated git tag vX.Y.Z. Does NOT
 # push — review the commit/tag, then `git push && git push --tags` yourself.
 #
@@ -21,8 +22,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLAUDE_MANIFEST="$ROOT/.claude-plugin/plugin.json"
 CODEX_MANIFEST="$ROOT/.codex-plugin/plugin.json"
+ANTIGRAVITY_MANIFEST="$ROOT/.antigravity-plugin/plugin.json"
+MANIFESTS=("$CLAUDE_MANIFEST" "$CODEX_MANIFEST" "$ANTIGRAVITY_MANIFEST")
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
 
 BUMP="" NOCOMMIT=0 MSG=""
 while [ $# -gt 0 ]; do
@@ -37,8 +40,9 @@ done
 
 [ -n "$BUMP" ] || { echo "error: pass major|minor|patch or an explicit X.Y.Z" >&2; usage >&2; exit 1; }
 command -v jq >/dev/null || { echo "error: jq is required" >&2; exit 1; }
-[ -f "$CLAUDE_MANIFEST" ] || { echo "error: missing $CLAUDE_MANIFEST" >&2; exit 1; }
-[ -f "$CODEX_MANIFEST" ]  || { echo "error: missing $CODEX_MANIFEST" >&2; exit 1; }
+for f in "${MANIFESTS[@]}"; do
+  [ -f "$f" ] || { echo "error: missing $f" >&2; exit 1; }
+done
 
 CUR="$(jq -r '.version // "0.0.0"' "$CLAUDE_MANIFEST")"
 [[ "$CUR" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "error: current version '$CUR' is not semver" >&2; exit 1; }
@@ -57,9 +61,9 @@ esac
 [ "$NEW" != "$CUR" ] || { echo "error: new version equals current ($CUR) — nothing to bump" >&2; exit 1; }
 echo ">> $CUR -> $NEW"
 
-# Rewrite both manifests, preserving key order (version stays where it already sits;
+# Rewrite all manifests, preserving key order (version stays where it already sits;
 # for a manifest lacking it, jq appends it — order is cosmetic, not semantic).
-for f in "$CLAUDE_MANIFEST" "$CODEX_MANIFEST"; do
+for f in "${MANIFESTS[@]}"; do
   tmp="$(mktemp)"
   jq --arg v "$NEW" '.version = $v' "$f" > "$tmp"
   mv "$tmp" "$f"
@@ -71,11 +75,11 @@ if [ "$NOCOMMIT" -eq 1 ]; then
   exit 0
 fi
 
-[ -z "$(git -C "$ROOT" status --porcelain "$CLAUDE_MANIFEST" "$CODEX_MANIFEST")" ] \
+[ -z "$(git -C "$ROOT" status --porcelain "${MANIFESTS[@]}")" ] \
   && { echo "error: manifests unchanged in git — aborting commit" >&2; exit 1; }
 
 MSG="${MSG:-release v$NEW}"
-git -C "$ROOT" add "$CLAUDE_MANIFEST" "$CODEX_MANIFEST"
+git -C "$ROOT" add "${MANIFESTS[@]}"
 git -C "$ROOT" commit -m "chore(release): v$NEW"
 git -C "$ROOT" tag -a "v$NEW" -m "$MSG"
 
