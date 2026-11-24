@@ -1,6 +1,6 @@
 ---
 name: setup-ai-skills
-description: Configures a host repo for the ai-skills that read it, by writing and proving its `docs/agents/` docs - `local-app.md` and its scripts (pr-demo, pr-shots, pr-try, showcase) and `signals.md`, where production symptoms live (elevate). This skill should be used for /setup-ai-skills, when one of those skills finds its doc missing, or to refresh a doc after the repo or its tooling changed.
+description: Configures a host repo for the ai-skills that read it, by writing and proving its `docs/agents/` docs - `local-app.md` and its scripts (pr-demo, shots, pr-try, showcase) and `signals.md`, where production symptoms live (elevate). This skill should be used for /setup-ai-skills, when one of those skills finds its doc missing, or to refresh a doc after the repo or its tooling changed.
 argument-hint: "[local-app|signals]"
 disable-model-invocation: true
 ---
@@ -13,7 +13,7 @@ to look for values, and the proof that the doc works. Read the doc's contract be
 
 | Doc | Contract | Readers |
 |---|---|---|
-| `docs/agents/local-app.md` and `docs/agents/local-app/` | [`references/local-app.md`](references/local-app.md) | pr-demo, pr-shots, pr-try, showcase |
+| `docs/agents/local-app.md` and `docs/agents/local-app/` | [`references/local-app.md`](references/local-app.md) | pr-demo, shots, pr-try, showcase |
 | `docs/agents/signals.md` | [`references/signals.md`](references/signals.md) | elevate |
 
 The argument names the doc. Without one, set up every doc in the table, one after the other, each

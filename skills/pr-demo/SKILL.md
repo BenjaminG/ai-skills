@@ -71,7 +71,7 @@ report.
 
 Read the PR's "How can it be tested?" section, the ticket it links and that ticket's mockups (a
 design file, an artifact), then the diff. When nothing on screen moves (a new label, status or
-layout), screenshots tell it better: propose `pr-shots` and stop if the user takes it.
+layout), screenshots tell it better: propose `shots` and stop if the user takes it.
 
 Write one scenario per state the diff renders (each value of a status or kind the screen shows), each
 as a start state, the actions, and the final visible result — the thing the PR changes on screen. A

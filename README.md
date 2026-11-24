@@ -52,13 +52,13 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `pr-comment` | Post quality-gate findings as a humanizer-drafted PR review |
 | `fixup` | Fold a fix into the commit that introduced it, force-push |
 | `babysit-prs` | Event-driven watch driving open PRs to merge-ready |
-| `pr-shots` | Before/after or feature-state screenshots of a PR in the local app, attached to the PR |
+| `shots` | Before/after or feature-state screenshots of a PR, a branch or a feature in the local app, handed off as a folder ready to paste, or attached to the PR |
 | `pr-try` | Opens the local app on a PR in a visible browser, at each scenario's start state, so you test it by hand while Claude watches logs and fixes |
 | `showcase` | Narrated, branded demo video of a feature, PR or app area for the team (weekly pod update); script approved before filming |
 | `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `skill-dream` | Improve one skill from its past runs: recurring corrections, hand-chained follow-ups and failed commands, as a draft PR |
 | `qa-plan` | Manual QA plan generation |
-| `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, signin, screens) that pr-demo, pr-shots, pr-try and showcase run on |
+| `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, signin, screens) that pr-demo, shots, pr-try and showcase run on |
 | **Developer tools** | |
 | `commit` | Stage + commit with auto-generated message |
 | **Investigation & planning** | |

@@ -147,7 +147,7 @@ and write the scenario with pr-demo's helpers. Then:
   recording in a 16:9 window.
 
 Run it as pr-demo's **Record** section does and save the returned JSON as `DIR/main.json`. For a
-`Before` chapter, run pr-shots' compare switch (`git switch --detach` on the merge-base, reinstall when
+`Before` chapter, run shots' compare switch (`git switch --detach` on the merge-base, reinstall when
 the lockfile differs, wait for the reload, `reset`), record its chapters into `DIR/before.json`, then
 switch back to the branch.
 
