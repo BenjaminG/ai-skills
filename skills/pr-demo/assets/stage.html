@@ -107,16 +107,28 @@
     };
     return { s, x: pan('x'), y: pan('y') };
   }
+  // The light ({box, o}) moves and fades with the camera: on from nothing, off to nothing, from one
+  // element to the next. A light that vanished in one frame would flash the whole page brighter.
+  function blend(a, b, k) {
+    if (!a && !b) return null;
+    if (!a) return { box: b.box, o: b.o * k };
+    if (!b) return { box: a.box, o: a.o * (1 - k) };
+    const m = (p) => a.box[p] + (b.box[p] - a.box[p]) * k;
+    return { box: { x: m('x'), y: m('y'), width: m('width'), height: m('height') }, o: a.o + (b.o - a.o) * k };
+  }
   function viewAt(focus, lt) {
-    let from = FULL, to = FULL, at = null, box = null;
+    let from = FULL, to = FULL, lightFrom = null, lightTo = null, at = null;
     for (const f of focus) if (f.t <= lt) {
       // a target that comes before the last one is reached leaves from where the camera is
-      if (at !== null) from = between(from, to, ease((f.t - at) / ZOOM));
-      to = viewFor(f.box, f.light); at = f.t; box = f.light ? f.box : null;
+      if (at !== null) {
+        const k = ease((f.t - at) / ZOOM);
+        from = between(from, to, k); lightFrom = blend(lightFrom, lightTo, k);
+      }
+      to = viewFor(f.box, f.light); lightTo = f.light ? { box: f.box, o: 1 } : null; at = f.t;
     }
-    if (at === null) return { v: FULL, box: null, k: 0 };
+    if (at === null) return { v: FULL, light: null };
     const k = ease((lt - at) / ZOOM);
-    return { v: between(from, to, k), box, k };
+    return { v: between(from, to, k), light: blend(lightFrom, lightTo, k) };
   }
 
   // Cursor moves start fast and settle in gently, on a slight arc (after webreel's cursor-motion.ts, Apache-2.0).
@@ -181,14 +193,14 @@
     const img = $('#shot');
     if (img.getAttribute('src') !== src) { img.src = src; await img.decode(); W = img.naturalWidth; H = img.naturalHeight; FRAME = 1600 / W; }
 
-    const { v, box, k } = viewAt(s.focus || [], lt);
+    const { v, light } = viewAt(s.focus || [], lt);
     const scale = FRAME * v.s;
     $('#inner').style.transform = `scale(${scale}) translate(${-v.x}px, ${-v.y}px)`;
     const ring = $('#ring');
-    ring.style.display = box ? 'block' : 'none';
-    if (box) Object.assign(ring.style, {
-      left: `${box.x - 8}px`, top: `${box.y - 8}px`, width: `${box.width + 16}px`, height: `${box.height + 16}px`,
-      opacity: k,
+    ring.style.display = light && light.o > 0.001 ? 'block' : 'none';
+    if (light) Object.assign(ring.style, {
+      left: `${light.box.x - 8}px`, top: `${light.box.y - 8}px`, width: `${light.box.width + 16}px`, height: `${light.box.height + 16}px`,
+      opacity: light.o,
     });
     drawCursor(s.cursor, lt);
   };

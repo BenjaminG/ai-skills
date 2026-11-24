@@ -24,8 +24,8 @@ shot also lasts the time to read it.
 
 Everything for one showcase lives in `DIR=~/.cache/showcase/<owner>-<repo>/<slug>/`, the slug being the
 PR number or the feature in kebab case: `script.json`, `record.js`, `main.json`, `before.json`,
-`voice/`, `theme.css`, `timeline.json`, `frames/`, `showcase.mp4`, `sheet.png`. A second run with the
-same slug is a **re-take**: it reuses what is there.
+`voice/`, `theme.css`, `timeline.json`, `frames/`, `showcase.mp4`, `sheet.png`, `jumps.png`. A second
+run with the same slug is a **re-take**: it reuses what is there.
 
 ## 1. Resolve
 
@@ -120,17 +120,22 @@ The stage is a `file://` page: inline each brand font as `@font-face` with a bas
 
 ## 6. Record
 
-Copy `$DEMO/assets/record.js` to `DIR/record.js` (a re-take edits the existing one) and write the
-scenario with pr-demo's helpers. Then:
+Copy `$DEMO/assets/record.js` to `DIR/record.js` (a re-take edits the existing one; one without a
+`reveal` helper predates the current engine: copy the template again and move its chapters into it)
+and write the scenario with pr-demo's helpers. Then:
 
 - wrap each chapter in `await chapter('<shot id>', async () => { … })`, in script order, from the
-  chapter's start screen to its hold on the result;
+  chapter's start screen to its hold on the result. The chapter opens on that screen, whole and still:
+  what takes the page there (closing the last chapter's dialog, a navigation, a reload) goes in a
+  `cut` at its head, never in a `wait`, which plays a reload sped up. The montage holds the whole page
+  for a second before the first zoom;
 - act through `click` and `type`: the camera zooms on each of them on its own, and the cursor follows;
 - call `await focus('<label>', locator)` when the voice turns to an element no click names (a card, a
   result), and `await focus('<label>', null)` to zoom out: a focus lights its element until the next
   `focus`, or until the page moves under it. A click, a `cut`, a `wait`, `scroll(locator)` and
   `press(key)` turn the light off; scroll and close dialogs through them, never `p.mouse.wheel` or
-  `p.keyboard`;
+  `p.keyboard`. The helpers scroll only when the element is off screen, in a glide the camera films;
+  `scrollIntoViewIfNeeded`, `scrollBy` and `scrollTo` move the page in one frame: only inside a `cut`;
 - give each chapter its reading time: hold on the result (`p.waitForTimeout`) as long as the viewer
   needs to read it. The montage plays the recording at 1x, never faster, and the voice may end before
   the action does;
@@ -180,15 +185,19 @@ render. Then render the video, about one second per two seconds of video:
 ```bash
 NODE_PATH=… node $DEMO/scripts/render.js DIR/timeline.json DIR/silent.mp4
 python3 $SKILL/scripts/timeline.py mux DIR/timeline.json DIR/silent.mp4 DIR/showcase.mp4 --sheet DIR/sheet.png
+python3 $DEMO/scripts/engine.py jumps DIR/showcase.mp4 DIR/timeline.json DIR/jumps.png
 ```
 
-Read `sheet.png`. No frame shows a login page, a dev overlay, an error toast or a blank window. A
-screen that differs from what the source promises is a finding: report it as a possible bug before any
-re-take. Run `DIR/restore`. Copy the video to `DIR/showcase-v<N>.mp4`, the next free `N`, and `open`
-that copy: a player that still holds `showcase.mp4` shows the old take. Report its path, length, size
-and whether it has a voice.
+Read `sheet.png`. No frame shows a login page, a dev overlay, an error toast or a blank window. Then
+read `jumps.png`, the frames that change at once, as pr-demo's **Render and check** section says: a
+click's result appearing is the flow; the page moving on its own or a cut inside a chapter is a
+defect to fix in `record.js`, then record again. A screen that differs from what the source promises
+is a finding: report it as a possible bug before any re-take. Run `DIR/restore`. Copy the video to
+`DIR/showcase-v<N>.mp4`, the next free `N`, and `open` that copy: a player that still holds
+`showcase.mp4` shows the old take. Report its path, length, size and whether it has a voice.
 
-**Done when** the checks pass, the data is restored, and the user has said the video is good.
+**Done when** the sheet and `jumps.png` pass, the data is restored, and the user has said the video is
+good.
 
 ## 9. Hand off
 

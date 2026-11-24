@@ -17,8 +17,8 @@ in only when a video chains several scenarios.
 
 Everything for one PR lives in its **demo directory**, `DIR=~/.cache/pr-demo/<owner>-<repo>/<PR>/`:
 `record.js`, `reset`, `restore`, `backup/`, `markers.json`, `theme.css`, `timeline.json`, `frames/`,
-`demo.mp4`, `demo.prev.mp4`, `sheet.png`. A second run on the same PR is a **re-take**: it reuses what
-is there.
+`demo.mp4`, `demo.prev.mp4`, `sheet.png`, `jumps.png`. A second run on the same PR is a **re-take**: it
+reuses what is there.
 
 ## 1. Resolve
 
@@ -112,14 +112,22 @@ and the scenario with its helpers, then run it through `browser_run_code_unsafe`
 
 - `click(locator)` and `type(locator, text)`: every action on screen goes through them. They move the
   cursor and tell the camera where to zoom; a `p.click()` or `p.fill()` would happen off camera.
-- `cut(label, fn)` around loads and off-camera setup; `wait(label, fn)` around server work.
+- `cut(label, fn)` around loads, navigations, reloads and off-camera setup; it ends once the page is
+  still. `wait(label, fn)` around server work that leaves the page in place (an extraction, a save):
+  it plays sped up, so a reload inside it shows the page rebuilding in a few frames.
 - `scroll(locator)` and `press(key)` to scroll or close a dialog, so a lit `focus` turns off before
-  the page moves under it.
+  the page moves under it. The helpers scroll only when the element is off screen, in a glide the
+  camera films. `scrollIntoViewIfNeeded`, `scrollBy`, `scrollTo` and `mouse.wheel` move the page in
+  one frame: only inside a `cut`.
 - `scenario(title, fn, subtitle)` around each scenario when there are several: a card names it.
 
-A re-take whose `record.js` still draws a red dot or calls `title` predates the engine: copy the
-template again and move the old scenario block into it, each `title(h, s)` becoming
-`scenario(h, async () => { …the steps up to the next title… }, s)`.
+A scenario opens on its start screen, whole and still: what takes the page there (closing the
+previous scenario's dialog, a navigation, a reload) goes in a `cut` at its head. The engine then
+holds the whole page for a second before the first zoom.
+
+A re-take whose `record.js` still draws a red dot, calls `title` or has no `reveal` helper predates
+the current engine: copy the template again and move the old scenario block into it, each
+`title(h, s)` becoming `scenario(h, async () => { …the steps up to the next title… }, s)`.
 
 "Browser is already in use" means another session holds the MCP profile: leave it, and run the same
 `record.js` from a Node script, as `$SKILL/tests/e2e.js` does (`chromium.launch` from the repo's
@@ -136,6 +144,7 @@ the app's brand. Without it the stage is a neutral dark background; pr-demo neve
 python3 "$SKILL/scripts/engine.py" demo DIR/markers.json --out DIR/timeline.json
 NODE_PATH=<the app repo's node_modules holding playwright> node "$SKILL/scripts/render.js" DIR/timeline.json DIR/demo.mp4
 python3 "$SKILL/scripts/engine.py" sheet DIR/demo.mp4 DIR/sheet.png
+python3 "$SKILL/scripts/engine.py" jumps DIR/demo.mp4 DIR/timeline.json DIR/jumps.png
 ```
 
 With pnpm, `NODE_PATH` is `$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
@@ -144,12 +153,20 @@ The render takes about one second per two seconds of video.
 Read `sheet.png`. The first frame shows the start state and the last frame the result; no frame is
 blank, shows a login page, a dev overlay or an error toast. When a zoom looks off target on the sheet,
 `render.js DIR/timeline.json --at <t>` writes `DIR/at-<t>.png` in seconds (shot starts and zoom
-times are in `timeline.json`). A result that differs from what the PR
-promises is a finding: report it as a possible bug before any re-take. Run `DIR/restore` and
-`cleanup.sh`, then `open DIR/demo.mp4`, and report its length, size and any change made to the
-local-app doc.
+times are in `timeline.json`).
 
-**Done when** the sheet passes, the data is restored, and the user has said the video is good.
+The sheet's six frames fall between the jumps: `jumps` finds the frames that change at once, draws
+each in `jumps.png` as the frame before | the frame, and prints where each falls in the recording.
+Read it. A row where a click's result appears (a dialog, the next screen) is the flow. A row where
+the page moves on its own (a scroll, a reload settling) or a cut joins two screens inside a scenario
+is a defect: fix that step of `record.js` with the rules of section 7, then record again.
+
+A result that differs from what the PR promises is a finding: report it as a possible bug before any
+re-take. Run `DIR/restore` and `cleanup.sh`, then `open DIR/demo.mp4`, and report its length, size
+and any change made to the local-app doc.
+
+**Done when** the sheet and `jumps.png` pass, the data is restored, and the user has said the video
+is good.
 
 ## 9. Attach
 

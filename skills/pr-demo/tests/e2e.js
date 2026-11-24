@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // End to end: films tests/fixture/app.html with the real assets/record.js (two scenarios, a load
-// cut, a 2.5 s save in a wait), builds the timeline with scripts/engine.py and renders it with
-// scripts/render.js. Leaves tests/out/ to open: markers.json, timeline.json, demo.mp4, sheet.png,
-// and at-<t>.png frames in the middle of a zoom and on the final, zoomed-out result.
+// cut, a 2.5 s save in a wait, a lit focus far below the fold and a click back at the top), builds
+// the timeline with scripts/engine.py and renders it with scripts/render.js. Leaves tests/out/ to
+// open: markers.json, timeline.json, demo.mp4, sheet.png, jumps.png, and at-<t>.png frames in the
+// middle of a zoom and on the final, zoomed-out result.
 // Usage: NODE_PATH=<dir holding playwright> node skills/pr-demo/tests/e2e.js
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -32,6 +33,8 @@ const SCENARIO = `
     }, 'From the venue list');
     await scenario('Open the dashboard', async () => {
       await p.waitForTimeout(800);
+      await focus('notes', p.locator('#bottom'));
+      await p.waitForTimeout(1500);
       await click(p.getByRole('link', { name: 'Dashboard' }));
       await p.waitForTimeout(2000);
     });
@@ -78,9 +81,18 @@ const SCENARIO = `
   const firstOut = add.focus.findIndex((f) => !f.box);
   assert.ok(firstOut >= 3, `a zoom-out before the save: ${JSON.stringify(add.focus)}`);
   assert.ok(add.cursor.moves.length >= 4 && add.cursor.clicks.length === 4);
+  const dash = tl.shots[3];
+  const lit = dash.focus.filter((f) => f.light);
+  assert.strictEqual(lit.length, 1, `one lit focus: ${JSON.stringify(dash.focus)}`);
+  assert.ok(dash.focus.every((f) => f.t >= 1), 'the chapter opens on the whole page');
+  assert.ok(lit[0].box.y > 0 && lit[0].box.y + lit[0].box.height < 900, `the lit notes are on screen: ${JSON.stringify(lit[0].box)}`);
 
   console.log(run('node', [path.join(ROOT, 'scripts', 'render.js'), tlPath, mp4]));
   run('python3', [engine, 'sheet', mp4, path.join(OUT, 'sheet.png')]);
+  // The page scrolls down to the notes and back up to the link, and the light goes off: on camera,
+  // with no frame that changes at once.
+  const jumps = run('python3', [engine, 'jumps', mp4, tlPath, path.join(OUT, 'jumps.png')]);
+  assert.ok(!jumps.includes("'Open the dashboard'"), `a jump in the scrolling chapter:\n${jumps}`);
   const raw = probe(rec.video), got = probe(mp4);
   assert.ok(Math.abs(got - tl.duration) < 0.2, `video ${got}s, timeline ${tl.duration}s`);
   // Chapters = recording - the load cut - the save wait sped up to 1 s (and what lies outside the scenarios).

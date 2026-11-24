@@ -7,6 +7,9 @@ Usage:
       A PR demo: one chapter per `scenario` of the recording, each after a card naming it when
       there are several; the whole recording as one chapter when there is none.
   engine.py sheet <video.mp4> <sheet.png> [--tiles 3x2]
+  engine.py jumps <video.mp4> <timeline.json> <jumps.png>
+      Frames that change at once (a page that jumps, a light that snaps off): one row per jump in
+      jumps.png, the frame before | the frame, and where it falls in the recording.
   engine.py --self-test
 
 Markers come from assets/record.js:
@@ -20,7 +23,9 @@ Markers come from assets/record.js:
 import argparse
 import json
 import os
+import re
 import subprocess
+import tempfile
 
 FPS = 30
 WAIT_TO = 1.0       # a wait marker plays in this many seconds
@@ -29,7 +34,12 @@ MIN_SHOT = 3.0      # shortest shot
 READ_WPS = 3.0      # words per second a viewer reads on screen
 HOLD = 2.5          # the camera stays zoomed this long after an act, and pans when the next comes sooner
 END_CLEAR = 1.2     # every chapter ends on the whole page for at least this long
+START_CLEAR = 1.0   # and opens on it for this long before any zoom
 MIN_ZOOM = 0.8      # an act with less room than this before the zoom-out gets no zoom
+JUMP = 1.0          # mean difference (ffmpeg scdet's mafd) of a frame that changes at once...
+JUMP_ALONE = 2.5    # ...this many times more than each of the two frames on either side: a glide
+                    # (scroll, zoom) changes every frame a little, a jump one frame a lot
+JUMP_ROWS = 8       # most jumps jumps.png shows, the strongest
 
 
 def segments(markers, total, wait_to):
@@ -114,13 +124,15 @@ def to_out(spans, rate, raw):
     return o
 
 
-def zooms(markers, cs, ce):
+def zooms(markers, cs, ce, opening=None):
     """Camera targets of a chapter in recording time: [{t, box, light}], box None = whole page.
 
     Each act zooms on its element and holds HOLD seconds; a sooner act pans there instead. A wait
     or a cut zooms out, and so does the chapter's last END_CLEAR seconds. An explicit focus lights
-    its element and silences the acts until the next focus marker.
+    its element and silences the acts until the next focus marker. Nothing zooms before `opening`:
+    the chapter shows the whole page first.
     """
+    opening = cs if opening is None else opening
     inside = sorted((m for m in markers if cs <= m["start"] <= ce), key=lambda m: m["start"])
     focus = [m for m in inside if m["kind"] == "focus"]
     held = [(f["start"], focus[i + 1]["start"] if i + 1 < len(focus) else ce)
@@ -134,18 +146,19 @@ def zooms(markers, cs, ce):
     for a in (m for m in inside if m["kind"] == "act" and m.get("box")):
         if is_held(a["start"]):
             continue
+        start = max(a["start"], opening)
         end = min([a["end"] + HOLD, ce - END_CLEAR] + [b for b in breaks if b >= a["end"]])
-        zoomed = until is not None and a["start"] <= until
-        if not zoomed and end - a["start"] < MIN_ZOOM:   # already zoomed, a short act still gets the pan
+        zoomed = until is not None and start <= until
+        if not zoomed and end - start < MIN_ZOOM:   # already zoomed, a short act still gets the pan
             continue
         if until is not None and not zoomed:
             out.append({"t": until, "box": None, "light": False})
-        out.append({"t": a["start"], "box": a["box"], "light": False})
+        out.append({"t": start, "box": a["box"], "light": False})
         until = end
     if until is not None:
         out.append({"t": until, "box": None, "light": False})
     out = [z for z in out if not is_held(z["t"])]
-    out += [{"t": f["start"], "box": f.get("box"), "light": bool(f.get("box"))} for f in focus]
+    out += [{"t": max(f["start"], opening), "box": f.get("box"), "light": bool(f.get("box"))} for f in focus]
     return sorted(out, key=lambda z: z["t"])
 
 
@@ -193,7 +206,7 @@ def build(shots, recs, want=None, max_rate=MAX_RATE, tail=0.0):
             natural = sum((e - b) / sp for b, e, sp in spans)
             dur = max(w or natural, read_time([s.get("caption")]))
             shot["map"], rate, dur = knots(spans, dur, max_rate, tail)
-            shot["focus"] = out_times(spans, rate, zooms(rec["markers"], cs, ce))
+            shot["focus"] = out_times(spans, rate, zooms(rec["markers"], cs, ce, spans[0][0] + START_CLEAR))
             shot["cursor"] = cursor(rec["markers"], cs, ce, spans, rate)
             shot["rec"] = name
         shot["start"], shot["dur"] = round(t, 3), round(dur, 3)
@@ -226,6 +239,65 @@ def sheet(video, png, tiles="3x2"):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", video, "-vf",
                     f"fps={cols * rows}/{length:.3f},scale=640:-1,tile={tiles}", "-frames:v", "1", png],
                    check=True)
+
+
+def raw_at(knots_, lt):
+    """Recording time at output time `lt` of a chapter: stage.html's rawAt."""
+    i = 0
+    while i + 1 < len(knots_) and knots_[i + 1][0] <= lt:
+        i += 1
+    (o0, r0), nxt = knots_[i], knots_[i + 1] if i + 1 < len(knots_) else None
+    if nxt is None or nxt[0] == o0:
+        return r0
+    return r0 + (nxt[1] - r0) * (lt - o0) / (nxt[0] - o0)
+
+
+def find_jumps(diffs, tl, rows=JUMP_ROWS):
+    """[(t, diff, where)] of the chapter frames that change at once, shot changes left out.
+    `diffs`: (time, mean difference from the frame before) of every frame of the video."""
+    def shot_at(t):
+        return next((x for x in tl["shots"] if x["start"] <= t < x["start"] + x["dur"]), None)
+
+    bounds = [s["start"] for s in tl["shots"]] + [tl["duration"]]
+    hits = [(t, d) for i, (t, d) in enumerate(diffs)
+            if d >= JUMP and all(n * JUMP_ALONE < d for _, n in diffs[max(0, i - 2):i] + diffs[i + 1:i + 3])
+            and all(abs(t - b) > 0.4 for b in bounds) and (shot_at(t) or {}).get("kind") == "chapter"]
+    out = []
+    for t, d in sorted(hits, key=lambda h: -h[1])[:rows]:
+        shot = shot_at(t)
+        lt, m = t - shot["start"], shot["map"]
+        near = 1.5 / tl["fps"]
+        if any(a[0] == b[0] and a[1] != b[1] and abs(a[0] - lt) < near for a, b in zip(m, m[1:])):
+            how = ", a cut"
+        elif any(a[0] < lt <= b[0] + near and b[1] - a[1] > 1.01 * (b[0] - a[0]) for a, b in zip(m, m[1:])):
+            how = ", in a sped-up wait"
+        else:
+            how = ""
+        out.append((t, d, f"'{shot['id']}' at {lt:.2f}s, recording {raw_at(m, lt):.2f}s{how}"))
+    return sorted(out)
+
+
+def jumps(video, tl, png):
+    log = subprocess.run(["ffmpeg", "-v", "error", "-i", video, "-vf", "scale=480:-1,scdet=threshold=0,metadata=print:file=-",
+                          "-f", "null", "-"], capture_output=True, text=True, check=True).stdout
+    diffs = [(float(t), float(d)) for t, d in re.findall(r"pts_time:([\d.]+)\nlavfi\.scd\.mafd=([\d.]+)", log)]
+    found = find_jumps(diffs, tl)
+    if not found:
+        print("no jump")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        rows = []
+        for i, (t, _, _) in enumerate(found):
+            row = os.path.join(tmp, f"{i}.png")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0, t - 1 / tl['fps']):.3f}", "-i", video,
+                            "-frames:v", "1", "-vf", "scale=800:-1,tile=2x1:padding=8", row], check=True)
+            rows.append(row)
+        inputs = [a for r in rows for a in ("-i", r)]
+        stack = f"vstack=inputs={len(rows)}" if len(rows) > 1 else "null"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", stack, png], check=True)
+    for i, (t, d, where) in enumerate(found, start=1):
+        print(f"row {i}: {t:.2f}s (diff {d:.1f}) — {where}")
+    print(png)
 
 
 def self_test():
@@ -282,6 +354,28 @@ def self_test():
     # Mapped to output time, the two zoom-outs at 5.5 collapse into one.
     assert [e["t"] for e in out_times([(0, 30, 1.0)], 1.0, z)] == [2, 3.5, 5.5, 17, 20.5]
 
+    # A chapter opens on the whole page. A click at its first frame, then a wait 0.6 s later: no
+    # room for a zoom once START_CLEAR has passed. A longer click zooms at the end of the opening,
+    # and a focus at the first frame waits for it too.
+    wait = lambda s, e: {"kind": "wait", "label": "reload", "start": s, "end": e}  # noqa: E731
+    assert zooms([act(10, 11.6, 1), wait(11.6, 12)], 10, 20, 11) == []
+    z = zooms([act(10, 12, 1)], 10, 20, 11)
+    assert [(e["t"], e["box"] and e["box"]["x"]) for e in z] == [(11, 1), (14.5, None)], z
+    z = zooms([{"kind": "focus", "label": "card", "start": 10, "end": 10, "box": box(9)}], 10, 20, 11)
+    assert [(e["t"], e["light"]) for e in z] == [(11, True)], z
+
+    # Jumps, on a card then a chapter with a cut 5 s in, every frame a little noisy. Found: a frame
+    # alone in changing much, and the cut. Left out: a change in the card, one at the shot change, a
+    # glide of 15 frames changing as much as the jump, a lone frame under JUMP.
+    tl = {"fps": 30, "duration": 13, "shots": [
+        {"id": "card-1", "kind": "card", "start": 0, "dur": 3},
+        {"id": "c", "kind": "chapter", "start": 3, "dur": 10, "map": [[0, 1], [5, 6], [5, 9], [10, 14]]}]}
+    diff = {30: 9.0, 96: 5.0, 181: 6.0, 240: 3.0, 290: 0.8} | {i: 6.0 for i in range(200, 215)}
+    found = find_jumps([(i / 30, diff.get(i, 0.01)) for i in range(390)], tl)
+    assert [(round(t, 3), d) for t, d, _ in found] == [(6.033, 6.0), (8.0, 3.0)], found
+    assert "recording 4.03s" in found[0][2] and "cut" not in found[0][2], found
+    assert found[1][2].endswith("recording 9.00s, a cut"), found
+
     # The cursor follows the chapter's clock: a move after the 4 s cut starts at 0 s.
     mv = [{"kind": "move", "label": "", "start": 14.5, "end": 15, "from": {"x": 0, "y": 0}, "to": {"x": 9, "y": 9}},
           {"kind": "click", "label": "click", "start": 15.2, "end": 15.2},
@@ -321,9 +415,15 @@ def main():
     s.add_argument("video")
     s.add_argument("png")
     s.add_argument("--tiles", default="3x2")
+    j = sub.add_parser("jumps")
+    j.add_argument("video")
+    j.add_argument("timeline")
+    j.add_argument("png")
     a = ap.parse_args()
     if a.cmd == "sheet":
         return sheet(a.video, a.png, a.tiles)
+    if a.cmd == "jumps":
+        return jumps(a.video, json.load(open(a.timeline)), a.png)
     rec = json.load(open(a.markers))
     tl = build(demo(rec, duration(rec["video"])), {"main": rec})
     json.dump(tl, open(a.out, "w"), indent=1)
