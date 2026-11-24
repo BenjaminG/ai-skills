@@ -58,7 +58,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `review-mining` | Mine human review comments from merged PRs into recurring rule proposals |
 | `skill-dream` | Improve one skill from its past runs: recurring corrections, hand-chained follow-ups and failed commands, as a draft PR |
 | `qa-plan` | Manual QA plan generation |
-| `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, signin, screens) that pr-demo, shots, pr-try and showcase run on |
+| `setup-ai-skills` | Write and prove the host repo's local-app doc (prepare, launch, doctor, signin, screens) that pr-demo, shots, pr-try, showcase and reproduce run on |
 | **Developer tools** | |
 | `commit` | Stage + commit with auto-generated message |
 | **Investigation & planning** | |
@@ -66,6 +66,7 @@ See the [`skills` CLI docs](https://www.skills.sh/docs) for scoping flags (`-g` 
 | `innovate` | Generate divergent solutions for a problem |
 | `interview` | One-question-at-a-time clarification loop |
 | `investigate` | Structured investigation workflow |
+| `reproduce` | Reproduce a ticket's bug in the local app on unfixed code: captures, steps and a replayable start state; a second run checks the fix |
 | `orchestrate` | Run Linear tickets through Herdr, one `/implement` tab each: unrelated tickets in parallel, or a dependency-ordered stack |
 | `retrospective` | Reflect on the work done on the current branch vs main |
 | **Herdr** | |
