@@ -52,7 +52,7 @@ A trap the doc does not cover (a missing build step, a bad record, a flag) gets 
 its script, in the copy read above, once the fix is proven, in this same run, and named in the final
 report.
 
-**Done when** the doc is read.
+**Done when** the doc is read to its last line: its traps sit at the end.
 
 ## 3. Environment
 

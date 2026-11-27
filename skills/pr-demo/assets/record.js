@@ -21,6 +21,8 @@ async (page) => {
   });
 
   const p = await ctx.newPage();
+  // A wrong locator fails in 10 s, not Playwright's 30: server work passes its own timeout.
+  p.setDefaultTimeout(10000);
   const video = p.video();
   const t0 = Date.now();
   const at = () => (Date.now() - t0) / 1000;

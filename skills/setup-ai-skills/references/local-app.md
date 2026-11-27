@@ -34,9 +34,11 @@ sourced `common.sh`.
   when it matches. Codegen that reads a schema the API writes at boot runs again after the API is up.
   Prints one line per step.
 - **`launch.sh --list`** prints one line per server: `<name> <port> <timeout-s>`, the timeout set
-  from the boot time measured in the proof. **`launch.sh --wait <name>`** blocks until the port
-  listens, exit 1 after the timeout; it polls the port because a ready line printed before the wait
-  began is never seen. **`launch.sh <name>`** runs that server in the foreground and tees its output to
+  from the boot time measured in the proof. **`launch.sh --wait <name>…`** blocks until each port
+  listens, all at once, exit 1 after the timeout; it polls the port because a ready line printed before
+  the wait began is never seen. It exits 1 sooner when a server's log holds a fatal line (the API's
+  missing-env message, a crashed turbo task) and has stopped growing, and prints that line: a server
+  that died at boot never costs its whole timeout. **`launch.sh <name>`** runs that server in the foreground and tees its output to
   `${TMPDIR:-/tmp}/local-app-<repo>/<name>.log`, truncated at start. Containers the servers need
   (database, cache) are checked first, with the command to start them when they are down.
 - **`doctor.sh [url…]`**: read-only. One line per check, `ok` / `warn` / `FAIL`, exit 1 on any

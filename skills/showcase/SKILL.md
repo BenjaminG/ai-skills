@@ -102,7 +102,8 @@ environment adds SSO and emailed login codes the recording cannot pass. Read `$D
 **Dry run**, with this skill's `DIR` in place of the demo directory and `$DEMO` in place of `$SKILL`. A source that is not a PR runs from the
 current worktree.
 
-**Done when** pr-demo's four criteria hold.
+**Done when** pr-demo's four criteria hold, the dry run included, on a re-take too: an app that changed
+since the last video breaks its locators, and each failed take costs its chapters in real time.
 
 ## 5. Brand
 
@@ -138,7 +139,8 @@ and write the scenario with pr-demo's helpers. Then:
 - show a PDF as an image: headless Chromium has no PDF viewer, so an `<embed>` or `<iframe>` of a PDF
   stays blank or downloads the file. Render page 1 (`pdftoppm -r 110 -f 1 -l 1 -png -singlefile`),
   serve the PNG with `ctx.route(url, (r) => r.fulfill({ path }))`, and paint it with `addStyleTag`:
-  hide the `embed` and set the PNG as its container's background;
+  hide the `embed` and set the PNG as its container's background. Search the local-app doc for `PDF`
+  first: a record cloned from production may link its PDFs to storage the local app cannot read;
 - keep a 16:9 size (1920×1080, or 1600×900 when the app's layout needs it): the stage frames the
   recording in a 16:9 window.
 
@@ -154,9 +156,18 @@ the worktree is back on its branch.
 ## 7. Voice
 
 Skip with `--no-voice`. Otherwise, for each shot with a `voice` line, generate `DIR/voice/<id>.mp3` with
-the ElevenLabs MCP's text-to-speech tool (search the tools for `elevenlabs`), moving its output file
-there. Send the lines two at a time: the MCP refuses a larger burst as "busy", and a refused line
-is retried once the others are back. Use one voice for the whole video. Pick it once per language with the MCP's voice search, then
+the ElevenLabs MCP (search the tools for `elevenlabs`). Its text-to-speech writes no file: each line
+becomes a node on a flow, and its audio a signed URL.
+
+1. `creative_create_flow` once; pass its `flow_id` to every call below.
+2. `creative_generate_speech` with `voice_id`, `prompt` (the line) and `flow_id` returns the line's `node_id`.
+3. Poll `creative_get_flow_node` (`flow_id`, `node_id`) every few seconds until one of its
+   `generations` is completed; `creative_get_generations` with that generation's id gives its `full_res_url`.
+4. `curl -sL <full_res_url> -o DIR/voice/<id>.mp3`.
+
+Send the lines two at a time. A "busy" error started nothing and charged nothing: wait 30 s and send
+the same line again. After any other error, read the flow (`creative_get_flow`) before sending the
+line again: its node may have run, and a second call pays a second take. Use one voice for the whole video. Pick it once per language with the MCP's voice search, then
 keep its id in `~/.cache/showcase/voice-<lang>.txt`. When the MCP is missing, generate placeholders
 with `say -o voice/<id>.aiff "<line>"` and convert them with
 `ffmpeg -i voice/<id>.aiff voice/<id>.mp3`, then say the voice is a placeholder.
