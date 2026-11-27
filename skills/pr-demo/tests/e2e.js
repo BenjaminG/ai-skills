@@ -143,6 +143,16 @@ const SCENARIO = `
   assert.strictEqual(await filterAt(add.start + add.dur - 0.05), 'none', 'blur on a settled camera');
   await sb.close();
 
+  // A host theme previews in four frames before anything is filmed, its band drawn under the title.
+  const theme = path.join(OUT, 'preview-theme.css');
+  fs.writeFileSync(theme, ':root { --stage: #f7f8f4; --stage-fg: #030302; --veil: rgba(247, 248, 244, .85); --band: linear-gradient(90deg, #f15a15 0 50%, #1e9397 0); }');
+  run('node', [path.join(ROOT, 'scripts', 'render.js'), '--preview', theme, path.join(fd, '00001.jpg'), path.join(OUT, 'preview')]);
+  for (const t of ['2.4', '3.9', '5.6', '7.8']) assert.ok(fs.existsSync(path.join(OUT, 'preview', `at-${t}.png`)), `no preview frame at ${t}s`);
+  const rgb = execFileSync('ffmpeg', ['-v', 'error', '-i', path.join(OUT, 'preview', 'at-3.9.png'), '-vf', 'crop=700:500:180:300',
+    '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 24 });
+  let orange = 0;
+  for (let i = 0; i < rgb.length; i += 3) if (rgb[i] > 220 && rgb[i + 1] < 120 && rgb[i + 2] < 60) orange++;
+  assert.ok(orange > 500, `the band's orange is missing under the title (${orange} pixels)`);
   const midZoom = add.start + zoomed[1].t + 1.1;     // the camera has panned onto the second field
   const result = add.start + add.dur - 0.3;          // the saved venue, whole page
   run('node', [path.join(ROOT, 'scripts', 'render.js'), tlPath, '--at', `${midZoom.toFixed(2)},${result.toFixed(2)}`]);

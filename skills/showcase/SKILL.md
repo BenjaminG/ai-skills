@@ -106,25 +106,13 @@ current worktree.
 
 ## 5. Brand
 
-Reuse `~/.cache/showcase/<owner>-<repo>/theme.css` when it exists: copy it into `DIR`. Otherwise build it
-from the app's own design system. In the Playwright MCP browser on the app, read with `browser_evaluate`
-the computed background and text colors of the page, the primary button's color, a muted text color,
-and the font families of a heading and of the body. For Naboo, they come from `@repo/tailwind-config`
-and the `data-ds-theme` theme. Write them as these variables, which `$DEMO/assets/stage.html` reads:
+The app's look lives in its repo: `docs/agents/video-theme.css` (from the main worktree,
+`git worktree list | head -1`, when the docs are excluded). Copy it to `DIR/theme.css`. When it is
+missing, read `$DEMO/../setup-ai-skills/SKILL.md` and set up its `video-theme` doc, which ends on a
+preview the user approves; an older `~/.cache/showcase/<owner>-<repo>/theme.css` is its starting point.
+What a theme may set is `$DEMO/references/theme.md`.
 
-```css
-:root { --bg: …; --fg: …; --muted: …; --accent: …; --accent-soft: …; --surface: …; --radius: …;
-        --font-display: "…", serif; --font-body: "…", sans-serif; }
-```
-
-`stage.html` builds the background the app's window sits on, `--stage`, from `--accent`: a dark gradient
-under a white caption. When the accent is too pale for it, set `--stage` to a gradient of the brand's
-stronger colors, and `--stage-fg` to the caption color it needs.
-
-The stage is a `file://` page: inline each brand font as `@font-face` with a base64 `data:` URL of the
-`woff2` the app serves. Save the file to both places.
-
-**Done when** `DIR/theme.css` exists and its fonts are inlined.
+**Done when** `DIR/theme.css` is a copy of the repo's `docs/agents/video-theme.css`.
 
 ## 6. Record
 

@@ -18,6 +18,11 @@
              radial-gradient(60% 80% at 100% 100%, color-mix(in oklab, var(--accent) 45%, transparent) 0%, transparent 70%),
              linear-gradient(160deg, color-mix(in oklab, var(--accent) 38%, #10131a) 0%, color-mix(in oklab, var(--accent) 14%, #06080b) 100%);
     --stage-fg: #ffffff; --window-radius: 14px;
+    --font-mono: ui-monospace, Menlo, monospace;
+    /* the color the scene fades toward under a chapter's title, at full strength */
+    --veil: rgba(6, 8, 11, .6);
+    /* --band, unset here: a strip of the brand's colors under titles, e.g.
+       linear-gradient(90deg, #f3bc77 0 50%, #d4a5f6 0); it draws itself from left to right */
   }
   html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font-body); }
   #root { position: absolute; inset: 0; }
@@ -43,6 +48,8 @@
            background: var(--surface); box-shadow: 0 50px 120px rgba(0,0,0,.45), 0 12px 32px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.08); }
   #inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   #shot { display: block; }   /* natural size: the recording's viewport, in the markers' coordinates */
+  #wash { position: absolute; inset: 0; background: var(--veil); pointer-events: none; }
+  .band { width: 640px; height: 8px; margin-top: 44px; background: var(--band); }
   #cursor { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; pointer-events: none; }
   #cursor svg { position: absolute; display: none; overflow: visible; }
 </style>
@@ -65,7 +72,8 @@
       </div>
     </div></div>
   </div>
-  <div id="title"><span class="pill"></span><div class="caption"></div></div></section>
+  <div id="wash"></div>
+  <div id="title"><span class="pill"></span><div class="caption"></div><div class="band"></div></div></section>
 </div>
 <script>
   const SW = 1920, SH = 1080;     // the stage
@@ -110,12 +118,23 @@
       w.firstChild.style.transform = `translateY(${up}%)`;
     });
     enter($('#title .pill'), ease(lt / 0.6) * (1 - ease((lt - out) / 0.4)));
+    const band = $('#title .band');
+    drawBand(band, lt, 0.3);
+    band.style.opacity = 1 - ease((lt - out) / 0.4);
     return k;
   }
   const enter = (el, k) => { el.style.opacity = k; el.style.transform = `translateY(${(1 - k) * 14}px)`; };
-  let TL, current = null;
+  let TL, current = null, BAND = false;
 
-  window.load = (tl) => { TL = tl; current = null; };
+  window.load = (tl) => {
+    TL = tl; current = null;
+    BAND = getComputedStyle(document.documentElement).getPropertyValue('--band').trim() !== '';
+  };
+  // The band draws itself from left to right, from `delay` seconds on.
+  function drawBand(band, lt, delay) {
+    band.style.display = BAND ? 'block' : 'none';
+    band.style.clipPath = `inset(0 ${(1 - rise((lt - delay) / 0.9)) * 100}% 0 0)`;
+  }
 
   function el(tag, cls, text) { const e = document.createElement(tag); e.className = cls; if (text) e.textContent = text; return e; }
 
@@ -127,13 +146,15 @@
     c.append(t);
     if (s.subtitle) c.append(el('div', 'subtitle', s.subtitle));
     if (s.badges?.length) { const b = el('div', 'badges'); s.badges.forEach((x) => b.append(el('span', 'badge', x))); c.append(b); }
-    if (!s.subtitle && !s.badges?.length && !s.accent) c.append(el('div', 'rule'));
+    if (!s.subtitle && !s.badges?.length && !s.accent && !BAND) c.append(el('div', 'rule'));
+    c.append(el('div', 'band'));
   }
 
   function animateCard(lt) {
     // Each line comes in after the one above it; badges one by one, slower.
     [...$('#card').children].forEach((e, i) => {
-      if (e.classList.contains('badges')) [...e.children].forEach((b, j) => enter(b, ease((lt - 0.9 - j * 0.6) / 0.5)));
+      if (e.classList.contains('band')) drawBand(e, lt, 0.3 + i * 0.18);
+      else if (e.classList.contains('badges')) [...e.children].forEach((b, j) => enter(b, ease((lt - 0.9 - j * 0.6) / 0.5)));
       else enter(e, ease((lt - i * 0.18) / 0.5));
     });
   }
@@ -267,8 +288,9 @@
     scene.style.transform = `scale(${v.s}) translate(${-v.x}px, ${-v.y}px)`;
     // the filter blurs the scene before its transform scales it: divide by the zoom
     $('#mbg').setAttribute('stdDeviation', `${bx / v.s} ${by / v.s}`);
-    // under its title the scene goes soft and dark
-    scene.style.filter = [bx || by ? 'url(#mb)' : '', veil ? `blur(${16 * veil}px) brightness(${1 - 0.6 * veil})` : ''].join(' ').trim() || 'none';
+    // under its title the scene goes soft and fades toward --veil
+    scene.style.filter = [bx || by ? 'url(#mb)' : '', veil ? `blur(${16 * veil}px)` : ''].join(' ').trim() || 'none';
+    $('#wash').style.opacity = veil;
     drawCursor(s.cursor, lt);
   };
 </script>

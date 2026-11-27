@@ -3,6 +3,9 @@
 // assets/stage.html per frame. An existing <out.mp4> is kept as <out>.prev.mp4.
 // Usage: NODE_PATH=<dir holding playwright> node render.js <timeline.json> <out.mp4>
 //        NODE_PATH=… node render.js <timeline.json> --at 10,13.5   (only those frames, as <dir>/at-<t>.png)
+//        NODE_PATH=… node render.js --preview <theme.css> <app-screenshot.png> <dir>
+//          a theme on a card, a chapter's title, the whole window and a zoom, as <dir>/at-<t>.png,
+//          before anything is filmed
 // theme.css next to the timeline, when present, gives the stage the app's brand.
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -10,8 +13,29 @@ const path = require('path');
 const { once } = require('events');
 const { spawn, execFileSync } = require('child_process');
 
+// A two-shot timeline over a still of the app: the card, then a chapter whose title is up at 0.9 s,
+// whose whole window shows at 2.6 s and whose zoom has settled at 4.8 s. Returns render's arguments
+// to film those four frames.
+function preview(theme, still, dir) {
+  if (!theme || !still || !dir) throw new Error('usage: render.js --preview <theme.css> <app-screenshot.png> <dir>');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(theme, path.join(dir, 'theme.css'));
+  const video = path.join(dir, 'app.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-loop', '1', '-i', still, '-t', '2', '-r', '30',
+    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080,format=yuv420p', video]);
+  const tl = { fps: 60, size: [1920, 1080], duration: 9, recs: { main: { video, fps: 30 } }, shots: [
+    { id: 'card', kind: 'card', start: 0, dur: 3, kicker: 'Weekly update', title: 'A new feature,', accent: 'shown', subtitle: 'What it does for the user', badges: ['Preview'] },
+    { id: 'chapter', kind: 'chapter', rec: 'main', start: 3, dur: 6, label: '01', caption: 'The title of a chapter', intro: 1.8,
+      map: [[0, 0], [6, 0]], focus: [{ t: 3.0, box: { x: 760, y: 420, width: 400, height: 160 }, light: true }], cursor: { moves: [], clicks: [] } },
+  ] };
+  const tlPath = path.join(dir, 'timeline.json');
+  fs.writeFileSync(tlPath, JSON.stringify(tl));
+  return [tlPath, '--at', '2.4,3.9,5.6,7.8'];
+}
+
 async function main() {
-  const [tlPath, out, at] = process.argv.slice(2);
+  let [tlPath, out, at] = process.argv.slice(2);
+  if (tlPath === '--preview') [tlPath, out, at] = preview(out, at, process.argv[5]);
   if (!tlPath || !out || (out === '--at' && !at)) throw new Error('usage: render.js <timeline.json> <silent.mp4> | --at <t>[,<t>…]');
   const tl = JSON.parse(fs.readFileSync(tlPath, 'utf8'));
   const dir = path.dirname(path.resolve(tlPath));

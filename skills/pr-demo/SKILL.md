@@ -138,8 +138,9 @@ the current engine: copy the template again and move the old scenario block into
 
 ## 8. Render and check
 
-Copy `~/.cache/showcase/<owner>-<repo>/theme.css` into `DIR` when it exists: the window then sits on
-the app's brand. Without it the stage is a neutral dark background; pr-demo never builds a theme.
+Copy the repo's `docs/agents/video-theme.css` (else an older `~/.cache/showcase/<owner>-<repo>/theme.css`)
+to `DIR/theme.css` when it exists: the video then takes the app's look (`references/theme.md`).
+Without it the stage is a neutral dark one; pr-demo never builds a theme, `setup-ai-skills video-theme` does.
 
 ```bash
 python3 "$SKILL/scripts/engine.py" demo DIR/markers.json --out DIR/timeline.json
