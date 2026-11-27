@@ -7,8 +7,10 @@
 //          a theme on a card, a chapter's title, the whole window and a zoom, as <dir>/at-<t>.png,
 //          before anything is filmed
 // theme.css next to the timeline, when present, gives the stage the app's brand.
+// The video renders in WORKERS parts at once, one browser each, joined without re-encoding.
 const { chromium } = require('playwright');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { once } = require('events');
 const { spawn, execFileSync } = require('child_process');
@@ -33,6 +35,39 @@ function preview(theme, still, dir) {
   return [tlPath, '--at', '2.4,3.9,5.6,7.8'];
 }
 
+const WORKERS = Math.max(1, Math.min(4, os.cpus().length - 2));
+
+// A browser on the stage, the timeline loaded.
+async function stage(tl, dir) {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: tl.size[0], height: tl.size[1] } });
+  await page.goto(`file://${path.join(__dirname, '..', 'assets', 'stage.html')}`);
+  const theme = path.join(dir, 'theme.css');
+  if (fs.existsSync(theme)) await page.addStyleTag({ path: theme });
+  await page.evaluate((t) => window.load(t), tl);
+  await page.evaluate(() => document.fonts.ready);
+  return { browser, page };
+}
+
+// Frames [from, to) of the video, encoded to out. tick() counts each frame done.
+async function film(tl, dir, from, to, out, tick) {
+  const { browser, page } = await stage(tl, dir);
+  const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(tl.fps), '-c:v', 'mjpeg', '-i', '-',
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', out],
+  { stdio: ['pipe', 'inherit', 'inherit'] });
+  const done = once(ff, 'close');
+  for (let i = from; i < to; i++) {
+    await page.evaluate((t) => window.seek(t), i / tl.fps);
+    const buf = await page.screenshot({ type: 'jpeg', quality: 92 });
+    if (!ff.stdin.write(buf)) await once(ff.stdin, 'drain');
+    tick();
+  }
+  ff.stdin.end();
+  const [code] = await done;
+  await browser.close();
+  if (code !== 0) throw new Error(`ffmpeg exited ${code} on frames ${from}-${to}`);
+}
+
 async function main() {
   let [tlPath, out, at] = process.argv.slice(2);
   if (tlPath === '--preview') [tlPath, out, at] = preview(out, at, process.argv[5]);
@@ -53,15 +88,8 @@ async function main() {
     rec.base = `file://${fd}/`;
   }
 
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: tl.size[0], height: tl.size[1] } });
-  await page.goto(`file://${path.join(__dirname, '..', 'assets', 'stage.html')}`);
-  const theme = path.join(dir, 'theme.css');
-  if (fs.existsSync(theme)) await page.addStyleTag({ path: theme });
-  await page.evaluate((t) => window.load(t), tl);
-  await page.evaluate(() => document.fonts.ready);
-
   if (out === '--at') { // check a few frames in seconds instead of rendering the whole video
+    const { browser, page } = await stage(tl, dir);
     for (const t of at.split(',').map(Number)) {
       await page.evaluate((s) => window.seek(s), t);
       const png = path.join(dir, `at-${t}.png`);
@@ -73,23 +101,22 @@ async function main() {
   }
 
   if (fs.existsSync(out)) fs.renameSync(out, out.replace(/(\.\w+)$/, '.prev$1'));
-  const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(tl.fps), '-c:v', 'mjpeg', '-i', '-',
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out],
-  { stdio: ['pipe', 'inherit', 'inherit'] });
-  const done = once(ff, 'close');
   const n = Math.round(tl.duration * tl.fps);
   const t0 = Date.now();
-  for (let i = 0; i < n; i++) {
-    await page.evaluate((t) => window.seek(t), i / tl.fps);
-    const buf = await page.screenshot({ type: 'jpeg', quality: 92 });
-    if (!ff.stdin.write(buf)) await once(ff.stdin, 'drain');
-    if (i % (tl.fps * 10) === 0) process.stderr.write(`frame ${i}/${n}\n`);
+  const parts = fs.mkdtempSync(path.join(dir, 'parts-'));
+  const size = Math.ceil(n / WORKERS);
+  let frames = 0;
+  const tick = () => { if (++frames % (tl.fps * 10) === 0) process.stderr.write(`frame ${frames}/${n}\n`); };
+  const files = Array.from({ length: Math.ceil(n / size) }, (_, w) => path.join(parts, `${w}.mp4`));
+  try {
+    await Promise.all(files.map((f, w) => film(tl, dir, w * size, Math.min(n, (w + 1) * size), f, tick)));
+    fs.writeFileSync(path.join(parts, 'list.txt'), files.map((f) => `file '${f}'\n`).join(''));
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', path.join(parts, 'list.txt'),
+      '-c', 'copy', '-movflags', '+faststart', out]);
+  } finally {
+    fs.rmSync(parts, { recursive: true, force: true });
   }
-  ff.stdin.end();
-  const [code] = await done;
-  await browser.close();
-  if (code !== 0) throw new Error(`ffmpeg exited ${code}`);
-  console.log(`${out}: ${n} frames in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  console.log(`${out}: ${n} frames in ${((Date.now() - t0) / 1000).toFixed(0)}s, ${files.length} at once`);
 }
 
 main().catch((e) => { console.error(e.message); process.exit(1); });

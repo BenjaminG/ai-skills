@@ -6,7 +6,8 @@ Usage:
       The script as a Markdown table with estimated durations, for the user to approve.
   timeline.py build <script.json> --rec <name>=<markers.json> [...] [--voice-dir DIR] --out <timeline.json>
       The timeline pr-demo's stage.html plays: each shot's start and length, and for a chapter the
-      output-time -> recording-time knots, its zooms and its cursor.
+      output-time -> recording-time knots, its zooms and its cursor. A name given again is a retake
+      (record.js's TAKE): its chapters replace the earlier takes'.
   timeline.py mux <timeline.json> <silent.mp4> <out.mp4> [--sheet sheet.png]
       Lay the voice files on the rendered video (or copy it when there is no voice).
   timeline.py --self-test
@@ -74,7 +75,8 @@ def table(script):
     return "\n".join(rows)
 
 
-def build(script, recs, voice_dir):
+def build(script, named, voice_dir):
+    """`named`: the recordings as (name, markers), in the order filmed."""
     voiced = script.get("voice", True) and voice_dir is not None
     lab, files, want = labels(script["shots"]), {}, {}
     for s in script["shots"]:
@@ -83,7 +85,9 @@ def build(script, recs, voice_dir):
             if not os.path.exists(f):
                 raise SystemExit(f"missing voice file {f}")
             files[s["id"]], want[s["id"]] = f, engine.duration(f) + GAP
-    shots = [{**s, "label": lab[s["id"]]} if s["kind"] == "chapter" else s for s in script["shots"]]
+    recs, last = engine.takes(named)
+    shots = [{**s, "label": lab[s["id"]], "rec": last.get((s.get("rec", "main"), s["id"]), s.get("rec", "main"))}
+             if s["kind"] == "chapter" else s for s in script["shots"]]
     tl = engine.build(shots, recs, want, max_rate=1.0, tail=TAIL)
     t = 0.0
     for s in tl["shots"]:
@@ -150,7 +154,7 @@ def self_test():
         {"kind": "wait", "label": "extract", "start": 18, "end": 26},
         {"kind": "focus", "label": "brief", "start": 16, "end": 16, "box": {"x": 1, "y": 2, "width": 3, "height": 4}},
         {"kind": "focus", "label": "out", "start": 27, "end": 27, "box": None}]}
-    tl = build(script, {"main": rec}, None)
+    tl = build(script, [("main", rec)], None)
     intro, before, c1 = tl["shots"]
     assert intro["start"] == 0 and intro["dur"] == 4.3, intro             # 10 words read at 3/s + 1
     assert before["start"] == 4.3 and before["dur"] == 13.3, before        # INTRO + action (outlasts caption) + TAIL
@@ -160,6 +164,11 @@ def self_test():
     # The title holds the chapter's first frame; its action, zooms and cursor all start INTRO later.
     assert c1["map"][0] == [0.0, c1["map"][1][1]] and c1["map"][1][0] == INTRO, c1["map"]
     assert c1["focus"][0]["t"] >= INTRO
+    # A retake of c1 alone: c1 plays from it, "before" from the first take.
+    retake = {"video": "rec-2.webm", "total": 9, "markers": [{"kind": "chapter", "label": "c1", "start": 1, "end": 7}]}
+    tl = build(script, [("main", rec), ("main", retake)], None)
+    assert [(s["id"], s.get("rec")) for s in tl["shots"]] == [("intro", None), ("before", "main"), ("c1", "main-2")]
+    assert tl["shots"][2]["map"][1][1] == 1 and set(tl["recs"]) == {"main", "main-2"}, tl
 
     t = table({"voice": True, "shots": [{"id": "c1", "kind": "chapter", "caption": "The brief",
                                          "show": "brief card", "voice": "one two three four five six seven eight nine ten eleven twelve thirteen"}]})
@@ -189,11 +198,11 @@ def main():
     if a.cmd == "table":
         print(table(json.load(open(a.script))))
     elif a.cmd == "build":
-        recs = {}
+        named = []
         for r in a.rec:
             name, path = r.split("=", 1)
-            recs[name] = json.load(open(path))
-        tl = build(json.load(open(a.script)), recs, a.voice_dir)
+            named.append((name, json.load(open(path))))
+        tl = build(json.load(open(a.script)), named, a.voice_dir)
         json.dump(tl, open(a.out, "w"), indent=1)
         print(f"{a.out}: {len(tl['shots'])} shots, {tl['duration']:.1f}s")
     else:

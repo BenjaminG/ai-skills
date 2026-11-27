@@ -6,6 +6,9 @@
 async (page) => {
   const OUT = '__DIR__'; // absolute path of the demo directory
   const SIZE = { width: 1920, height: 1080 };
+  // A retake: the ids of the chapters (titles of the scenarios) to film again. The others are skipped,
+  // so reset puts the data in the state the first of them starts from.
+  const TAKE = null;
 
   const storageState = await page.context().storageState();
   const ctx = await page.context().browser().newContext({ storageState, viewport: SIZE, recordVideo: { dir: OUT, size: SIZE } });
@@ -22,6 +25,7 @@ async (page) => {
   const t0 = Date.now();
   const at = () => (Date.now() - t0) / 1000;
   const markers = [];
+  let filming = null; // the chapter being filmed, named when a step fails
   // A lit focus holds a box measured once: drop it before anything moves the page under it
   // (a cut, a wait, a click, a scroll, a key that closes a dialog), or the mask lights the wrong spot.
   let lit = null; // { locator, box } of the lit element
@@ -43,11 +47,18 @@ async (page) => {
     if (kind === 'cut') await still();
     markers.push({ kind, label, start, end: at() });
   };
+  const filmed = (label) => !TAKE || TAKE.includes(label);
   const cut = span('cut');   // dropped from the video: page loads, navigations, reloads, off-camera setup
   const wait = span('wait'); // sped up: extraction, polling, server work
-  const chapter = span('chapter'); // showcase: one chapter of the script, by its id
+  const chapter = async (id, fn) => { // showcase: one chapter of the script, by its id
+    if (!filmed(id)) return;
+    filming = id; await span('chapter')(id, fn); filming = null;
+  };
   const scenario = async (title, fn, subtitle = '') => { // pr-demo: one scenario; with several, a card names each
+    if (!filmed(title)) return;
+    filming = title;
     const start = at(); await fn(); markers.push({ kind: 'chapter', label: title, subtitle, start, end: at() });
+    filming = null;
   };
   // Bring an element on screen as a viewer would: no scroll when it is already in view, else an eased
   // scroll of 0.4 to 1.2 s the camera films. scrollIntoViewIfNeeded, scrollBy and mouse.wheel move the
@@ -141,6 +152,7 @@ async (page) => {
     await locator.click(); await locator.press('ControlOrMeta+a'); await locator.pressSequentially(text, { delay: 18 });
   });
 
+  let failed = null;
   try {
     // ---- scenario ----
     await cut('load', async () => {
@@ -153,8 +165,12 @@ async (page) => {
     // await wait('server work', () => p.getByText('...').waitFor({ timeout: 120000 }));
     await p.waitForTimeout(2000); // hold on the result
     // ---- end scenario ----
+  } catch (e) {
+    // The chapters done so far keep their markers: a retake films only the rest (TAKE).
+    failed = { chapter: filming, error: e.message.split('\n')[0], screenshot: `${OUT}/failed.png` };
+    await p.screenshot({ path: failed.screenshot }).catch(() => {});
   } finally {
     await ctx.close();
   }
-  return { video: await video.path(), markers };
+  return { video: await video.path(), markers, ...(failed && { failed }) };
 }

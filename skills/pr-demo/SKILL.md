@@ -134,7 +134,14 @@ the current engine: copy the template again and move the old scenario block into
 `record.js` from a Node script, as `$SKILL/tests/e2e.js` does (`chromium.launch` from the repo's
 `playwright` package, signing in first inside a `cut`).
 
-**Done when** `markers.json` names an existing `.webm`.
+A step that fails ends the take: the JSON comes back with `failed` (the chapter, the error, a
+screenshot) and the markers of the chapters filmed before it. Save it as it is, fix the step, and
+film only the rest in a **retake**: set `TAKE` in `record.js` to the failed chapter and the ones
+after it (scenario titles here, shot ids in showcase), run `reset` for the state the first of them
+starts from, and save the JSON as `DIR/markers-2.json` (then `-3`…). Re-filming one chapter after
+review works the same way. The engine plays each chapter from the last take that holds it.
+
+**Done when** each scenario has its `chapter` marker in a take, and each take names an existing `.webm`.
 
 ## 8. Render and check
 
@@ -143,14 +150,14 @@ to `DIR/theme.css` when it exists: the video then takes the app's look (`referen
 Without it the stage is a neutral dark one; pr-demo never builds a theme, `setup-ai-skills video-theme` does.
 
 ```bash
-python3 "$SKILL/scripts/engine.py" demo DIR/markers.json --out DIR/timeline.json
+python3 "$SKILL/scripts/engine.py" demo DIR/markers.json [DIR/markers-2.json …] --out DIR/timeline.json
 NODE_PATH=<the app repo's node_modules holding playwright> node "$SKILL/scripts/render.js" DIR/timeline.json DIR/demo.mp4
 python3 "$SKILL/scripts/engine.py" sheet DIR/demo.mp4 DIR/sheet.png
 python3 "$SKILL/scripts/engine.py" jumps DIR/demo.mp4 DIR/timeline.json DIR/jumps.png
 ```
 
 With pnpm, `NODE_PATH` is `$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
-The render, at 60 fps, takes about four seconds per second of video.
+The render, at 60 fps in four parts at once, takes about two seconds per second of video.
 
 Read `sheet.png`. The first frame shows the start state and the last frame the result; no frame is
 blank, shows a login page, a dev overlay or an error toast. When a zoom looks off target on the sheet,

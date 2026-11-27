@@ -142,12 +142,13 @@ and write the scenario with pr-demo's helpers. Then:
 - keep a 16:9 size (1920×1080, or 1600×900 when the app's layout needs it): the stage frames the
   recording in a 16:9 window.
 
-Run it as pr-demo's **Record** section does and save the returned JSON as `DIR/main.json`. For a
+Run it as pr-demo's **Record** section does and save the returned JSON as `DIR/main.json`; a failed
+step is re-filmed there too, in a retake of the chapters left (`TAKE`), saved as `DIR/main-2.json`. For a
 `Before` chapter, run shots' compare switch (`git switch --detach` on the merge-base, reinstall when
 the lockfile differs, wait for the reload, `reset`), record its chapters into `DIR/before.json`, then
 switch back to the branch.
 
-**Done when** each chapter of the script has its `chapter` marker in `main.json` or `before.json`, and
+**Done when** each chapter of the script has its `chapter` marker in a take (`main*.json`, `before.json`), and
 the worktree is back on its branch.
 
 ## 7. Voice
@@ -165,7 +166,7 @@ with `say -o voice/<id>.aiff "<line>"` and convert them with
 ## 8. Render and check
 
 ```bash
-python3 $SKILL/scripts/timeline.py build DIR/script.json --rec main=DIR/main.json [--rec before=DIR/before.json] \
+python3 $SKILL/scripts/timeline.py build DIR/script.json --rec main=DIR/main.json [--rec main=DIR/main-2.json …] [--rec before=DIR/before.json] \
         [--voice-dir DIR/voice] --out DIR/timeline.json
 NODE_PATH=<the app repo's node_modules holding playwright> node $DEMO/scripts/render.js DIR/timeline.json --at <t>,<t>…
 ```
@@ -176,7 +177,7 @@ Leave out `--voice-dir` with `--no-voice`. With pnpm, `NODE_PATH` is
 `--at` writes `DIR/at-<t>.png` in a second or two: pass the middle of each focus (the `focus`
 entries with `"light": true` in `timeline.json`) and read the frames. The zoom centers on the element the caption names. When a box
 misses, fix it in `main.json`, rebuild the timeline and check again with `--at`: no re-take, no full
-render. Then render the video, at 60 fps, about four seconds per second of video:
+render. Then render the video, at 60 fps in four parts at once, about two seconds per second of video:
 
 ```bash
 NODE_PATH=… node $DEMO/scripts/render.js DIR/timeline.json DIR/silent.mp4

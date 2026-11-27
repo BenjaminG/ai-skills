@@ -46,15 +46,16 @@ const SCENARIO = `
 
   // The template as a skill run fills it: OUT and the scenario block, at a smaller viewport than
   // the 1920×1080 output, as a run does when the app's layout needs it.
-  let src = fs.readFileSync(path.join(ROOT, 'assets', 'record.js'), 'utf8').replace("'__DIR__'", JSON.stringify(OUT))
-    .replace('{ width: 1920, height: 1080 }', '{ width: 1600, height: 900 }');
-  src = src.replace(/\/\/ ---- scenario ----[\s\S]*\/\/ ---- end scenario ----/, SCENARIO);
-  const record = eval(src);
-
-  const browser = await chromium.launch();
-  const page = await (await browser.newContext()).newPage();
-  const rec = await record(page);
-  await browser.close();
+  const film = async (scenario, take = null) => {
+    const src = fs.readFileSync(path.join(ROOT, 'assets', 'record.js'), 'utf8').replace("'__DIR__'", JSON.stringify(OUT))
+      .replace('{ width: 1920, height: 1080 }', '{ width: 1600, height: 900 }').replace('const TAKE = null;', `const TAKE = ${JSON.stringify(take)};`)
+      .replace(/\/\/ ---- scenario ----[\s\S]*\/\/ ---- end scenario ----/, scenario);
+    const browser = await chromium.launch();
+    const page = await (await browser.newContext()).newPage();
+    try { return await eval(src)(page); } finally { await browser.close(); }
+  };
+  const rec = await film(SCENARIO);
+  assert.ok(!rec.failed, `the take failed: ${JSON.stringify(rec.failed)}`);
   fs.writeFileSync(path.join(OUT, 'markers.json'), JSON.stringify(rec, null, 1));
 
   const kinds = (k) => rec.markers.filter((m) => m.kind === k);
@@ -99,6 +100,9 @@ const SCENARIO = `
   assert.ok(!jumps.includes("'Open the dashboard'"), `a jump in the scrolling chapter:\n${jumps}`);
   const raw = probe(rec.video), got = probe(mp4);
   assert.ok(Math.abs(got - tl.duration) < 0.2, `video ${got}s, timeline ${tl.duration}s`);
+  // Rendered in parts at once and joined: every frame there, once.
+  const frames = parseInt(run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-count_packets', '-show_entries', 'stream=nb_read_packets', '-of', 'csv=p=0', mp4]));
+  assert.strictEqual(frames, Math.round(tl.duration * tl.fps), 'frames lost or doubled where the parts join');
   // Chapters = recording - the load cut - the save wait sped up to 1 s (and what lies outside the scenarios).
   const len = (m) => m.end - m.start;
   const filmed = kinds('chapter').reduce((s, m) => s + len(m), 0) - (len(kinds('wait')[0]) - 1);
@@ -153,6 +157,26 @@ const SCENARIO = `
   let orange = 0;
   for (let i = 0; i < rgb.length; i += 3) if (rgb[i] > 220 && rgb[i + 1] < 120 && rgb[i + 2] < 60) orange++;
   assert.ok(orange > 500, `the band's orange is missing under the title (${orange} pixels)`);
+  // A take fails in its second scenario: the first keeps its markers, and a retake (TAKE) films the
+  // second alone. The demo plays each scenario from its last take, in the order first filmed.
+  const TAKES = path.join(OUT, 'takes');
+  fs.mkdirSync(TAKES);
+  const broken = await film(SCENARIO.replace("await focus('notes', p.locator('#bottom'));", "await p.locator('#missing').click({ timeout: 500 });"));
+  assert.strictEqual(broken.failed?.chapter, 'Open the dashboard', `failed: ${JSON.stringify(broken.failed)}`);
+  assert.ok(fs.existsSync(broken.failed.screenshot), 'no screenshot of the failed step');
+  assert.deepStrictEqual(broken.markers.filter((m) => m.kind === 'chapter').map((m) => m.label), ['Add a venue']);
+  const retake = await film(SCENARIO, ['Open the dashboard']);
+  assert.deepStrictEqual(retake.markers.filter((m) => m.kind === 'chapter').map((m) => m.label), ['Open the dashboard']);
+  fs.writeFileSync(path.join(TAKES, 'take-1.json'), JSON.stringify(broken));
+  fs.writeFileSync(path.join(TAKES, 'take-2.json'), JSON.stringify(retake));
+  const takesTl = path.join(TAKES, 'timeline.json');
+  run('python3', [engine, 'demo', path.join(TAKES, 'take-1.json'), path.join(TAKES, 'take-2.json'), '--out', takesTl]);
+  const joined = JSON.parse(fs.readFileSync(takesTl, 'utf8'));
+  assert.deepStrictEqual(joined.shots.map((s) => [s.id, s.rec]), [['card-1', undefined], ['Add a venue', 'main'], ['card-2', undefined], ['Open the dashboard', 'main-2']]);
+  const fromRetake = joined.shots[3].start + 1;
+  run('node', [path.join(ROOT, 'scripts', 'render.js'), takesTl, '--at', String(fromRetake)]);
+  assert.ok(fs.existsSync(path.join(TAKES, `at-${fromRetake}.png`)), 'the retake does not render');
+
   const midZoom = add.start + zoomed[1].t + 1.1;     // the camera has panned onto the second field
   const result = add.start + add.dur - 0.3;          // the saved venue, whole page
   run('node', [path.join(ROOT, 'scripts', 'render.js'), tlPath, '--at', `${midZoom.toFixed(2)},${result.toFixed(2)}`]);

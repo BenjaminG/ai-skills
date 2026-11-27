@@ -231,19 +231,39 @@ def build(shots, recs, want=None, max_rate=MAX_RATE, tail=0.0):
             "shots": out}
 
 
-def demo(rec, total):
-    """A PR demo's shots: its scenarios, each after a card when there are several."""
-    scenarios = sorted((m for m in rec["markers"] if m["kind"] == "chapter"), key=lambda m: m["start"])
+def takes(named):
+    """Recordings as (name, rec), in the order they were filmed: a later take of the same name films
+    some of its chapters again (record.js's TAKE). Returns the recs under unique names (main,
+    main-2, ...) and, for each (name, chapter), the unique name of the last take that holds it."""
+    recs, last, count = {}, {}, {}
+    for name, rec in named:
+        count[name] = count.get(name, 0) + 1
+        key = name if count[name] == 1 else f"{name}-{count[name]}"
+        recs[key] = rec
+        for m in rec["markers"]:
+            if m["kind"] == "chapter":
+                last[(name, m["label"])] = key
+    return recs, last
+
+
+def demo(recs, last, total):
+    """A PR demo's shots: its scenarios in the order first filmed, each from its last take and after a
+    card when there are several."""
+    first = {}
+    for rec in recs.values():
+        for m in sorted((m for m in rec["markers"] if m["kind"] == "chapter"), key=lambda m: m["start"]):
+            first.setdefault(m["label"], m)
+    scenarios = list(first.values())
     if not scenarios:
-        rec["markers"].append({"kind": "chapter", "label": "demo", "start": 0.0, "end": total})
+        recs["main"]["markers"].append({"kind": "chapter", "label": "demo", "start": 0.0, "end": total})
         return [{"id": "demo", "kind": "chapter"}]
     if len(scenarios) == 1:
-        return [{"id": scenarios[0]["label"], "kind": "chapter"}]
+        return [{"id": scenarios[0]["label"], "kind": "chapter", "rec": last[("main", scenarios[0]["label"])]}]
     shots = []
     for i, m in enumerate(scenarios):
         shots.append({"id": f"card-{i + 1}", "kind": "card", "title": m["label"],
                       **({"subtitle": m["subtitle"]} if m.get("subtitle") else {})})
-        shots.append({"id": m["label"], "kind": "chapter"})
+        shots.append({"id": m["label"], "kind": "chapter", "rec": last[("main", m["label"])]})
     return shots
 
 
@@ -412,17 +432,30 @@ def self_test():
     two = {"video": "rec.webm", "total": 20, "markers": [
         {"kind": "chapter", "label": "Add a venue", "subtitle": "From the list", "start": 0, "end": 8},
         {"kind": "chapter", "label": "Delete it", "start": 8, "end": 20}]}
-    shots = demo(two, 20)
+    recs, last = takes([("main", two)])
+    shots = demo(recs, last, 20)
     assert [s["kind"] for s in shots] == ["card", "chapter", "card", "chapter"], shots
     assert shots[0]["title"] == "Add a venue" and shots[0]["subtitle"] == "From the list"
-    tl = build(shots, {"main": two})
+    tl = build(shots, recs)
     assert [s["dur"] for s in tl["shots"]] == [3.0, 8.0, 3.0, 12.0] and tl["duration"] == 26.0, tl
     assert "label" not in tl["shots"][1] and "caption" not in tl["shots"][1]
     one = {"video": "rec.webm", "total": 9, "markers": [{"kind": "chapter", "label": "x", "start": 1, "end": 9}]}
-    assert demo(one, 9) == [{"id": "x", "kind": "chapter"}]
+    assert demo(*takes([("main", one)]), 9) == [{"id": "x", "kind": "chapter", "rec": "main"}]
     none = {"video": "rec.webm", "total": 9, "markers": [{"kind": "cut", "label": "load", "start": 0, "end": 3}]}
-    tl = build(demo(none, 9), {"main": none})
+    recs, last = takes([("main", none)])
+    tl = build(demo(recs, last, 9), recs)
     assert tl["duration"] == 6.0 and tl["shots"][0]["map"][0] == [0.0, 3], tl
+
+    # The first take fails in "Delete it"; a retake films it again, 3 s long. The demo keeps the
+    # first take's "Add a venue" and plays "Delete it" from the retake, in the order first filmed.
+    broken = {"video": "rec.webm", "total": 12, "failed": {"chapter": "Delete it"}, "markers": two["markers"][:1]}
+    retake = {"video": "rec-2.webm", "total": 5, "markers": [
+        {"kind": "chapter", "label": "Delete it", "start": 2, "end": 5}]}
+    recs, last = takes([("main", broken), ("main", retake)])
+    assert list(recs) == ["main", "main-2"] and last == {("main", "Add a venue"): "main", ("main", "Delete it"): "main-2"}
+    tl = build(demo(recs, last, 12), recs)
+    assert [(s["id"], s.get("rec"), s["dur"]) for s in tl["shots"]] == [
+        ("card-1", None, 3.0), ("Add a venue", "main", 8.0), ("card-2", None, 3.0), ("Delete it", "main-2", 3.0)], tl["shots"]
     print("ok")
 
 
@@ -433,7 +466,7 @@ def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("demo")
-    d.add_argument("markers")
+    d.add_argument("markers", nargs="+", help="markers.json, then the retakes' markers in the order filmed")
     d.add_argument("--out", required=True)
     s = sub.add_parser("sheet")
     s.add_argument("video")
@@ -448,8 +481,9 @@ def main():
         return sheet(a.video, a.png, a.tiles)
     if a.cmd == "jumps":
         return jumps(a.video, json.load(open(a.timeline)), a.png)
-    rec = json.load(open(a.markers))
-    tl = build(demo(rec, duration(rec["video"])), {"main": rec})
+    named = [("main", json.load(open(f))) for f in a.markers]
+    recs, last = takes(named)
+    tl = build(demo(recs, last, duration(named[0][1]["video"])), recs)
     json.dump(tl, open(a.out, "w"), indent=1)
     print(f"{a.out}: {len(tl['shots'])} shots, {tl['duration']:.1f}s")
 
