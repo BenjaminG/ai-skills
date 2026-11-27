@@ -11,14 +11,18 @@ one feature, longer for an exhaustive tour. It runs as a sequence of **shots**, 
 **script**:
 
 - a **card**: kicker, title, subtitle, badges, or a title with an accent, on the brand background;
-- a **chapter**: a numbered pill (or a label such as `Before`) and a caption above the app, which plays
-  inside a framed window: the camera zooms on each click and typing, and on the element the voice is
-  about, dimming the rest; a drawn cursor glides between the clicks.
+- a **chapter**: it opens on its title over the whole screen, the numbered pill (or a label such as
+  `Before`) and the caption rising word by word over its first frame, held still and blurred, then
+  leaving for the action. The app plays in a window on a gradient of the brand's color. The camera films the whole scene, Screen Studio
+  style: it zooms in on the first click or typing, stays zoomed and pans while the actions follow each
+  other, zooms deeper on the element the voice is about, and blurs its fast moves. A drawn cursor
+  glides between the clicks, as a hand on links and buttons and a text bar on fields.
 
 The montage is pr-demo's engine (`$DEMO/scripts/engine.py`, `assets/stage.html`, `scripts/render.js`);
 this skill adds the script, the cards' brand and the voice.
 
-A card lasts as long as its voice line. A chapter plays its action at real speed, lasts as long as the
+A card lasts as long as its voice line. A chapter opens on its title for 1.8 s, its voice line
+starting as the title leaves, then plays its action at real speed, lasts as long as the
 action or its voice line, whichever is longer, then holds its last frame 1.5 s. With `--no-voice`, a
 shot also lasts the time to read it.
 
@@ -113,6 +117,10 @@ and the `data-ds-theme` theme. Write them as these variables, which `$DEMO/asset
         --font-display: "…", serif; --font-body: "…", sans-serif; }
 ```
 
+`stage.html` builds the background the app's window sits on, `--stage`, from `--accent`: a dark gradient
+under a white caption. When the accent is too pale for it, set `--stage` to a gradient of the brand's
+stronger colors, and `--stage-fg` to the caption color it needs.
+
 The stage is a `file://` page: inline each brand font as `@font-face` with a base64 `data:` URL of the
 `woff2` the app serves. Save the file to both places.
 
@@ -131,9 +139,9 @@ and write the scenario with pr-demo's helpers. Then:
   for a second before the first zoom;
 - act through `click` and `type`: the camera zooms on each of them on its own, and the cursor follows;
 - call `await focus('<label>', locator)` when the voice turns to an element no click names (a card, a
-  result), and `await focus('<label>', null)` to zoom out: a focus lights its element until the next
-  `focus`, or until the page moves under it. A click, a `cut`, a `wait`, `scroll(locator)` and
-  `press(key)` turn the light off; scroll and close dialogs through them, never `p.mouse.wheel` or
+  result), and `await focus('<label>', null)` to zoom out: a focus holds the camera on its element
+  until the next `focus`, or until the page moves under it. A click, a `cut`, a `wait`,
+  `scroll(locator)` and `press(key)` end it; scroll and close dialogs through them, never `p.mouse.wheel` or
   `p.keyboard`. The helpers scroll only when the element is off screen, in a glide the camera films;
   `scrollIntoViewIfNeeded`, `scrollBy` and `scrollTo` move the page in one frame: only inside a `cut`;
 - give each chapter its reading time: hold on the result (`p.waitForTimeout`) as long as the viewer
@@ -177,10 +185,10 @@ NODE_PATH=<the app repo's node_modules holding playwright> node $DEMO/scripts/re
 Leave out `--voice-dir` with `--no-voice`. With pnpm, `NODE_PATH` is
 `$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
 
-`--at` writes `DIR/at-<t>.png` in a second or two: pass the middle of each lit zoom (the `focus`
-entries with `"light": true` in `timeline.json`) and read the frames. The lit area sits on the element the caption names. When a box
+`--at` writes `DIR/at-<t>.png` in a second or two: pass the middle of each focus (the `focus`
+entries with `"light": true` in `timeline.json`) and read the frames. The zoom centers on the element the caption names. When a box
 misses, fix it in `main.json`, rebuild the timeline and check again with `--at`: no re-take, no full
-render. Then render the video, about one second per two seconds of video:
+render. Then render the video, at 60 fps, about four seconds per second of video:
 
 ```bash
 NODE_PATH=… node $DEMO/scripts/render.js DIR/timeline.json DIR/silent.mp4

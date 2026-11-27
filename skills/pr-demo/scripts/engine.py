@@ -8,7 +8,7 @@ Usage:
       there are several; the whole recording as one chapter when there is none.
   engine.py sheet <video.mp4> <sheet.png> [--tiles 3x2]
   engine.py jumps <video.mp4> <timeline.json> <jumps.png>
-      Frames that change at once (a page that jumps, a light that snaps off): one row per jump in
+      Frames that change at once (a page that jumps, a camera that snaps): one row per jump in
       jumps.png, the frame before | the frame, and where it falls in the recording.
   engine.py --self-test
 
@@ -17,8 +17,8 @@ Markers come from assets/record.js:
   wait     sped up to last WAIT_TO seconds (server work)
   chapter  a showcase shot or a pr-demo scenario, by its label
   act      a click or a typing, with the element's box: the camera zooms on it
-  focus    showcase: zoom on an element and light it (box null: zoom out); overrides the acts
-  move     the cursor going from one point to another; click: the cursor pressing
+  focus    showcase: zoom deeper on an element (box null: zoom out); overrides the acts
+  move     the cursor going from one point to another, and its shape there; click: the cursor pressing
 """
 import argparse
 import json
@@ -27,15 +27,19 @@ import re
 import subprocess
 import tempfile
 
-FPS = 30
+FPS = 60            # output frames per second: the camera moves on every one of them
+SRC_FPS = 30        # frames per second extracted from a recording, its own pace
 WAIT_TO = 1.0       # a wait marker plays in this many seconds
 MAX_RATE = 2.5      # fastest a chapter's recording may play to fit a voice line
 MIN_SHOT = 3.0      # shortest shot
 READ_WPS = 3.0      # words per second a viewer reads on screen
-HOLD = 2.5          # the camera stays zoomed this long after an act, and pans when the next comes sooner
+HOLD = 4.0          # the camera stays zoomed this long after an act, and pans when the next comes sooner:
+                    # actions that follow each other make one zoom session, not a zoom in and out each
 END_CLEAR = 1.2     # every chapter ends on the whole page for at least this long
 START_CLEAR = 1.0   # and opens on it for this long before any zoom
 MIN_ZOOM = 0.8      # an act with less room than this before the zoom-out gets no zoom
+REZOOM = 1.5        # a zoom-out the next zoom follows this soon is dropped: the camera stays in, unless
+                    # a wait or a cut forces it out
 JUMP = 1.0          # mean difference (ffmpeg scdet's mafd) of a frame that changes at once...
 JUMP_ALONE = 2.5    # ...this many times more than each of the two frames on either side: a glide
                     # (scroll, zoom) changes every frame a little, a jump one frame a lot
@@ -128,7 +132,7 @@ def zooms(markers, cs, ce, opening=None):
     """Camera targets of a chapter in recording time: [{t, box, light}], box None = whole page.
 
     Each act zooms on its element and holds HOLD seconds; a sooner act pans there instead. A wait
-    or a cut zooms out, and so does the chapter's last END_CLEAR seconds. An explicit focus lights
+    or a cut zooms out, and so does the chapter's last END_CLEAR seconds. An explicit focus zooms deeper on
     its element and silences the acts until the next focus marker. Nothing zooms before `opening`:
     the chapter shows the whole page first.
     """
@@ -159,7 +163,16 @@ def zooms(markers, cs, ce, opening=None):
         out.append({"t": until, "box": None, "light": False})
     out = [z for z in out if not is_held(z["t"])]
     out += [{"t": max(f["start"], opening), "box": f.get("box"), "light": bool(f.get("box"))} for f in focus]
-    return sorted(out, key=lambda z: z["t"])
+    out = sorted(out, key=lambda z: z["t"])
+
+    def stays_in(i):
+        """A zoom-out the next zoom follows within REZOOM, and no wait or cut forces."""
+        z, nxt = out[i], out[i + 1] if i + 1 < len(out) else None
+        forced = any(abs(b - z["t"]) < 0.05 for b in breaks)
+        return z["box"] is None and nxt is not None and nxt["box"] is not None \
+            and nxt["t"] - z["t"] < REZOOM and not forced
+
+    return [z for i, z in enumerate(out) if not stays_in(i)]
 
 
 def out_times(spans, rate, entries):
@@ -180,7 +193,8 @@ def cursor(markers, cs, ce, spans, rate):
         return round(to_out(spans, rate, t), 3)
 
     inside = [m for m in markers if cs <= m["start"] <= ce]
-    moves = [{"t0": o(m["start"]), "t1": o(m["end"]), "from": m["from"], "to": m["to"]}
+    moves = [{"t0": o(m["start"]), "t1": o(m["end"]), "from": m["from"], "to": m["to"],
+              "cursor": m.get("cursor", "default")}
              for m in sorted(inside, key=lambda m: m["start"]) if m["kind"] == "move"]
     return {"moves": moves, "clicks": sorted(o(m["start"]) for m in inside if m["kind"] == "click")}
 
@@ -213,7 +227,7 @@ def build(shots, recs, want=None, max_rate=MAX_RATE, tail=0.0):
         out.append(shot)
         t += dur
     return {"fps": FPS, "size": [1920, 1080], "duration": round(t, 3),
-            "recs": {n: {"video": os.path.abspath(r["video"])} for n, r in recs.items()},
+            "recs": {n: {"video": os.path.abspath(r["video"]), "fps": SRC_FPS} for n, r in recs.items()},
             "shots": out}
 
 
@@ -339,7 +353,7 @@ def self_test():
             act(17, 18, 3), act(28.5, 29, 4)]
     z = zooms(acts, 0, 30)
     assert [(e["t"], e["box"] and e["box"]["x"]) for e in z] == \
-        [(2, 1), (4, 2), (6, None), (17, 3), (20.5, None)], z
+        [(2, 1), (4, 2), (6, None), (17, 3), (22, None)], z
     assert not any(e["light"] for e in z)
     # A click right before a wait has no room for a zoom of its own, but the camera pans to it.
     z = zooms([act(2, 3, 1), act(3.5, 4, 2), {"kind": "wait", "label": "save", "start": 4.1, "end": 9}], 0, 30)
@@ -349,10 +363,20 @@ def self_test():
          {"kind": "focus", "label": "out", "start": 5.5, "end": 5.5, "box": None}]
     z = zooms(acts + f, 0, 30)
     assert [(e["t"], e["box"] and e["box"]["x"], e["light"]) for e in z] == \
-        [(2, 1, False), (3.5, 9, True), (5.5, None, False), (5.5, None, False),
-         (17, 3, False), (20.5, None, False)], z
-    # Mapped to output time, the two zoom-outs at 5.5 collapse into one.
-    assert [e["t"] for e in out_times([(0, 30, 1.0)], 1.0, z)] == [2, 3.5, 5.5, 17, 20.5]
+        [(2, 1, False), (3.5, 9, True), (5.5, None, False), (6, None, False),
+         (17, 3, False), (22, None, False)], z
+    # One session: a focus, a scroll that ends it, then the next focus 1 s later: the camera stays in.
+    # A zoom-out forced by a wait stays, however soon the next zoom comes.
+    nxt = [{"kind": "focus", "label": "a", "start": 2, "end": 2, "box": box(1)},
+           {"kind": "focus", "label": "out", "start": 4, "end": 4, "box": None},
+           {"kind": "focus", "label": "b", "start": 5, "end": 5, "box": box(2)},
+           {"kind": "focus", "label": "out", "start": 7, "end": 7, "box": None},
+           {"kind": "wait", "label": "save", "start": 7, "end": 7.2}, act(7.6, 8, 3)]
+    assert [(e["t"], e["box"] and e["box"]["x"]) for e in zooms(nxt, 0, 30)] == \
+        [(2, 1), (5, 2), (7, None), (7.6, 3), (12, None)], zooms(nxt, 0, 30)
+    # Mapped to output time, zoom-outs landing on one instant collapse into one.
+    assert [e["t"] for e in out_times([(0, 30, 1.0)], 1.0, z + [{"t": 22, "box": None, "light": False}])] == \
+        [2, 3.5, 5.5, 6, 17, 22]
 
     # A chapter opens on the whole page. A click at its first frame, then a wait 0.6 s later: no
     # room for a zoom once START_CLEAR has passed. A longer click zooms at the end of the opening,
@@ -360,7 +384,7 @@ def self_test():
     wait = lambda s, e: {"kind": "wait", "label": "reload", "start": s, "end": e}  # noqa: E731
     assert zooms([act(10, 11.6, 1), wait(11.6, 12)], 10, 20, 11) == []
     z = zooms([act(10, 12, 1)], 10, 20, 11)
-    assert [(e["t"], e["box"] and e["box"]["x"]) for e in z] == [(11, 1), (14.5, None)], z
+    assert [(e["t"], e["box"] and e["box"]["x"]) for e in z] == [(11, 1), (16, None)], z
     z = zooms([{"kind": "focus", "label": "card", "start": 10, "end": 10, "box": box(9)}], 10, 20, 11)
     assert [(e["t"], e["light"]) for e in z] == [(11, True)], z
 
@@ -381,7 +405,7 @@ def self_test():
           {"kind": "click", "label": "click", "start": 15.2, "end": 15.2},
           {"kind": "move", "label": "", "start": 5, "end": 6, "from": {"x": 0, "y": 0}, "to": {"x": 1, "y": 1}}]
     c = cursor(mv, 10, 30, spans, 1.0)
-    assert c == {"moves": [{"t0": 0.5, "t1": 1.0, "from": {"x": 0, "y": 0}, "to": {"x": 9, "y": 9}}],
+    assert c == {"moves": [{"t0": 0.5, "t1": 1.0, "from": {"x": 0, "y": 0}, "to": {"x": 9, "y": 9}, "cursor": "default"}],
                  "clicks": [1.2]}, c
 
     # A demo with two scenarios: a card before each. With one: no card. With none: the whole video.

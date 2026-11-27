@@ -114,7 +114,16 @@ async (page) => {
     await p.mouse.move(x, y, { steps: Math.max(1, Math.round(ms / 16)) });
     const rest = ms - (at() - start) * 1000;
     if (rest > 0) await p.waitForTimeout(rest);
-    markers.push({ kind: 'move', label: '', start, end: at(), from: pos, to: { x, y } });
+    // the shape the system cursor takes there, which the stage draws: a hand, a text bar or the arrow
+    const cursor = await p.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return 'default';
+      const c = getComputedStyle(el).cursor;
+      if (c === 'pointer' || c === 'text') return c;
+      const editable = el.closest('textarea, [contenteditable]:not([contenteditable="false"]), input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=reset], [type=range], [type=file], [type=color], [type=image])');
+      return c === 'auto' && editable ? 'text' : 'default';
+    }, { x, y }).catch(() => 'default');
+    markers.push({ kind: 'move', label: '', start, end: at(), from: pos, to: { x, y }, cursor });
     pos = { x, y };
   };
   const act = async (label, locator, fn) => { // the camera zooms on the element while fn runs

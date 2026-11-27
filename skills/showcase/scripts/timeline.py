@@ -28,14 +28,17 @@ import engine  # noqa: E402  pr-demo's montage engine, shared on purpose
 
 GAP = 0.35          # silence after each voice line
 TAIL = 1.5          # a chapter holds its last frame this long before the next shot
+INTRO = 1.8         # a chapter opens on its title, over its first frame held still this long
 VOICE_WPS = 2.6     # words per second of a voice line, for the estimate
 
 
 def estimate(shot, voiced):
     """Seconds a shot should last, before any recording exists."""
+    intro = INTRO if shot["kind"] == "chapter" and shot.get("caption") else 0.0
     if voiced and shot.get("voice"):
-        return round(engine.words(shot["voice"]) / VOICE_WPS + GAP, 1)
-    return engine.read_time([shot.get("caption")] if shot["kind"] == "chapter" else engine.card_text(shot))
+        return round(engine.words(shot["voice"]) / VOICE_WPS + GAP + intro, 1)
+    texts = [shot.get("caption")] if shot["kind"] == "chapter" else engine.card_text(shot)
+    return round(engine.read_time(texts) + intro, 1)
 
 
 def labels(shots):
@@ -82,9 +85,31 @@ def build(script, recs, voice_dir):
             files[s["id"]], want[s["id"]] = f, engine.duration(f) + GAP
     shots = [{**s, "label": lab[s["id"]]} if s["kind"] == "chapter" else s for s in script["shots"]]
     tl = engine.build(shots, recs, want, max_rate=1.0, tail=TAIL)
-    starts = {s["id"]: s["start"] for s in tl["shots"]}
-    tl["audio"] = [{"file": os.path.abspath(f), "start": starts[i]} for i, f in files.items()]
+    t = 0.0
+    for s in tl["shots"]:
+        if s["kind"] == "chapter" and s.get("caption"):
+            with_intro(s)
+        s["start"] = round(t, 3)
+        t += s["dur"]
+    tl["duration"] = round(t, 3)
+    # a chapter's voice starts as its title leaves
+    starts = {s["id"]: s["start"] + max(0.0, s.get("intro", 0) - 0.4) for s in tl["shots"]}
+    tl["audio"] = [{"file": os.path.abspath(f), "start": round(starts[i], 3)} for i, f in files.items()]
     return tl
+
+
+def with_intro(s):
+    """Open a chapter on INTRO seconds of its first frame, held still under its title: everything
+    the chapter plays moves INTRO seconds later."""
+    def later(t):
+        return round(t + INTRO, 3)
+
+    s["intro"] = INTRO
+    s["map"] = [[0.0, s["map"][0][1]]] + [[later(o), r] for o, r in s["map"]]
+    s["focus"] = [{**f, "t": later(f["t"])} for f in s["focus"]]
+    s["cursor"] = {"moves": [{**m, "t0": later(m["t0"]), "t1": later(m["t1"])} for m in s["cursor"]["moves"]],
+                   "clicks": [later(c) for c in s["cursor"]["clicks"]]}
+    s["dur"] = later(s["dur"])
 
 
 def mux(tl, silent, out, sheet):
@@ -128,14 +153,17 @@ def self_test():
     tl = build(script, {"main": rec}, None)
     intro, before, c1 = tl["shots"]
     assert intro["start"] == 0 and intro["dur"] == 4.3, intro             # 10 words read at 3/s + 1
-    assert before["start"] == 4.3 and before["dur"] == 11.5, before        # action outlasts caption, + TAIL
-    assert c1["dur"] == 10.5 and c1["label"] == "01" and len(c1["focus"]) == 2, c1
+    assert before["start"] == 4.3 and before["dur"] == 13.3, before        # INTRO + action (outlasts caption) + TAIL
+    assert c1["start"] == 17.6 and c1["dur"] == 12.3 and c1["label"] == "01" and len(c1["focus"]) == 2, c1
     assert c1["focus"][0]["light"] and c1["caption"] == "What your twin needs from you"
-    assert tl["audio"] == [] and tl["duration"] == 26.3
+    assert tl["audio"] == [] and tl["duration"] == 29.9
+    # The title holds the chapter's first frame; its action, zooms and cursor all start INTRO later.
+    assert c1["map"][0] == [0.0, c1["map"][1][1]] and c1["map"][1][0] == INTRO, c1["map"]
+    assert c1["focus"][0]["t"] >= INTRO
 
     t = table({"voice": True, "shots": [{"id": "c1", "kind": "chapter", "caption": "The brief",
                                          "show": "brief card", "voice": "one two three four five six seven eight nine ten eleven twelve thirteen"}]})
-    assert "| c1 | 01 · The brief | brief card |" in t and "| 5.3 |" in t, t
+    assert "| c1 | 01 · The brief | brief card |" in t and "| 7.1 |" in t, t
     assert "Voice-over" not in table({**script, "voice": False})
     print("ok")
 

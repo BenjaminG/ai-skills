@@ -23,7 +23,7 @@ async function main() {
     if (stale) {
       fs.rmSync(fd, { recursive: true, force: true });
       fs.mkdirSync(fd, { recursive: true });
-      execFileSync('ffmpeg', ['-v', 'error', '-i', rec.video, '-vf', `fps=${tl.fps}`, '-q:v', '3', path.join(fd, '%05d.jpg')]);
+      execFileSync('ffmpeg', ['-v', 'error', '-i', rec.video, '-vf', `fps=${rec.fps || tl.fps}`, '-q:v', '3', path.join(fd, '%05d.jpg')]);
     }
     rec.frames = fs.readdirSync(fd).filter((f) => f.endsWith('.jpg')).length;
     rec.base = `file://${fd}/`;

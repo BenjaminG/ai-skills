@@ -9,9 +9,10 @@ argument-hint: "[PR]"
 A **demo** is a short video of the feature on the local app, from the state before the change to
 its visible result, that a reviewer watches in the PR description. It is **tight**: page loads and
 logins are cut, server waits last about a second. It is **edited** like a Screen Studio video, by
-the montage engine `showcase` uses too: the app plays in a window on a background, the camera zooms
-on each click and each typing and pans between the ones that follow, and a cursor is drawn on top,
-gliding from one click to the next. A flow runs about 15 s per scenario, 30 s at most for a single
+the montage engine `showcase` uses too: the app plays in a window on a gradient, the camera films
+the whole scene, zooms in on the first click or typing and stays zoomed, panning, while the actions
+follow each other, and a cursor is drawn on top, gliding from one click to the next as an arrow, a
+hand on links and buttons or a text bar on fields. A flow runs about 15 s per scenario, 30 s at most for a single
 one; past 60 s, propose splitting the demo before filming. Title cards (in English, like the PR) go
 in only when a video chains several scenarios.
 
@@ -148,7 +149,7 @@ python3 "$SKILL/scripts/engine.py" jumps DIR/demo.mp4 DIR/timeline.json DIR/jump
 ```
 
 With pnpm, `NODE_PATH` is `$(ls -d <repo>/node_modules/.pnpm/playwright@*/node_modules | sort -V | tail -1)`.
-The render takes about one second per two seconds of video.
+The render, at 60 fps, takes about four seconds per second of video.
 
 Read `sheet.png`. The first frame shows the start state and the last frame the result; no frame is
 blank, shows a login page, a dev overlay or an error toast. When a zoom looks off target on the sheet,

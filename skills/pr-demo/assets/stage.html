@@ -5,12 +5,19 @@
 <title>Demo stage</title>
 <!-- Driven by scripts/render.js: load(timeline) once, then seek(t) per frame. Every style is a
      pure function of t, so a frame never depends on the one before it. The theme.css next to the
-     timeline overrides these variables with the app's own tokens; without it, a neutral dark stage. -->
+     timeline overrides these variables with the app's own tokens; without it, a neutral dark stage.
+     A chapter is a scene, Screen Studio style: the app plays in a window on --stage, and the camera
+     films the whole scene, so a zoom takes the window's edges and the caption out of the frame. -->
 <style>
   :root {
     --bg: linear-gradient(135deg, #2e3340 0%, #171a21 100%); --fg: #f3f4f6; --muted: #9ca3af;
     --accent: #c7d2fe; --accent-soft: rgba(199, 210, 254, .16); --surface: #ffffff; --radius: 16px;
     --font-display: system-ui, sans-serif; --font-body: system-ui, sans-serif;
+    /* the scene behind the window: a gradient of the brand's accent, dark enough for a white caption */
+    --stage: radial-gradient(70% 90% at 8% 0%, color-mix(in oklab, var(--accent) 70%, transparent) 0%, transparent 70%),
+             radial-gradient(60% 80% at 100% 100%, color-mix(in oklab, var(--accent) 45%, transparent) 0%, transparent 70%),
+             linear-gradient(160deg, color-mix(in oklab, var(--accent) 38%, #10131a) 0%, color-mix(in oklab, var(--accent) 14%, #06080b) 100%);
+    --stage-fg: #ffffff; --window-radius: 14px;
   }
   html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font-body); }
   #root { position: absolute; inset: 0; }
@@ -23,44 +30,92 @@
   .badges { display: flex; gap: 16px; margin-top: 40px; }
   .badge { font-size: 22px; padding: 8px 20px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
   .rule { width: 80px; height: 2px; background: var(--accent); margin-top: 32px; }
-  header { position: absolute; left: 160px; top: 46px; display: flex; align-items: center; gap: 22px; }
-  .pill { font-size: 22px; font-weight: 600; padding: 6px 16px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
-  .caption { font-family: var(--font-display); font-size: 50px; }
-  #frame { position: absolute; left: 160px; top: 140px; width: 1600px; height: 900px; border-radius: var(--radius); overflow: hidden;
-           background: var(--surface); box-shadow: 0 30px 80px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.08); }
+  #chapter, #scene { background: var(--stage); }
+  #scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+  /* a chapter opens on its title over the whole screen; each word rises out of a mask */
+  #title { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+           padding: 0 200px; color: var(--stage-fg); pointer-events: none; }
+  .pill { font-size: 30px; font-weight: 600; padding: 8px 22px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-bottom: 30px; }
+  .caption { font-family: var(--font-display); font-size: 112px; line-height: 1.04; letter-spacing: -.01em; max-width: 1500px; }
+  .caption .w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: .16em; margin-bottom: -.16em; }
+  .caption .w > span { display: inline-block; }
+  #frame { position: absolute; left: 200px; top: 112px; width: 1520px; height: 855px; border-radius: var(--window-radius); overflow: hidden;
+           background: var(--surface); box-shadow: 0 50px 120px rgba(0,0,0,.45), 0 12px 32px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.08); }
   #inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   #shot { display: block; }   /* natural size: the recording's viewport, in the markers' coordinates */
-  #frame.bare { top: 90px; }   /* no pill nor caption (pr-demo): the window sits in the middle */
-  #ring { position: absolute; box-sizing: border-box; border: 0; border-radius: 14px; box-shadow: 0 0 0 4000px rgba(10, 12, 8, .32); }
-  #cursor { position: absolute; left: 0; top: 0; width: 27px; height: 39px; transform-origin: 0 0; pointer-events: none; }
-  #ripple { position: absolute; border-radius: 50%; border: 3px solid rgba(17, 24, 39, .55); pointer-events: none; }
+  #cursor { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; pointer-events: none; }
+  #cursor svg { position: absolute; display: none; overflow: visible; }
 </style>
 </head>
 <body>
+<!-- motion blur: seek sets its deviation from how far the camera moved since the frame before -->
+<svg width="0" height="0" style="position:absolute"><filter id="mb" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur id="mbg" stdDeviation="0 0"/></filter></svg>
 <div id="root">
   <section id="card" class="layer"></section>
-  <section id="chapter" class="layer">
-    <header><span class="pill"></span><span class="caption"></span></header>
-    <div id="frame"><div id="inner"><img id="shot" alt=""><div id="ring"></div><div id="ripple"></div>
-      <!-- the macOS arrow, 1.5x; its tip is the hotspot -->
-      <svg id="cursor" viewBox="0 0 18 26"><path d="M1 1 L1 20.5 L5.6 16.2 L8.7 23.6 L11.9 22.2 L8.9 15 L15.2 15 Z"
-        fill="#000" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  <section id="chapter" class="layer"><div id="scene">
+    <div id="frame"><div id="inner"><img id="shot" alt="">
+      <!-- the macOS cursors, 1.5x, each placed so its hotspot sits on #cursor's origin -->
+      <div id="cursor">
+        <svg data-shape="default" viewBox="0 0 18 26" width="27" height="39" style="left:-1.5px;top:-1.5px"><path d="M1 1 L1 20.5 L5.6 16.2 L8.7 23.6 L11.9 22.2 L8.9 15 L15.2 15 Z"
+          fill="#000" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        <svg data-shape="pointer" viewBox="0 0 22 26" width="33" height="39" style="left:-10.5px;top:-2.25px"><path d="M7 1.5c1.1 0 2 .9 2 2v6.2c.3-.2.7-.3 1.1-.3 1 0 1.8.7 2 1.6.3-.2.7-.3 1.1-.3 1 0 1.8.7 2 1.6.3-.1.6-.2.9-.2 1.1 0 2 .9 2 2v4.4c0 3.6-2.9 6.5-6.5 6.5h-1.6c-2.1 0-4-1-5.2-2.7L2.3 16c-.6-.9-.4-2.1.5-2.7.8-.5 1.8-.4 2.4.3l-.2 1.3V3.5c0-1.1.9-2 2-2z"
+          fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/><path d="M11.2 15v3.6M14.3 15.6v3M17.3 16.2v2.4" stroke="#000" stroke-width="1" stroke-linecap="round"/></svg>
+        <svg data-shape="text" viewBox="0 0 14 22" width="18" height="28" style="left:-9px;top:-14px"><path d="M3 1h2c.8 0 1.5.3 2 .8.5-.5 1.2-.8 2-.8h2v2H9c-.6 0-1 .4-1 1v14c0 .6.4 1 1 1h2v2H9c-.8 0-1.5-.3-2-.8-.5.5-1.2.8-2 .8H3v-2h2c.6 0 1-.4 1-1V4c0-.6-.4-1-1-1H3z"
+          fill="#000" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg>
+      </div>
     </div></div>
-  </section>
+  </div>
+  <div id="title"><span class="pill"></span><div class="caption"></div></div></section>
 </div>
 <script>
-  let W = 1920, H = 1080, FRAME = 1600 / W;   // the recording's viewport, read from its frames in seek
-  const FADE_IN = 0.35, FADE_OUT = 0.25, ZOOM = 0.8, MAX_ZOOM = 2.2;
-  const AUTO_ZOOM = 1.8;          // most a click or a typing zooms; an explicit focus goes to MAX_ZOOM
+  const SW = 1920, SH = 1080;     // the stage
+  let W = 1920, H = 1080;         // the recording's viewport, read from its frames in seek
+  const F = { x: 200, y: 112, w: 1520, h: 855 };   // the window on the stage, in its middle
+  let FRAME = F.w / W;            // recording pixels -> stage pixels
+  const FADE_IN = 0.35, FADE_OUT = 0.25;
+  const ZOOM = 1.0;               // a camera move settles in this long
+  const AUTO_ZOOM = 2.0;          // most a click or a typing zooms the stage; an explicit focus goes to MAX_ZOOM
+  const MAX_ZOOM = 2.5;
+  const EDGE = 30;                // a zoom shows at most this much of the scene past the window's edge
+  const DEAD = 0.12;              // a target already this far inside the view leaves the camera where it is
   const IDLE = 1.5, HIDE = 0.3;   // the cursor fades out over HIDE once still for IDLE seconds
-  const PRESS = 0.25, RIPPLE = 0.45;
+  const PRESS = 0.25;
   const $ = (s) => document.querySelector(s);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const ease = (x) => { x = clamp(x, 0, 1); return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
+  // A critically damped spring: leaves at rest, covers most of the way early, then settles in softly.
+  const SPRING = 7, SPRING_END = 1 - (1 + SPRING) * Math.exp(-SPRING);
+  const spring = (x) => { x = clamp(x, 0, 1); return (1 - (1 + SPRING * x) * Math.exp(-SPRING * x)) / SPRING_END; };
+  // CSS's cubic-bezier(x1, y1, x2, y2) as a function of time
+  const bezier = (x1, y1, x2, y2) => (x) => {
+    x = clamp(x, 0, 1);
+    let t = x;
+    for (let i = 0; i < 8; i++) {
+      const e = 3 * x1 * t * (1 - t) ** 2 + 3 * x2 * t * t * (1 - t) + t ** 3 - x;
+      const d = 3 * x1 * (1 - t) ** 2 + 6 * (x2 - x1) * t * (1 - t) + 3 * (1 - x2) * t * t;
+      if (Math.abs(d) < 1e-6) break;
+      t = clamp(t - e / d, 0, 1);
+    }
+    return 3 * y1 * t * (1 - t) ** 2 + 3 * y2 * t * t * (1 - t) + t ** 3;
+  };
+  const rise = bezier(.2, .75, .2, 1), leave = bezier(.55, 0, .75, .3);
+  // A chapter's title (s.intro seconds over its first frame, held still): the words rise one after the
+  // other out of their mask, 0.8 s each, 40 ms apart, then leave upward while the scene comes back.
+  function drawTitle(s, lt) {
+    const out = s.intro - 0.55;
+    const k = clamp(Math.min(lt / 0.4, (s.intro + 0.1 - lt) / 0.6), 0, 1);   // how much the title covers the scene
+    $('#title').style.display = k > 0 ? 'flex' : 'none';
+    [...$('.caption').children].forEach((w, i) => {
+      const up = (1 - rise((lt - 0.08 - i * 0.04) / 0.8)) * 115 - leave((lt - out - i * 0.03) / 0.5) * 115;
+      w.firstChild.style.transform = `translateY(${up}%)`;
+    });
+    enter($('#title .pill'), ease(lt / 0.6) * (1 - ease((lt - out) / 0.4)));
+    return k;
+  }
   const enter = (el, k) => { el.style.opacity = k; el.style.transform = `translateY(${(1 - k) * 14}px)`; };
   let TL, current = null;
 
-  window.load = (tl) => { TL = tl; };
+  window.load = (tl) => { TL = tl; current = null; };
 
   function el(tag, cls, text) { const e = document.createElement(tag); e.className = cls; if (text) e.textContent = text; return e; }
 
@@ -91,12 +146,23 @@
     return a[1] + (b[1] - a[1]) * (lt - a[0]) / (b[0] - a[0]);
   }
 
+  // A view is the stage's rectangle the camera films: its top-left (x, y) and its zoom s.
   const FULL = { s: 1, x: 0, y: 0 };
+  const onStage = (b) => ({ x: F.x + b.x * FRAME, y: F.y + b.y * FRAME, width: b.width * FRAME, height: b.height * FRAME });
   function viewFor(box, light) {
     if (!box) return FULL;
-    const s = clamp(Math.min(0.72 * W / box.width, 0.72 * H / box.height), 1, light ? MAX_ZOOM : AUTO_ZOOM);
-    const w = W / s, h = H / s;
-    return { s, x: clamp(box.x + box.width / 2 - w / 2, 0, W - w), y: clamp(box.y + box.height / 2 - h / 2, 0, H - h) };
+    const b = onStage(box);
+    const s = clamp(Math.min(0.72 * SW / b.width, 0.72 * SH / b.height), 1, light ? MAX_ZOOM : AUTO_ZOOM);
+    const w = SW / s, h = SH / s;
+    // centered on the element, kept on the window; a view wider than the window centers on it
+    const fit = (c, size, lo, hi) => size >= hi - lo ? (lo + hi - size) / 2 : clamp(c - size / 2, lo, hi - size);
+    return { s,
+      x: clamp(fit(b.x + b.width / 2, w, F.x - EDGE, F.x + F.w + EDGE), 0, SW - w),
+      y: clamp(fit(b.y + b.height / 2, h, F.y - EDGE, F.y + F.h + EDGE), 0, SH - h) };
+  }
+  function inView(v, box) {
+    const b = onStage(box), w = SW / v.s, h = SH / v.s;
+    return b.x >= v.x + DEAD * w && b.x + b.width <= v.x + (1 - DEAD) * w && b.y >= v.y + DEAD * h && b.y + b.height <= v.y + (1 - DEAD) * h;
   }
   function between(from, to, k) {
     const s = Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * k);
@@ -107,28 +173,26 @@
     };
     return { s, x: pan('x'), y: pan('y') };
   }
-  // The light ({box, o}) moves and fades with the camera: on from nothing, off to nothing, from one
-  // element to the next. A light that vanished in one frame would flash the whole page brighter.
-  function blend(a, b, k) {
-    if (!a && !b) return null;
-    if (!a) return { box: b.box, o: b.o * k };
-    if (!b) return { box: a.box, o: a.o * (1 - k) };
-    const m = (p) => a.box[p] + (b.box[p] - a.box[p]) * k;
-    return { box: { x: m('x'), y: m('y'), width: m('width'), height: m('height') }, o: a.o + (b.o - a.o) * k };
-  }
   function viewAt(focus, lt) {
-    let from = FULL, to = FULL, lightFrom = null, lightTo = null, at = null;
+    let from = FULL, to = FULL, toLight = false, at = null;
     for (const f of focus) if (f.t <= lt) {
+      // one zoom session: an action the zoomed camera already shows does not move it
+      if (at !== null && to !== FULL && !toLight && f.box && !f.light && inView(to, f.box)) continue;
       // a target that comes before the last one is reached leaves from where the camera is
-      if (at !== null) {
-        const k = ease((f.t - at) / ZOOM);
-        from = between(from, to, k); lightFrom = blend(lightFrom, lightTo, k);
-      }
-      to = viewFor(f.box, f.light); lightTo = f.light ? { box: f.box, o: 1 } : null; at = f.t;
+      if (at !== null) from = between(from, to, spring((f.t - at) / ZOOM));
+      to = viewFor(f.box, f.light); toLight = !!f.light; at = f.t;
     }
-    if (at === null) return { v: FULL, light: null };
-    const k = ease((lt - at) / ZOOM);
-    return { v: between(from, to, k), light: blend(lightFrom, lightTo, k) };
+    if (at === null) return FULL;
+    return between(from, to, spring((lt - at) / ZOOM));
+  }
+  // Motion blur along the camera's move: how far the screen's center travels in one frame, plus how
+  // far its edges spread in a zoom, in output pixels. Under about 4 px a frame (a slow or short move)
+  // none: a blur there only reads as the page going out of focus.
+  function blurFor(v0, v1) {
+    const cx = v1.x + SW / 2 / v1.s, cy = v1.y + SH / 2 / v1.s;
+    const dx = (cx - v0.x) * v0.s - SW / 2, dy = (cy - v0.y) * v0.s - SH / 2;
+    const z = Math.abs(v1.s / v0.s - 1) * SW / 2;
+    return [Math.abs(dx) + z / 2, Math.abs(dy) + z / 2 * SH / SW].map((d) => clamp(0.3 * d - 1.2, 0, 8));
   }
 
   // Cursor moves start fast and settle in gently, on a slight arc (after webreel's cursor-motion.ts, Apache-2.0).
@@ -145,12 +209,12 @@
     return { x: u * u * a.x + 2 * u * k * c.x + k * k * b.x, y: u * u * a.y + 2 * u * k * c.y + k * k * b.y };
   }
   function drawCursor(cur, lt) {   // inside #inner: it zooms with the page
-    const el = $('#cursor'), rip = $('#ripple');
+    const el = $('#cursor');
     const moves = cur?.moves || [], clicks = cur?.clicks || [];
     const i = moves.findLastIndex((m) => m.t0 <= lt);
-    if (i < 0) { el.style.opacity = 0; rip.style.opacity = 0; return; }
-    const m = moves[i], moving = lt < m.t1;
-    const p = moving ? along(m, settle((lt - m.t0) / (m.t1 - m.t0))) : m.to;
+    if (i < 0) { el.style.opacity = 0; return; }
+    const m = moves[i], moving = lt < m.t1, k = moving ? settle((lt - m.t0) / (m.t1 - m.t0)) : 1;
+    const p = moving ? along(m, k) : m.to;
     const clickBefore = (t) => clicks.filter((c) => c <= t).at(-1) ?? -Infinity;
     const lastClick = clickBefore(lt);
     const still = moving ? 0 : lt - Math.max(m.t1, lastClick);
@@ -158,14 +222,11 @@
     const before = i > 0 ? Math.max(moves[i - 1].t1, clickBefore(m.t0)) : -Infinity;
     const shown = m.t0 - before > IDLE + HIDE ? clamp((lt - m.t0) / 0.15, 0, 1) : 1;
     const press = lt - lastClick < PRESS ? 0.82 : 1;
+    // the shape of what it hovers: the last target's until it nears the next one
+    const shape = (k < 0.85 && i > 0 ? moves[i - 1].cursor : m.cursor) || 'default';
+    for (const svg of el.children) svg.style.display = svg.dataset.shape === shape ? 'block' : 'none';
     el.style.opacity = Math.min(shown, clamp(1 - (still - IDLE) / HIDE, 0, 1));
     el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${press})`;
-    const r = (lt - lastClick) / RIPPLE;
-    rip.style.opacity = r < 1 ? 0.6 * (1 - r) : 0;
-    if (r < 1) {
-      const size = 10 + 34 * r;
-      Object.assign(rip.style, { left: `${p.x - size / 2}px`, top: `${p.y - size / 2}px`, width: `${size}px`, height: `${size}px` });
-    }
   }
 
   window.seek = async (t) => {
@@ -177,31 +238,37 @@
       $('#chapter').style.display = s.kind === 'chapter' ? 'block' : 'none';
       if (s.kind === 'card') buildCard(s);
       else {
-        const bare = !s.label && !s.caption;
-        $('header').style.display = bare ? 'none' : 'flex';
-        $('#frame').classList.toggle('bare', bare);
-        $('.pill').textContent = s.label || ''; $('.caption').textContent = s.caption || '';
+        $('#title .pill').textContent = s.label || '';
+        $('#title .pill').style.visibility = s.label ? 'visible' : 'hidden';
+        $('.caption').replaceChildren(...(s.caption || '').split(/\s+/).filter(Boolean).flatMap((word, i) => {
+          const w = el('span', 'w'); w.append(el('span', '', word));
+          return i ? [' ', w] : [w];
+        }));
       }
     }
     $('#root').style.opacity = clamp(Math.min(lt / FADE_IN, (s.dur - lt) / FADE_OUT), 0, 1);
     if (s.kind === 'card') return animateCard(lt);
 
-    enter($('header'), ease(lt / 0.5));
+    let veil = 0;
+    if (s.intro) veil = drawTitle(s, lt);
+    else $('#title').style.display = 'none';
     const rec = TL.recs[s.rec];
-    const n = clamp(Math.floor(rawAt(s.map, lt) * TL.fps) + 1, 1, rec.frames);
+    const n = clamp(Math.floor(rawAt(s.map, lt) * (rec.fps || TL.fps)) + 1, 1, rec.frames);
     const src = `${rec.base}${String(n).padStart(5, '0')}.jpg`;
     const img = $('#shot');
-    if (img.getAttribute('src') !== src) { img.src = src; await img.decode(); W = img.naturalWidth; H = img.naturalHeight; FRAME = 1600 / W; }
+    if (img.getAttribute('src') !== src) { img.src = src; await img.decode(); W = img.naturalWidth; H = img.naturalHeight; }
+    FRAME = F.w / W; F.h = H * FRAME; F.y = (SH - F.h) / 2;
+    Object.assign($('#frame').style, { top: `${F.y}px`, height: `${F.h}px` });
+    $('#inner').style.transform = `scale(${FRAME})`;
 
-    const { v, light } = viewAt(s.focus || [], lt);
-    const scale = FRAME * v.s;
-    $('#inner').style.transform = `scale(${scale}) translate(${-v.x}px, ${-v.y}px)`;
-    const ring = $('#ring');
-    ring.style.display = light && light.o > 0.001 ? 'block' : 'none';
-    if (light) Object.assign(ring.style, {
-      left: `${light.box.x - 8}px`, top: `${light.box.y - 8}px`, width: `${light.box.width + 16}px`, height: `${light.box.height + 16}px`,
-      opacity: light.o,
-    });
+    const focus = s.focus || [], v = viewAt(focus, lt);
+    const [bx, by] = lt * TL.fps >= 1 ? blurFor(viewAt(focus, lt - 1 / TL.fps), v) : [0, 0];
+    const scene = $('#scene');
+    scene.style.transform = `scale(${v.s}) translate(${-v.x}px, ${-v.y}px)`;
+    // the filter blurs the scene before its transform scales it: divide by the zoom
+    $('#mbg').setAttribute('stdDeviation', `${bx / v.s} ${by / v.s}`);
+    // under its title the scene goes soft and dark
+    scene.style.filter = [bx || by ? 'url(#mb)' : '', veil ? `blur(${16 * veil}px) brightness(${1 - 0.6 * veil})` : ''].join(' ').trim() || 'none';
     drawCursor(s.cursor, lt);
   };
 </script>

@@ -81,6 +81,10 @@ const SCENARIO = `
   const firstOut = add.focus.findIndex((f) => !f.box);
   assert.ok(firstOut >= 3, `a zoom-out before the save: ${JSON.stringify(add.focus)}`);
   assert.ok(add.cursor.moves.length >= 4 && add.cursor.clicks.length === 4);
+  // The drawn cursor takes the shape the page gives: a text bar on the fields, a hand on the button and the link.
+  const shapes = kinds('move').map((m) => m.cursor);
+  assert.deepStrictEqual(shapes.slice(0, 3), ['text', 'text', 'text'], `cursor shapes ${shapes}`);
+  assert.strictEqual(shapes.at(-1), 'pointer', `cursor shapes ${shapes}`);
   const dash = tl.shots[3];
   const lit = dash.focus.filter((f) => f.light);
   assert.strictEqual(lit.length, 1, `one lit focus: ${JSON.stringify(dash.focus)}`);
@@ -121,20 +125,25 @@ const SCENARIO = `
   }
   // The camera never jumps. Around a cut the engine can send a zoom-out and the next zoom 1 ms apart
   // (pod-083's client demo): the next zoom leaves from where the camera is, not from the whole page.
-  const settled = zoomed[1].t + 0.9;
+  const settled = zoomed[1].t + 1.1;
   const hop = { ...add, start: 0, focus: [...add.focus.filter((f) => f.t < settled),
     { t: settled, box: null, light: false }, { t: settled + 0.001, box: zoomed[0].box, light: false }] };
   await stage.evaluate((t) => window.load(t), { ...tl, shots: [hop], recs });
   let last = null;
   for (let f = -3; f <= 6; f++) {
     await stage.evaluate((t) => window.seek(t), settled + f / tl.fps);
-    const scale = await stage.evaluate(() => parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('#inner').style.transform)[1]));
+    const scale = await stage.evaluate(() => parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('#scene').style.transform)[1]));
     if (last) assert.ok(scale / last < 1.15 && last / scale < 1.15, `the camera jumps from ×${last.toFixed(2)} to ×${scale.toFixed(2)} in one frame`);
     last = scale;
   }
+  // Motion blur while the camera moves, none once it has settled.
+  await stage.evaluate((t) => window.load(t), { ...tl, recs });
+  const filterAt = (t) => stage.evaluate((s) => window.seek(s).then(() => document.querySelector('#scene').style.filter), t);
+  assert.notStrictEqual(await filterAt(add.start + zoomed[0].t + 0.15), 'none', 'no blur in the middle of the first zoom');
+  assert.strictEqual(await filterAt(add.start + add.dur - 0.05), 'none', 'blur on a settled camera');
   await sb.close();
 
-  const midZoom = add.start + zoomed[1].t + 0.9;     // the camera has panned onto the second field
+  const midZoom = add.start + zoomed[1].t + 1.1;     // the camera has panned onto the second field
   const result = add.start + add.dur - 0.3;          // the saved venue, whole page
   run('node', [path.join(ROOT, 'scripts', 'render.js'), tlPath, '--at', `${midZoom.toFixed(2)},${result.toFixed(2)}`]);
   console.log(`✅ e2e passed: ${got.toFixed(1)}s demo from ${raw.toFixed(1)}s of recording; open ${OUT}`);
